@@ -17,7 +17,7 @@ import championOutlineImg from "../assets/cards/championOutline.png";
  */
 export function determineRarityColor(
   rarity: string,
-  evolution: boolean
+  evolution: boolean,
 ): string | null {
   if (evolution) {
     return null;
@@ -63,4 +63,14 @@ export function getCardOutline(rarity: string): string {
     default:
       return noOutlineImg;
   }
+}
+
+/**
+ * Reports whether a rarity draws a visible outline around the card art.
+ *
+ * @param rarity - The rarity of the card, or anything else for an unknown card.
+ * @returns False for common and unknown cards, whose outline image is blank.
+ */
+export function hasCardOutline(rarity: string): boolean {
+  return getCardOutline(rarity) !== noOutlineImg;
 }

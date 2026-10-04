@@ -64,7 +64,8 @@ function createCardList(cards: CardMeta[]): Card[] {
   const cardList: Card[] = [];
 
   // NOTE: maxEvolutionLevel 3 creates both Evolution (level 1) and Hero (level 2).
-  // If more variant levels are added, update these loops and getCardVariantName.
+  // If more variant levels are added, update these loops and CARD_VARIANTS
+  // (getCardMetaFields.ts).
 
   // Add in multiple loops, so that order of cards stays how it was previously sorted
 

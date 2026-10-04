@@ -16,7 +16,22 @@ import { SortByContainer } from "../../components/sortByContainer/sortByContaine
 import { CardComponent } from "../../components/card/card";
 import { PlayerError } from "../../components/playerError/playerError";
 import type { CardStats } from "../../types/cardStats";
+import type { Card, CardMeta } from "../../types/cards";
+import { getCardVariantName } from "../../utils/getCardMetaFields";
 import "./cards.css";
+
+/**
+ * Title of a card tile, e.g. "Evolution Knight".
+ *
+ * @param card Card from the statistics.
+ * @param cards The official card list, undefined while loading.
+ * @returns The official name, or for cards outside the list (event cards) the
+ *   name stored with the battles.
+ */
+function cardTitle(card: Card, cards: CardMeta[] | undefined): string {
+  const name = cards?.find((c) => c.id === card.id)?.name ?? card.name;
+  return getCardVariantName(name || `#${card.id}`, card.evolutionLevel ?? 0);
+}
 
 function calculateAndFormatUsageRate(
   battleCount: number,
@@ -246,6 +261,12 @@ export default function PlayerCards() {
                     className="card-item"
                     key={`${c.card.id}-${c.card.evolutionLevel}`}
                   >
+                    <h3
+                      className="card-item-title"
+                      title={cardTitle(c.card, cards)}
+                    >
+                      {cardTitle(c.card, cards)}
+                    </h3>
                     <div className="card-item-visual">
                       <CardComponent
                         card={c.card}

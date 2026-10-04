@@ -41,6 +41,9 @@ services:
       - redis-key-store
     env_file:
       - .env
+    volumes:
+      # Card image sets, written here and served by the frontend's nginx
+      - card-images:/data/card-images
     networks:
       - cr-analytics
     # Read-only scraper dashboard (/), snapshot (/status) and history
@@ -136,6 +139,9 @@ services:
       context: ./
       dockerfile: frontend/Dockerfile
     container_name: frontend
+    volumes:
+      # Card image sets of the data scraper (see data_scraper/src/card_images.py)
+      - card-images:/usr/share/nginx/card-images:ro
     networks:
       - cr-analytics
     ports:
@@ -151,6 +157,8 @@ volumes:
   # mongo_data:
   redis-data:
   redis-key-store-data:
+  # Reconstructible: the next card refresh rebuilds a lost set from the CDN.
+  card-images:
 
 networks:
   cr-analytics:

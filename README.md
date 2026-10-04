@@ -142,7 +142,35 @@ Start all required docker services for the backend (api, mongo, redis)
 
    The frontend will be available at `http://localhost:5173`
 
-**Note**: The Vite development server proxies `/api` through the Docker frontend at `http://localhost:80`, so the frontend container and backend services need to be running for local development.
+**Note**: The Vite development server proxies `/api` and `/card-images` through the Docker frontend at `http://localhost:80`, so the frontend container and backend services need to be running for local development.
+
+### Card images
+
+The data scraper mirrors the card art of the Clash Royale CDN on every card
+refresh (every 6 hours): it scales each image to 240 px wide, converts it to
+WebP (11-16 KB instead of ~150 KB), and writes the whole set to the
+`card-images` Docker volume. The frontend's nginx serves that volume read-only
+at `/card-images/<version>/<cardId>[-<variant>].webp`. Details are in
+`backend/data_scraper/src/card_images.py`.
+
+- **Versioned sets.** A set is published under a hash of its content and only
+  once every file is written. The card list from `/api/cards` points to it
+  through `imageUrls`, next to Clash Royale's original `iconUrls`. Set URLs
+  never change content, so browsers cache them for a year.
+- **Fallbacks.** The frontend tries the self-hosted image, then the CDN
+  original, then a placeholder that names the card and its variant (art the
+  CDN does not have yet, unknown cards).
+- **Reconstructible.** The volume holds no data of its own. Deleting it (e.g.
+  `docker compose down -v`) is safe: the scraper notices within 10 minutes and
+  rebuilds the same set from the CDN; browsers use the CDN meanwhile. Replaced
+  sets are removed after 7 days.
+- **Paths.** The scraper writes to `CARD_IMAGES_DIR` (default
+  `/data/card-images`), nginx reads `/usr/share/nginx/card-images`. Both are
+  mount points of the same volume in `docker-compose.yml`; change them
+  together.
+- **Single scraper.** Run one data scraper process. The card loop is the only
+  writer of the image volume and of the cached card list and has no leader
+  election (see the NOTE in `backend/data_scraper/src/main.py`).
 
 ### 3. Restoring Data
 

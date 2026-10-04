@@ -25,9 +25,6 @@ import axios from "axios";
 import { StatCard } from "../components/statCard/statCard";
 import "./home.css";
 
-// TODO [KEY PERFORMANCE IMPROVEMENT] lazy load card images from CDN to page after opening,
-// don't let this load block any other loading and rendering tho
-
 function getErrorMessage(error: unknown): string {
   if (
     !axios.isAxiosError<{

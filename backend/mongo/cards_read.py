@@ -13,8 +13,10 @@ async def get_cards(conn: MongoConn):
         conn (MongoConn): Active connection to the mongo database
 
     Returns:
-        dict | None: {"payload": <card list response>, "updatedAt": datetime},
-            or None if no card list was stored yet
+        dict | None: {"payload": <served card list>, "imageVersion": str | None,
+            "imagesComplete": bool, "imagesMissing": int, "updatedAt":
+            datetime}, or None if no card list was stored yet. Lists stored
+            before the image fields existed lack them.
 
     Raises:
         Exception: If the lookup fails
@@ -23,7 +25,15 @@ async def get_cards(conn: MongoConn):
     try:
         await ensure_connected(conn)
         return await conn.db.cards.find_one(
-            {"_id": CARDS_DOC_ID}, {"_id": 0, "payload": 1, "updatedAt": 1}
+            {"_id": CARDS_DOC_ID},
+            {
+                "_id": 0,
+                "payload": 1,
+                "imageVersion": 1,
+                "imagesComplete": 1,
+                "imagesMissing": 1,
+                "updatedAt": 1,
+            },
         )
     except Exception as e:
         print(f"[DB] [ERROR] fetching the stored cards: {e}")

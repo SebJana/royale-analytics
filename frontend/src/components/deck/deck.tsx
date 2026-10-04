@@ -126,6 +126,15 @@ export const DeckComponent = memo(function DeckComponent({
   const fourCardCycle = calculateFourCardCycle(deck, cards);
   const roundedFourCardCycle = round(fourCardCycle, 2);
 
+  // Event cards are not in the official card list, so their cost is unknown,
+  // as is every cost while the list loads. Counting those as 0 elixir would
+  // show a wrong average as if it were right.
+  const costsKnown = deck.every((card) => cards.some((c) => c.id === card.id));
+  const unknownCostTitle =
+    !costsKnown && cards.length > 0
+      ? "Includes a card outside the official card list, whose elixir cost is unknown"
+      : undefined;
+
   // Works for both mobile and desktop because the Clash Royale Website handles
   // showing a qr code (desktop) and a copy link (mobile)
   const handleCopy = () => {
@@ -162,14 +171,18 @@ export const DeckComponent = memo(function DeckComponent({
       <div className="deck-component-footer">
         <div className="deck-component-stats">
           <div className="deck-component-stat-item">
-            <p className="deck-component-stat-value">
-              {deck.length === 0 ? "—" : roundedAvgElixir}
+            <p className="deck-component-stat-value" title={unknownCostTitle}>
+              {deck.length === 0 ? "—" : costsKnown ? roundedAvgElixir : "?"}
             </p>
             <p className="deck-component-stat-label">Avg Elixir</p>
           </div>
           <div className="deck-component-stat-item">
-            <p className="deck-component-stat-value">
-              {deck.length === 0 ? "—" : roundedFourCardCycle}
+            <p className="deck-component-stat-value" title={unknownCostTitle}>
+              {deck.length === 0
+                ? "—"
+                : costsKnown
+                  ? roundedFourCardCycle
+                  : "?"}
             </p>
             <p className="deck-component-stat-label">4-Card Cycle</p>
           </div>

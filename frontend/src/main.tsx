@@ -40,6 +40,9 @@ createRoot(document.getElementById("root")!).render(
         client={queryClient}
         persistOptions={{
           persister,
+          // NOTE: The data scraper keeps replaced card image sets for
+          // CARD_IMAGE_SET_RETENTION (7 days) as a grace period for saved card
+          // lists. Keep this well below it.
           maxAge: day,
           buster: "v1",
           // Decide wether or not to keep the query progress
@@ -53,5 +56,5 @@ createRoot(document.getElementById("root")!).render(
         </AuthProvider>
       </PersistQueryClientProvider>
     </BrowserRouter>
-  </StrictMode>
+  </StrictMode>,
 );

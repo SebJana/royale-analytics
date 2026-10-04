@@ -15,6 +15,11 @@ export default defineConfig({
         changeOrigin: false,
         ws: true,
       },
+      // NOTE: Matches CARD_IMAGES_URL_PREFIX of the data scraper.
+      "/card-images": {
+        target: "http://localhost:80",
+        changeOrigin: false,
+      },
     },
   },
 });

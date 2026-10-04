@@ -154,6 +154,38 @@ class Settings:
     # refreshes. Bounds how long the API reads Mongo after an eviction.
     CARDS_CACHE_CHECK_INTERVAL: float = 10 * 60  # 10 minutes
 
+    # Self-hosted card images (see card_images.py)
+    # Shared volume the image sets are written to; nginx serves it read-only.
+    CARD_IMAGES_DIR: str = os.getenv("CARD_IMAGES_DIR", "/data/card-images")
+    # NOTE Match the /card-images/ location in frontend/nginx.conf and the
+    # Vite dev proxy. Update all three together.
+    CARD_IMAGES_URL_PREFIX: str = "/card-images"
+    # Only images from this host are mirrored
+    CARD_IMAGE_HOST: str = "api-assets.clashroyale.com"
+    # The CDN art is 285x420 px. Cards render at most 150 CSS px wide (cards
+    # page) and ~85 px in decks. 240 px is 1.6x the largest size and over 2x
+    # the deck size: slightly soft on the cards page on 2x screens, in exchange
+    # for 11-16 KB (regular, evolution/hero) instead of ~150 KB per image.
+    CARD_IMAGE_WIDTH: int = 240  # px
+    # WebP quality, 0-100
+    CARD_IMAGE_QUALITY: int = 85
+    # Parallel CDN downloads during a refresh
+    CARD_IMAGE_DOWNLOAD_CONCURRENCY: int = 4
+    # Timeout for a single image download
+    CARD_IMAGE_DOWNLOAD_TIMEOUT: float = 15  # seconds
+    # Largest accepted source image, far above the ~150 KB the CDN sends
+    CARD_IMAGE_MAX_BYTES: int = 5 * 1024 * 1024  # 5 MB
+    # Refresh interval while the CDN lacks images the card list names. Longer
+    # than CARDS_RETRY_DELAY, since art can take days to appear and every
+    # attempt checks each image again.
+    CARD_IMAGE_MISSING_RETRY_DELAY: float = 30 * 60  # 30 minutes
+    # How long a replaced set stays on disk, a grace period for clients that
+    # still hold an earlier card list. Not a hard bound: a tab can keep a list
+    # longer, and then falls back to the CDN for the removed set.
+    # NOTE Keep well above the frontend's persisted query cache (maxAge in
+    # main.tsx, 1 day), so a reload from that cache rarely meets a removed set.
+    CARD_IMAGE_SET_RETENTION: float = 7 * 24 * 60 * 60  # 7 days
+
     # Monitoring
     # How often the metrics snapshot is written to Redis
     METRICS_INTERVAL: float = 10  # seconds

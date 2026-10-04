@@ -40,6 +40,76 @@
   object-fit: contain;
 }
 
+/* Covers the box the art's card body fills (15-270 x 68-387 px of the 285x420
+   art), so the rarity outline shows the same thin rim around it as around real
+   art. Opaque, because the outlines are filled shapes, not frames. */
+.card-component-placeholder {
+  position: absolute;
+  inset: 16.2% 5.3% 7.9%;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6%;
+  box-sizing: border-box;
+  overflow: hidden;
+  /* Lets the text scale with the card's rendered width. Set here, not on the
+     wrap: a size container ignores its content's width, and the wrap takes
+     its width from its content in shrink-to-fit layouts (the cards page),
+     where it would collapse to zero. The placeholder is absolutely
+     positioned, so its width always comes from the card. */
+  container-type: inline-size;
+  border: 2px dashed var(--border-medium);
+  border-radius: 7% / 5.5%;
+  background: var(--bg-darker);
+  color: var(--text-secondary);
+  text-align: center;
+  pointer-events: none;
+}
+
+/* The rarity outline already edges the placeholder. The dashed border only
+   stands in for it on common and unknown cards, whose outline is blank. The
+   transparent border keeps the size identical. */
+.card-component-placeholder.has-outline {
+  border-color: transparent;
+}
+
+/* A gap on the placeholder would resolve cqw against an outer container, so
+   the spacing sits on the children, which measure the placeholder. */
+.card-component-placeholder > * + * {
+  margin-top: 3.4cqw;
+}
+
+.card-component-placeholder-mark {
+  font-size: 42.5cqw;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.6;
+}
+
+.card-component-placeholder-variant {
+  font-size: 12.3cqw;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+/* Long names end in an ellipsis after four lines instead of being cut off
+   mid-line by the placeholder's edge. */
+.card-component-placeholder-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+  font-size: 13.4cqw;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
 .card-component-level-label {
   margin-top: var(--spacing-xs);
 }

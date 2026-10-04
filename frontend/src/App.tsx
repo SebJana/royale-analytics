@@ -5,9 +5,12 @@ import PlayerDecks from "./pages/player/decks";
 import PlayerBattles from "./pages/player/battles";
 import PlayerCards from "./pages/player/cards";
 import PlayerPlots from "./pages/player/plots";
+import { useCardImagePreload } from "./hooks/useCardImagePreload";
 import "./App.css";
 
 function App() {
+  useCardImagePreload();
+
   return (
     <main className="main-container">
       <Routes>

@@ -42,8 +42,9 @@ async def get_cards(mongo_conn: DbConn, redis_conn: RedConn):
     if stored and stored.get("payload"):
         return stored["payload"]
 
-    # Only on a fresh install, before the scraper's first card refresh
-    # should resolve in a few seconds, at most.
+    # Only on a fresh install, before the scraper's first card refresh. The
+    # scraper stores the list before mirroring its images, so this resolves
+    # within seconds of its first Clash Royale request.
     raise HTTPException(
         status_code=503,
         detail={

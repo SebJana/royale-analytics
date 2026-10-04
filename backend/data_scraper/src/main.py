@@ -390,7 +390,8 @@ async def main():
         # ends on cancellation; Docker's restart policy covers anything else.
         # NOTE Claims let several scraper processes share the workers, but the
         # card and game mode loops are the only writers of their cache keys
-        # and have no leader election. Run one scraper process, or move these
+        # (and the card loop of the card image volume) and have no leader
+        # election. Run one scraper process, or move these
         # loops behind a Redis lock before scaling out.
         async with asyncio.TaskGroup() as tg:
             tg.create_task(reconcile_loop(battles, profiles, mongo_conn, pool, metrics))

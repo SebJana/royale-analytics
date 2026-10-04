@@ -4,3 +4,6 @@
 -r ./api_key_store/requirements.txt
 -r ./redis_service/requirements.txt
 -r ./scrape_schedule/requirements.txt
+
+# Card image conversion
+Pillow==11.3.0
