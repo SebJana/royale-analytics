@@ -6,6 +6,8 @@ export type CardStats = {
   card_statistics: {
     totalBattles: number;
     cards: Cards[];
+    // Tower troops, id 0 (NO_SUPPORT_ID) for battles without tower data
+    supportCards: Cards[];
   };
 };
 

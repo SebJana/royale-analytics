@@ -203,7 +203,7 @@ async def deck_percentage_stats(
         }
         key = build_redis_key(
             service="crApi",
-            resource="playerDecks",
+            resource="playerDecksV2",  # V2: decks split by tower troop
             params=params,
             player_version=player.sync_version,
         )
@@ -281,7 +281,7 @@ async def card_percentage_stats(
         }
         key = build_redis_key(
             service="crApi",
-            resource="playerCards",
+            resource="playerCardsV2",  # V2: adds supportCards
             params=params,
             player_version=player.sync_version,
         )

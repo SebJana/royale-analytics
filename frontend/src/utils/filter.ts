@@ -44,7 +44,7 @@ export function getFilterStateFromLocalStorage(): FilterState | null {
 
     // If within the TTL, return the parsed filter state
     if (diffSeconds <= FILTER_TTL_SECONDS) {
-      return JSON.parse(rawFilters) as FilterState;
+      return migrateFilterState(JSON.parse(rawFilters) as FilterState);
     }
 
     // Otherwise treat as expired
@@ -53,6 +53,27 @@ export function getFilterStateFromLocalStorage(): FilterState | null {
     console.error("Failed to parse filter state from localStorage:", error);
     return null;
   }
+}
+
+/**
+ * Brings a saved filter state up to the current shape. States saved before
+ * tower troops have no supportIds. Include mode allows one tower troop, so a
+ * longer list keeps its most recently selected entry.
+ *
+ * @param filters - Filter state as parsed from localStorage
+ * @returns The filter state with valid supportIds
+ */
+function migrateFilterState(filters: FilterState): FilterState {
+  const supportIds = Array.isArray(filters.supportIds)
+    ? filters.supportIds.filter((id) => Number.isInteger(id))
+    : [];
+  return {
+    ...filters,
+    supportIds:
+      filters.includeCardFilterMode !== false
+        ? supportIds.slice(-1)
+        : supportIds,
+  };
 }
 
 /**
@@ -97,6 +118,7 @@ function extractFirstNumber(str: string): number | null {
  * - Date range: Last DEFAULT_DAY_RANGE days (from today)
  * - Game modes: Empty array (no filters applied)
  * - Cards: Empty array (no filters applied)
+ * - Tower troops: Empty array (no filters applied)
  * - Card inclusion filter mode: true, meaning all selected cards HAVE to be included in the shown decks
  * - Timespan option: "Last DEFAULT_DAY_RANGE days"
  *
@@ -111,6 +133,7 @@ export function getDefaultFilterState(): FilterState {
     endDate: initialDates.end,
     gameModes: [],
     cards: [],
+    supportIds: [],
     includeCardFilterMode: true,
     timespanOption: `Last ${DEFAULT_DAY_RANGE} days`,
   };
@@ -148,6 +171,7 @@ export function getCurrentFilterState(): FilterState {
         endDate: newlyCalcDates.end,
         gameModes: filters.gameModes,
         cards: filters.cards,
+        supportIds: filters.supportIds,
         includeCardFilterMode: filters.includeCardFilterMode,
         timespanOption: filters.timespanOption,
       };

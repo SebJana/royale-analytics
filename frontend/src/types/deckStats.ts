@@ -16,5 +16,6 @@ export type Deck = {
   lastSeen: string;
   modes: string[]; // Game modes in which the deck appeared
   deck: Card[];
+  support: Card[]; // Tower troop, empty if the battles have no tower data
   winRate: number;
 };

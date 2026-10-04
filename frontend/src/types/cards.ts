@@ -3,7 +3,10 @@ export type CardMeta = {
   id: number;
   maxLevel: number;
   maxEvolutionLevel?: number;
-  elixirCost: number;
+  // Missing for tower troops, which cost no elixir
+  elixirCost?: number;
+  // Regular card or tower troop (supportItems). Added by fetchAllCards.
+  category?: "card" | "support";
   // Clash Royale CDN originals (~150 KB PNGs). Further variants show up as
   // new keys.
   iconUrls: {
@@ -20,6 +23,8 @@ export type CardMeta = {
 
 export type CardsResponse = {
   items: CardMeta[];
+  // Tower troops; missing in a card list stored before they were mirrored
+  supportItems?: CardMeta[];
 };
 
 export type Card = {

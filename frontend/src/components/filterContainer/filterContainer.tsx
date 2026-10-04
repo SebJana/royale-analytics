@@ -17,6 +17,8 @@ export type FilterState = {
   endDate: string;
   gameModes: string[];
   cards: Card[];
+  // Tower troop ids, NO_SUPPORT_ID for None. At most one in Include mode.
+  supportIds: number[];
   includeCardFilterMode: boolean;
   timespanOption: string;
 };
@@ -28,6 +30,7 @@ type FilterContainerProps = {
   onFiltersApply: (filters: FilterState) => void;
   initialFilters?: Partial<FilterState>;
   showCardFilter?: boolean; // Optional prop to show/hide card filter
+  showNoSupportOption?: boolean; // Offer None in the tower troop row
   // Optional prop to control wether the card filter works by definite inclusion (true) or closest match (false)
   includeCardFilterMode?: boolean;
   appliedFilters?: FilterState; // Current applied filters to sync UI
@@ -40,6 +43,7 @@ export function FilterContainer({
   onFiltersApply,
   initialFilters,
   showCardFilter,
+  showNoSupportOption,
   includeCardFilterMode,
   appliedFilters,
 }: Readonly<FilterContainerProps>) {
@@ -50,17 +54,28 @@ export function FilterContainer({
   // 2. "applied" - what is actually used for the API query
   // Use appliedFilters if available, otherwise fall back to initialFilters, then defaults
   const [selectedGameModes, setSelectedGameModes] = useState<string[]>(
-    appliedFilters?.gameModes || initialFilters?.gameModes || []
+    appliedFilters?.gameModes || initialFilters?.gameModes || [],
   );
   const [appliedGameModes, setAppliedGameModes] = useState<string[]>(
-    appliedFilters?.gameModes || initialFilters?.gameModes || []
+    appliedFilters?.gameModes || initialFilters?.gameModes || [],
   );
 
   const [selectedCards, setSelectedCards] = useState<Card[]>(
-    showCardFilter ? appliedFilters?.cards || initialFilters?.cards || [] : []
+    showCardFilter ? appliedFilters?.cards || initialFilters?.cards || [] : [],
   );
   const [appliedCards, setAppliedCards] = useState<Card[]>(
-    showCardFilter ? appliedFilters?.cards || initialFilters?.cards || [] : []
+    showCardFilter ? appliedFilters?.cards || initialFilters?.cards || [] : [],
+  );
+
+  const [selectedSupportIds, setSelectedSupportIds] = useState<number[]>(
+    showCardFilter
+      ? appliedFilters?.supportIds || initialFilters?.supportIds || []
+      : [],
+  );
+  const [appliedSupportIds, setAppliedSupportIds] = useState<number[]>(
+    showCardFilter
+      ? appliedFilters?.supportIds || initialFilters?.supportIds || []
+      : [],
   );
 
   const [selectedIncludeCardFilterMode, setSelectedIncludeCardFilterMode] =
@@ -68,34 +83,38 @@ export function FilterContainer({
       appliedFilters?.includeCardFilterMode ??
         initialFilters?.includeCardFilterMode ??
         includeCardFilterMode ??
-        true
+        true,
     );
   const [appliedIncludeCardFilterMode, setAppliedIncludeCardFilterMode] =
     useState<boolean>(
       appliedFilters?.includeCardFilterMode ??
         initialFilters?.includeCardFilterMode ??
         includeCardFilterMode ??
-        true
+        true,
     );
 
   const [selectedStartDate, setSelectedStartDate] = useState<string>(
-    appliedFilters?.startDate || initialFilters?.startDate || initialDates.start
+    appliedFilters?.startDate ||
+      initialFilters?.startDate ||
+      initialDates.start,
   );
   const [appliedStartDate, setAppliedStartDate] = useState<string>(
-    appliedFilters?.startDate || initialFilters?.startDate || initialDates.start
+    appliedFilters?.startDate ||
+      initialFilters?.startDate ||
+      initialDates.start,
   );
 
   const [selectedEndDate, setSelectedEndDate] = useState<string>(
-    appliedFilters?.endDate || initialFilters?.endDate || initialDates.end
+    appliedFilters?.endDate || initialFilters?.endDate || initialDates.end,
   );
   const [appliedEndDate, setAppliedEndDate] = useState<string>(
-    appliedFilters?.endDate || initialFilters?.endDate || initialDates.end
+    appliedFilters?.endDate || initialFilters?.endDate || initialDates.end,
   );
 
   const [selectedTimespanOption, setSelectedTimespanOption] = useState<string>(
     appliedFilters?.timespanOption ||
       initialFilters?.timespanOption ||
-      "Last 7 days"
+      "Last 7 days",
   );
 
   const [gameModesInitialized, setGameModesInitialized] = useState(false);
@@ -111,6 +130,7 @@ export function FilterContainer({
       setSelectedIncludeCardFilterMode(appliedFilters.includeCardFilterMode);
       if (showCardFilter) {
         setSelectedCards(appliedFilters.cards);
+        setSelectedSupportIds(appliedFilters.supportIds);
       }
 
       // Also update applied state to match
@@ -120,6 +140,7 @@ export function FilterContainer({
       setAppliedIncludeCardFilterMode(appliedFilters.includeCardFilterMode);
       if (showCardFilter) {
         setAppliedCards(appliedFilters.cards);
+        setAppliedSupportIds(appliedFilters.supportIds);
       }
     }
   }, [appliedFilters, showCardFilter]);
@@ -138,7 +159,8 @@ export function FilterContainer({
   // Enable apply button when any selection differs from applied state
   useEffect(() => {
     const cardsChanged = showCardFilter
-      ? JSON.stringify(appliedCards) !== JSON.stringify(selectedCards)
+      ? JSON.stringify(appliedCards) !== JSON.stringify(selectedCards) ||
+        JSON.stringify(appliedSupportIds) !== JSON.stringify(selectedSupportIds)
       : false;
     const cardFilterModeChanged =
       appliedIncludeCardFilterMode !== selectedIncludeCardFilterMode;
@@ -163,11 +185,13 @@ export function FilterContainer({
     appliedEndDate,
     appliedGameModes,
     appliedCards,
+    appliedSupportIds,
     appliedIncludeCardFilterMode,
     selectedStartDate,
     selectedEndDate,
     selectedGameModes,
     selectedCards,
+    selectedSupportIds,
     selectedIncludeCardFilterMode,
     showCardFilter,
   ]);
@@ -179,6 +203,7 @@ export function FilterContainer({
       endDate: selectedEndDate,
       gameModes: selectedGameModes,
       cards: showCardFilter ? selectedCards : [], // Only include cards if card filter is enabled
+      supportIds: showCardFilter ? selectedSupportIds : [],
       includeCardFilterMode: selectedIncludeCardFilterMode,
       timespanOption: selectedTimespanOption,
     };
@@ -189,6 +214,7 @@ export function FilterContainer({
     setAppliedIncludeCardFilterMode(selectedIncludeCardFilterMode);
     if (showCardFilter) {
       setAppliedCards(selectedCards);
+      setAppliedSupportIds(selectedSupportIds);
     }
 
     // Save the current state of the filter to the local Storage
@@ -208,6 +234,7 @@ export function FilterContainer({
     setSelectedIncludeCardFilterMode(defaultFilters.includeCardFilterMode);
     if (showCardFilter) {
       setSelectedCards(defaultFilters.cards);
+      setSelectedSupportIds(defaultFilters.supportIds);
     }
   };
 
@@ -232,6 +259,9 @@ export function FilterContainer({
           cards={cards}
           selected={selectedCards}
           onCardsChange={setSelectedCards}
+          selectedSupportIds={selectedSupportIds}
+          onSupportIdsChange={setSelectedSupportIds}
+          showNoSupportOption={showNoSupportOption}
           includeCardFilterMode={selectedIncludeCardFilterMode}
           onCardFilterModeChange={setSelectedIncludeCardFilterMode}
         />

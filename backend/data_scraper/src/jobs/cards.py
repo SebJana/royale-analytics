@@ -19,6 +19,7 @@ from card_images import (
     build_image_set,
     load_image_set,
     prune_image_sets,
+    usable_support_items,
 )
 from clash_royale_api import ClashRoyaleAPI
 from mongo import MongoConn, get_cards, save_cards
@@ -36,7 +37,9 @@ def is_valid_card_list(cards) -> bool:
 
     Returns:
         bool: True for {"items": [...]} with at least one card that has an id
-            and a name. The frontend reads exactly these fields.
+            and a name. The frontend reads exactly these fields. The tower
+            troops in supportItems are optional, so a gap there never holds
+            back the regular cards.
     """
 
     if not isinstance(cards, dict):
@@ -84,6 +87,9 @@ async def refresh_cards(
     # the last good list and count as fresh for a full refresh interval.
     if not is_valid_card_list(cards):
         raise ValueError("Card list response has an unexpected shape")
+    # Stored and served cleaned up, so readers can rely on a list of entries
+    # with an id and a name
+    cards["supportItems"] = usable_support_items(cards)
 
     if not stored or not stored.get("payload"):
         # Until a list is stored the API answers /cards with 503. Mirroring

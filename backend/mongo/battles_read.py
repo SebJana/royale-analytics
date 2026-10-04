@@ -3,7 +3,7 @@ from .validation_utils import ensure_connected, check_valid_date_range
 from .query_utils import (
     match_tag_before_datetime_stage,
     match_tag_date_mode_range_stage,
-    extract_deck_cards_stage,
+    extract_deck_stage,
 )
 from datetime import datetime, date
 from typing import Optional, Iterable
@@ -170,41 +170,79 @@ async def get_decks_win_percentage(
             match_tag_date_mode_range_stage(
                 player_tag, start_date, end_date, game_modes, timezone
             ),
-            extract_deck_cards_stage(player_tag),
-            # Remove level field from deck cards
-            {
-                "$addFields": {
-                    "deckCardsNormalized": {
-                        "$map": {
-                            "input": "$deckCards",
-                            "as": "card",
-                            "in": {
-                                "id": "$$card.id",
-                                "name": "$$card.name",
-                                "evolutionLevel": "$$card.evolutionLevel",
-                            },
-                        }
-                    }
-                }
-            },
-            # Sort the decks by card properties - evolution level first, then id
+            extract_deck_stage(player_tag),
+            # Drop card levels and sort the cards (evolution level first, then
+            # id) and the tower troops (by id), so neither order nor levels
+            # split a deck
             {
                 "$addFields": {
                     "deckSorted": {
                         "$sortArray": {
-                            "input": "$deckCardsNormalized",
+                            "input": {
+                                "$map": {
+                                    "input": "$deck.cards",
+                                    "as": "card",
+                                    "in": {
+                                        "id": "$$card.id",
+                                        "name": "$$card.name",
+                                        "evolutionLevel": "$$card.evolutionLevel",
+                                    },
+                                }
+                            },
                             "sortBy": {"evolutionLevel": -1, "id": 1},
                         }
-                    }
+                    },
+                    "supportSorted": {
+                        "$sortArray": {"input": "$deck.support", "sortBy": {"id": 1}}
+                    },
                 }
             },
             # Group by decks and get metadata
+            # TODO Smoke test the deck output size with many battles once decks
+            # are split by tower troop. All decks of the range end up in one
+            # unpaginated array of about 700 bytes per deck, which hits the
+            # 16 MiB result limit at about 22-25k distinct decks. allowDiskUse
+            # does not lift that. The frontend's persisted localStorage cache
+            # (about 5 MB) fails much earlier, at about 5-7k decks. Players of
+            # draft or event modes get a new deck nearly every battle. Test
+            # with the heaviest player and a synthetic one with ~25k unique
+            # decks. If the limit is hit, consider a paginated approach with a $group
+            # stage that outputs a single document per deck, and a $sort stage
+            # that sorts by count and lastSeen, then a $skip/$limit stage to
+            # paginate the results. The frontend can then fetch the next page.
             {
                 "$facet": {
                     "decks": [
                         {
                             "$group": {
-                                "_id": "$deckSorted",
+                                # A deck is its cards and its tower troop.
+                                # Names stay out of the key, so a renamed card
+                                # does not split a deck. A card without an id
+                                # falls back to its name.
+                                "_id": {
+                                    "cards": {
+                                        "$map": {
+                                            "input": "$deckSorted",
+                                            "as": "c",
+                                            "in": {
+                                                "id": {
+                                                    "$ifNull": ["$$c.id", "$$c.name"]
+                                                },
+                                                "evolutionLevel": "$$c.evolutionLevel",
+                                            },
+                                        }
+                                    },
+                                    "support": {
+                                        "$map": {
+                                            "input": "$supportSorted",
+                                            "as": "s",
+                                            "in": {"$ifNull": ["$$s.id", "$$s.name"]},
+                                        }
+                                    },
+                                },
+                                # Names for display
+                                "deck": {"$first": "$deckSorted"},
+                                "support": {"$first": "$supportSorted"},
                                 "count": {"$sum": 1},
                                 "wins": {
                                     "$sum": {
@@ -224,7 +262,8 @@ async def get_decks_win_percentage(
                         {
                             "$project": {
                                 "_id": 0,
-                                "deck": "$_id",  # array of {id, name} for every card
+                                "deck": 1,  # array of {id, name, evolutionLevel} for every card
+                                "support": 1,  # array of {id, name}, [] if unknown
                                 "count": 1,
                                 "wins": 1,
                                 "winRate": {
@@ -304,17 +343,17 @@ async def get_cards_win_percentage(
             match_tag_date_mode_range_stage(
                 player_tag, start_date, end_date, game_modes, timezone
             ),
-            extract_deck_cards_stage(player_tag),
+            extract_deck_stage(player_tag),
             {
                 "$facet": {
                     "cards": [
-                        {"$unwind": "$deckCards"},
+                        {"$unwind": "$deck.cards"},
                         {
                             "$group": {
                                 "_id": {
-                                    "id": "$deckCards.id",
-                                    "name": "$deckCards.name",
-                                    "evolutionLevel": "$deckCards.evolutionLevel",
+                                    "id": "$deck.cards.id",
+                                    "name": "$deck.cards.name",
+                                    "evolutionLevel": "$deck.cards.evolutionLevel",
                                 },
                                 "usage": {"$sum": 1},  # Usage in battle
                                 "wins": {
@@ -350,6 +389,61 @@ async def get_cards_win_percentage(
                         },
                         {"$sort": {"usage": -1}},
                     ],
+                    # Tower troops, counted separately so they do not change
+                    # the regular card statistics. A battle without tower data
+                    # counts as None (id 0), which keeps the usage rates of all
+                    # towers adding up to 100%.
+                    "supportCards": [
+                        {
+                            "$unwind": {
+                                "path": "$deck.support",
+                                "preserveNullAndEmptyArrays": True,
+                            }
+                        },
+                        {
+                            "$group": {
+                                # By id only, so a renamed tower does not
+                                # split into two rows
+                                "_id": {"$ifNull": ["$deck.support.id", 0]},
+                                "name": {
+                                    "$first": {
+                                        "$ifNull": ["$deck.support.name", "None"]
+                                    }
+                                },
+                                "usage": {"$sum": 1},
+                                "wins": {
+                                    "$sum": {
+                                        "$cond": [
+                                            {"$eq": ["$gameResult", "Victory"]},
+                                            1,
+                                            0,
+                                        ]
+                                    }
+                                },
+                            }
+                        },
+                        {
+                            "$project": {
+                                "_id": 0,
+                                "card": {"id": "$_id", "name": "$name"},
+                                "usage": 1,
+                                "wins": 1,
+                                "winRate": {
+                                    "$cond": [
+                                        {"$eq": ["$usage", 0]},
+                                        0,
+                                        {
+                                            "$multiply": [
+                                                {"$divide": ["$wins", "$usage"]},
+                                                100,
+                                            ]
+                                        },
+                                    ]
+                                },
+                            }
+                        },
+                        {"$sort": {"usage": -1}},
+                    ],
                     "meta": [{"$count": "totalBattles"}],
                 }
             },
@@ -358,14 +452,20 @@ async def get_cards_win_percentage(
                     "totalBattles": {"$ifNull": [{"$first": "$meta.totalBattles"}, 0]}
                 }
             },
-            {"$project": {"totalBattles": 1, "cards": "$cards"}},
+            {
+                "$project": {
+                    "totalBattles": 1,
+                    "cards": "$cards",
+                    "supportCards": "$supportCards",
+                }
+            },
         ]
 
         res = await conn.db.battles.aggregate(pipeline, allowDiskUse=True).to_list(
             length=1
         )
         if not res:
-            return {"cards": [], "totalBattles": 0}
+            return {"cards": [], "supportCards": [], "totalBattles": 0}
 
         return res[0]
 

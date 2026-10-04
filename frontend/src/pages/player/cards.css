@@ -73,6 +73,26 @@
   margin-top: var(--spacing-xl);
 }
 
+.cards-tower-section {
+  margin-top: var(--spacing-2xl);
+  padding-top: var(--spacing-xl);
+  border-top: 1px solid var(--border-light);
+}
+
+.cards-section-title {
+  margin: 0;
+  text-align: left;
+}
+
+/* None tile of the tower section: an empty, greyed card slot */
+.card-item-none {
+  display: block;
+  width: 100%;
+  height: auto;
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
 .card-item {
   background-color: var(--bg-overlay-light);
   border-radius: var(--radius-lg);

@@ -143,6 +143,43 @@ def image_file_name(card_id, key: str) -> str | None:
     return f"{int(card_id)}-{key}.webp"
 
 
+def usable_support_items(cards: dict) -> list[dict]:
+    """List the usable tower troops of a card list.
+
+    Tower troops come in supportItems next to items. supportItems is optional:
+    a missing or malformed field gives an empty list, and an entry without an
+    id or name is left out, so a gap there never blocks the regular cards.
+
+    Args:
+        cards (dict): Validated response of the Clash Royale /cards endpoint.
+
+    Returns:
+        list[dict]: The supportItems entries with an id and a name.
+    """
+
+    support = cards.get("supportItems")
+    if not isinstance(support, list):
+        return []
+    return [
+        entry
+        for entry in support
+        if isinstance(entry, dict) and entry.get("id") is not None and entry.get("name")
+    ]
+
+
+def catalog_entries(cards: dict) -> list[dict]:
+    """List the regular cards and the tower troops of a card list.
+
+    Args:
+        cards (dict): Validated response of the Clash Royale /cards endpoint.
+
+    Returns:
+        list[dict]: The items entries followed by the usable supportItems entries.
+    """
+
+    return cards["items"] + usable_support_items(cards)
+
+
 def wanted_images(cards: dict) -> dict[str, str]:
     """Map every image file of a card list to its CDN source.
 
@@ -156,7 +193,7 @@ def wanted_images(cards: dict) -> dict[str, str]:
     """
 
     wanted = {}
-    for card in cards["items"]:
+    for card in catalog_entries(cards):
         icon_urls = card.get("iconUrls") or {}
         for key, source in icon_urls.items():
             if not isinstance(source, str) or not source:
@@ -527,7 +564,7 @@ def attach_image_urls(cards: dict, image_set: ImageSet | None) -> dict:
     if image_set is None:
         return served
     prefix = f"{settings.CARD_IMAGES_URL_PREFIX}/{image_set.version}"
-    for card in served["items"]:
+    for card in catalog_entries(served):
         icon_urls = card.get("iconUrls") or {}
         image_urls = {}
         for key, source in icon_urls.items():

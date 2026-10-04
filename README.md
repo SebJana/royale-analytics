@@ -171,6 +171,34 @@ at `/card-images/<version>/<cardId>[-<variant>].webp`. Details are in
 - **Single scraper.** Run one data scraper process. The card loop is the only
   writer of the image volume and of the cached card list and has no leader
   election (see the NOTE in `backend/data_scraper/src/main.py`).
+- **Tower troops.** The card list's `supportItems` (tower troops) are
+  mirrored like the regular `items`. The frontend merges both into one list,
+  tagged by `category`.
+
+### Tower troops
+
+A deck is its eight cards plus its tower troop (`supportCards` in the battle
+log). The same cards with a different tower are a different deck in the deck
+statistics; card levels and card order never split a deck. Deck statistics
+and filters use the tracked player's own tower, never a teammate's.
+
+- **None.** Every battle should have a tower. A battle without tower data
+  (absent, null, or empty `supportCards`) falls into the "None" category
+  instead of being shown as Tower Princess. The card filter and the Cards page
+  only show None when such battles exist.
+- **Card filter.** Tower troops have their own row in the card filter. In
+  Include mode one tower can be selected, and a deck has to contain it next to
+  all selected cards. In Match mode any number can be selected; together they
+  count as one match term, met when the deck's tower is one of them.
+- **Usage rate.** As with card filters, a deck's usage rate is its share of
+  the battles of all decks currently shown, after card and tower filters. The
+  shown decks always add up to 100%.
+- **Copy link.** The game needs a tower in a copied deck, so a deck without
+  tower data copies with Tower Princess, the default tower.
+- **Statistics.** The Cards page lists tower usage and win rates in a separate
+  section. Battle history shows every player's tower, with its level, without
+  a tower filter. Towers sit on the outside of each deck: left for the
+  player's own decks, right for opponents.
 
 ### 3. Restoring Data
 

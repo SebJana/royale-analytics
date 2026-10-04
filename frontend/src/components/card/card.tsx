@@ -5,6 +5,7 @@ import {
   getCardVariantName,
   getCardVariantLabel,
   getCardIconSources,
+  isSupportCard,
 } from "../../utils/getCardMetaFields";
 import { getCardOutline, hasCardOutline } from "../../utils/color";
 import { useRefreshCards } from "../../hooks/useCards";
@@ -15,11 +16,17 @@ export const CardComponent = memo(function CardComponent({
   cards,
   showTooltip = true,
   matched = false,
+  showLevelLabel = true,
+  isSupport = false,
 }: Readonly<{
   card: Card;
   cards: CardMeta[];
   showTooltip?: boolean;
   matched?: boolean;
+  // false moves the level into the tooltip, e.g. for the small tower slot
+  showLevelLabel?: boolean;
+  // A tower troop by the battle data, also while the card list lacks it
+  isSupport?: boolean;
 }>) {
   const evoLvl = card.evolutionLevel ?? 0; // If it's not an evolution, the evolutionLevel field is missing
   // Metadata from the official card list. Event cards (e.g. Super Lava Hound)
@@ -114,13 +121,19 @@ export const CardComponent = memo(function CardComponent({
           title={
             <div className="card-component-tooltip">
               <strong>{name}</strong>
-              {meta ? (
-                <>
-                  <span>{meta.elixirCost} Elixir</span>
-                  <span>{rarityLabel}</span>
-                </>
+              {isSupport || (meta && isSupportCard(meta)) ? (
+                <span>Tower Troop</span>
               ) : (
-                cards.length > 0 && <span>Not in the official card list</span>
+                meta?.elixirCost != null && (
+                  <span>{meta.elixirCost} Elixir</span>
+                )
+              )}
+              {rarityLabel && <span>{rarityLabel}</span>}
+              {!showLevelLabel && card.level != null && (
+                <span>Level {card.level}</span>
+              )}
+              {!meta && cards.length > 0 && (
+                <span>Not in the official card list</span>
               )}
               {matched && <span>Matches card filter</span>}
             </div>
@@ -133,7 +146,7 @@ export const CardComponent = memo(function CardComponent({
       )}
 
       {/* Only show level label if it exists (Battle page, not for Decks/Cards page) */}
-      {card?.level != null && (
+      {showLevelLabel && card?.level != null && (
         <p className="card-component-level-label">Level {card.level}</p>
       )}
     </div>

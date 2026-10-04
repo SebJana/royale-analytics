@@ -272,6 +272,10 @@ def extract_duel_battles(battle):
         team0["kingTowerHitPoints"] = team.get("kingTowerHitPoints")
         team0["princessTowersHitPoints"] = team.get("princessTowersHitPoints")
         team0["elixirLeaked"] = team.get("elixirLeaked")
+        # A round's own tower troop, if the log has one per round, even an
+        # empty one (None). Only an absent field keeps the duel-level tower.
+        if "supportCards" in team:
+            team0["supportCards"] = team["supportCards"]
         team0.pop("rounds")  # Remove the rounds list from the current battle
 
         # OPPONENT per-round
@@ -280,6 +284,8 @@ def extract_duel_battles(battle):
         opp0["kingTowerHitPoints"] = opp.get("kingTowerHitPoints")
         opp0["princessTowersHitPoints"] = opp.get("princessTowersHitPoints")
         opp0["elixirLeaked"] = opp.get("elixirLeaked")
+        if "supportCards" in opp:
+            opp0["supportCards"] = opp["supportCards"]
         opp0.pop("rounds")  # Remove the rounds list from the current battle
 
         battle_time_str = current_battle.get("battleTime")

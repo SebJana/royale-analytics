@@ -1,6 +1,13 @@
 import { memo } from "react";
 import { CardComponent } from "../card/card";
-import { getCardElixirCost } from "../../utils/getCardMetaFields";
+import {
+  getCardElixirCost,
+  getSupportId,
+  hasKnownElixirCost,
+  MIRROR_ID,
+  NO_SUPPORT_ID,
+  TOWER_PRINCESS_ID,
+} from "../../utils/getCardMetaFields";
 import type { Card, CardMeta } from "../../types/cards";
 import { round } from "../../utils/number";
 import { Copy } from "lucide-react";
@@ -33,7 +40,8 @@ function calcAverageElixirCost(deck: Card[], cards: CardMeta[]): number {
 /**
  * Calculates the 4 card cycle elixir cost of a given deck.
  * Effectively sums the elixir cost of the cheapest 4 cards in the deck, meaning
- * the fastest way to get a certain card back into rotation.
+ * the fastest way to get a certain card back into rotation. Mirror costs the
+ * average of the three cheapest other cards +1 here (see MIRROR_ID).
  *
  * @param deck - The list of cards in the deck (each card has an `id`).
  * @param cards - Metadata containing card details including elixir costs.
@@ -46,11 +54,22 @@ function calculateFourCardCycle(deck: Card[], cards: CardMeta[]): number {
   if (numberOfCards !== 8) {
     return 0;
   }
-  const elixirAmount = [];
-  for (const card of deck) {
-    elixirAmount.push(getCardElixirCost(card.id, cards));
+  const elixirAmount = deck
+    .filter((card) => card.id !== MIRROR_ID)
+    .map((card) => getCardElixirCost(card.id, cards))
+    .sort((a, b) => a - b); // Sort elixir amounts ascending
+  // Mirror replays the previous card for +1 elixir. In a cycle it copies one
+  // of the cheap cards, so it costs the average of the three cheapest other
+  // cards +1. It only counts if that is among the four cheapest.
+  if (deck.some((card) => card.id === MIRROR_ID)) {
+    const cheapestThree = elixirAmount.slice(0, 3);
+    const mirrorCost =
+      cheapestThree.reduce((sum, cost) => sum + cost, 0) /
+        cheapestThree.length +
+      1;
+    elixirAmount.push(mirrorCost);
+    elixirAmount.sort((a, b) => a - b);
   }
-  elixirAmount.sort((a, b) => a - b); // Sort elixir amounts ascending
 
   let fourCardCycle = 0;
   for (let i = 0; i < 4; i++) {
@@ -64,10 +83,11 @@ function calculateFourCardCycle(deck: Card[], cards: CardMeta[]): number {
  * Builds a Clash Royale deck share link.
  *
  * @param deck - The list of cards in the deck (each card has an `id`).
+ * @param supportId - Tower troop id of the deck, NO_SUPPORT_ID if unknown.
  * @returns Deck copy link with card IDs and required query params.
  *
  */
-function generateCopyLink(deck: Card[]): string {
+function generateCopyLink(deck: Card[], supportId: number): string {
   const baseURL =
     "https://link.clashroyale.com/en/?clashroyale://copyDeck?deck=";
   let queryParam = baseURL;
@@ -79,22 +99,89 @@ function generateCopyLink(deck: Card[]): string {
   queryParam = queryParam.slice(0, -1);
   // Add necessary fields for the link
   const context = "&l=Royals";
-  const timeToken = "&tt=159000000";
-  const fullQueryParam = queryParam + context + timeToken;
+  // Tower troop of the deck. The game needs one, so a deck without tower data
+  // copies with Tower Princess, the default tower.
+  const towerTroop = `&tt=${supportId === NO_SUPPORT_ID ? TOWER_PRINCESS_ID : supportId}`;
+  const fullQueryParam = queryParam + context + towerTroop;
 
   return fullQueryParam;
 }
 
+/**
+ * Small tower troop slot next to the card rows. Deliberately smaller than the
+ * cards: the tower is an attribute of the deck, not a ninth card.
+ */
+function SupportSlot({
+  support,
+  cards,
+  matchedSupportIds,
+}: Readonly<{
+  support: Card[];
+  cards: CardMeta[];
+  matchedSupportIds?: number[];
+}>) {
+  const supportId = getSupportId(support);
+  const matched = matchedSupportIds?.includes(supportId) ?? false;
+
+  return (
+    <div className="deck-component-support">
+      {support.length === 0 ? (
+        // Every battle should have a tower. This only shows for battles
+        // without tower data, never as Tower Princess.
+        <div
+          className={`deck-component-support-empty${matched ? " is-matched" : ""}`}
+          title="No tower troop recorded for this battle"
+        >
+          <div className="deck-component-empty-card">
+            <img src={rareOutlineImg} alt="No tower troop" />
+          </div>
+        </div>
+      ) : (
+        support.map((s) => (
+          <CardComponent
+            key={s.id}
+            card={s}
+            cards={cards}
+            matched={matched}
+            isSupport
+            // The full "Level 16" label is too wide for the slot. The short
+            // caption below shows it; the tooltip names it in full.
+            showLevelLabel={false}
+          />
+        ))
+      )}
+      {support.length > 0 && support[0].level != null ? (
+        // Battles carry the tower's level, deck statistics do not. Styled
+        // like the cards' "Level 16" labels, shortened to fit the slot.
+        <span className="deck-component-support-label is-level">
+          Lvl {support[0].level}
+        </span>
+      ) : (
+        <span className="deck-component-support-label">
+          {support.length === 0 ? "None" : "Tower"}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export const DeckComponent = memo(function DeckComponent({
   deck,
+  support,
   cards,
   elixirLeaked,
   matchedCards,
+  matchedSupportIds,
+  supportSide = "right",
 }: Readonly<{
   deck: Card[];
+  support: Card[]; // Tower troop, empty if the battle has no tower data
   cards: CardMeta[];
   elixirLeaked?: number; // Optional parameter, so that it can be used in battle display but also for deck statistics
   matchedCards?: Card[];
+  matchedSupportIds?: number[]; // Tower troops selected in the card filter
+  // Side of the tower troop slot. Battles put it on the outside of each deck.
+  supportSide?: "left" | "right";
 }>) {
   const cardsPerRow = 4;
   const rows: React.ReactElement[] = [];
@@ -127,45 +214,56 @@ export const DeckComponent = memo(function DeckComponent({
   const roundedFourCardCycle = round(fourCardCycle, 2);
 
   // Event cards are not in the official card list, so their cost is unknown,
-  // as is every cost while the list loads. Counting those as 0 elixir would
-  // show a wrong average as if it were right.
-  const costsKnown = deck.every((card) => cards.some((c) => c.id === card.id));
+  // as is every cost while the list loads or when the list has no cost for a
+  // card. Counting those as 0 elixir would show a wrong average as if it were
+  // right. Mirror has no listed cost but counts as 1.5, as in the game (see
+  // MIRROR_ID).
+  const costsKnown = deck.every((card) => hasKnownElixirCost(card.id, cards));
   const unknownCostTitle =
     !costsKnown && cards.length > 0
-      ? "Includes a card outside the official card list, whose elixir cost is unknown"
+      ? "Includes a card whose elixir cost is unknown, e.g. one outside the official card list"
       : undefined;
 
   // Works for both mobile and desktop because the Clash Royale Website handles
   // showing a qr code (desktop) and a copy link (mobile)
   const handleCopy = () => {
-    window.open(generateCopyLink(deck), "_blank");
+    window.open(generateCopyLink(deck, getSupportId(support)), "_blank");
   };
 
   return (
     <>
       {/* TODO (potentially) add max deck row width/height*/}
-      <div>
-        {deck.length === 0 ? (
-          <div className="deck-component-empty-state">
-            {/* Keep the usual two rows of four, even when a mode has no cards. */}
-            {Array.from({ length: 2 }, (_, rowIndex) => (
-              <div
-                key={rowIndex}
-                className="deck-component-deck-row deck-component-empty-row"
-                aria-hidden="true"
-              >
-                {Array.from({ length: cardsPerRow }, (_, index) => (
-                  <div key={index} className="deck-component-empty-card">
-                    <img src={rareOutlineImg} alt="" />
-                  </div>
-                ))}
-              </div>
-            ))}
-            <span>No cards in this deck</span>
-          </div>
-        ) : (
-          rows
-        )}
+      <div
+        className={`deck-component-body${supportSide === "left" ? " support-left" : ""}`}
+      >
+        <div className="deck-component-cards">
+          {deck.length === 0 ? (
+            <div className="deck-component-empty-state">
+              {/* Keep the usual two rows of four, even when a mode has no cards. */}
+              {Array.from({ length: 2 }, (_, rowIndex) => (
+                <div
+                  key={rowIndex}
+                  className="deck-component-deck-row deck-component-empty-row"
+                  aria-hidden="true"
+                >
+                  {Array.from({ length: cardsPerRow }, (_, index) => (
+                    <div key={index} className="deck-component-empty-card">
+                      <img src={rareOutlineImg} alt="" />
+                    </div>
+                  ))}
+                </div>
+              ))}
+              <span>No cards in this deck</span>
+            </div>
+          ) : (
+            rows
+          )}
+        </div>
+        <SupportSlot
+          support={support}
+          cards={cards}
+          matchedSupportIds={matchedSupportIds}
+        />
       </div>
       {/* TODO add elixir droplet icon to value*/}
       <div className="deck-component-footer">

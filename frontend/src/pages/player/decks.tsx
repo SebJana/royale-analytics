@@ -30,6 +30,7 @@ import type { FilterState } from "../../components/filterContainer/filterContain
 import { SortByContainer } from "../../components/sortByContainer/sortByContainer";
 import type { Card, CardMeta } from "../../types/cards";
 import type { Deck } from "../../types/deckStats";
+import { getSupportId, NO_SUPPORT_ID } from "../../utils/getCardMetaFields";
 import "./decks.css";
 
 // Helper type to rate/score the decks when using the card filter match mode
@@ -102,6 +103,7 @@ function VirtualDeckList({
   totalBattles,
   showMatch,
   matchedCards,
+  matchedSupportIds,
   scrollingToTopRef,
 }: Readonly<{
   decks: (Deck | DeckWithMatchScore)[];
@@ -109,6 +111,7 @@ function VirtualDeckList({
   totalBattles: number;
   showMatch: boolean;
   matchedCards: Card[];
+  matchedSupportIds: number[];
   scrollingToTopRef: RefObject<boolean>;
 }>) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -214,8 +217,13 @@ function VirtualDeckList({
               )}
               <DeckComponent
                 deck={d.deck}
+                support={d.support}
+                // The player's own decks, so the tower sits on the left like
+                // on the player's side of a battle
+                supportSide="left"
                 cards={cards}
                 matchedCards={showMatch ? matchedCards : undefined}
+                matchedSupportIds={showMatch ? matchedSupportIds : undefined}
               />
             </div>
             <div className="deck-stats-container">
@@ -386,18 +394,34 @@ export default function PlayerDecks() {
     );
   };
 
+  // A deck has one tower troop, so the tower selection is any-of: the deck's
+  // tower has to be one of the selected ones. No selection accepts any tower.
+  const deckMatchesSupport = (deck: Deck) =>
+    appliedFilters.supportIds.length === 0 ||
+    appliedFilters.supportIds.includes(getSupportId(deck.support));
+
+  // Every selected card is one match term, and the tower selection adds one
+  // more. More selected towers widen that term instead of adding terms, so
+  // they never lower a deck's score.
+  const matchTermCount =
+    appliedFilters.cards.length +
+    (appliedFilters.supportIds.length > 0 ? 1 : 0);
+
   // Helper function to calculate match percentage for a deck
   const calculateMatchPercentage = (deck: Deck) => {
     const matchingCards = calculateMatchCount(deck);
-    return (matchingCards / appliedFilters.cards.length) * 100;
+    return (matchingCards / matchTermCount) * 100;
   };
 
-  // Helper function to calculate amount of matched cards for a deck
+  // Helper function to calculate amount of matched terms (cards and the
+  // tower troop) for a deck
   const calculateMatchCount = (deck: Deck) => {
     const matchingCards = appliedFilters.cards.filter((appliedCard) =>
       deckContainsCard(deck, appliedCard),
     );
-    return matchingCards.length;
+    const matchingSupport =
+      appliedFilters.supportIds.length > 0 && deckMatchesSupport(deck) ? 1 : 0;
+    return matchingCards.length + matchingSupport;
   };
 
   // Helper function to sort decks based on selected sort option
@@ -436,16 +460,16 @@ export default function PlayerDecks() {
     });
   };
 
-  // Filter and sort decks based on applied cards with two modes:
-  // 1) Include mode: decks HAVE to include ALL selected cards
+  // Filter and sort decks based on applied cards and tower troops with two modes:
+  // 1) Include mode: decks HAVE to include ALL selected cards and the selected tower
   // 2) Match mode: decks are scored by percentage of selected cards they contain and sorted by match percentage
   const filteredDecks = (() => {
     if (!deckStats?.deck_statistics.decks) return [];
 
     const allDecks = deckStats.deck_statistics.decks;
 
-    // If no cards are applied as filters, show all decks with sorting applied
-    if (!appliedFilters.cards || appliedFilters.cards.length === 0) {
+    // If no cards or towers are applied as filters, show all decks with sorting applied
+    if (matchTermCount === 0) {
       // Apply user-selected sorting to all available decks
       return sortDecks(allDecks);
     }
@@ -458,8 +482,11 @@ export default function PlayerDecks() {
       // since it scores every deck anyway.
       // Include mode: deck must contain ALL selected cards (strict filtering)
       const filteredDecks = allDecks.filter((deck) => {
-        return appliedFilters.cards.every((appliedCard) =>
-          deckContainsCard(deck, appliedCard),
+        return (
+          deckMatchesSupport(deck) &&
+          appliedFilters.cards.every((appliedCard) =>
+            deckContainsCard(deck, appliedCard),
+          )
         );
       });
 
@@ -484,6 +511,13 @@ export default function PlayerDecks() {
     }
     // Either return the Deck (include mode) or the Deck and its score (match mode)
   })() as (Deck | DeckWithMatchScore)[];
+
+  // Battles without tower data form the None category. Every battle should
+  // have a tower, so the filter only offers None when such decks exist.
+  const hasNoSupportDecks =
+    deckStats?.deck_statistics.decks.some(
+      (deck) => getSupportId(deck.support) === NO_SUPPORT_ID,
+    ) ?? false;
 
   // Use the modes actually sent to the API for the loading state dependency.
   const modesKey = queryGameModes?.join("|") ?? "";
@@ -549,6 +583,7 @@ export default function PlayerDecks() {
               gameModesLoading={gameModesLoading}
               onFiltersApply={handleFiltersApply}
               showCardFilter={true}
+              showNoSupportOption={hasNoSupportDecks}
               appliedFilters={appliedFilters}
               initialFilters={getCurrentFilterState()}
             />
@@ -559,8 +594,7 @@ export default function PlayerDecks() {
               ascending={sortAscending}
               // Only enable deck sorting in Include mode (when cards are filtered/selected with include mode)
               disableSort={
-                appliedFilters.cards.length > 0 &&
-                !appliedFilters.includeCardFilterMode
+                matchTermCount > 0 && !appliedFilters.includeCardFilterMode
               }
               onSelectedOptionChange={handleSortChange}
             />
@@ -592,10 +626,10 @@ export default function PlayerDecks() {
                   cards={cards ?? []}
                   totalBattles={totalBattles}
                   matchedCards={appliedFilters.cards}
+                  matchedSupportIds={appliedFilters.supportIds}
                   scrollingToTopRef={scrollingToTopRef}
                   showMatch={
-                    !appliedFilters.includeCardFilterMode &&
-                    appliedFilters.cards.length > 0
+                    !appliedFilters.includeCardFilterMode && matchTermCount > 0
                   }
                 />
               </div>

@@ -120,6 +120,51 @@
   background-color: rgba(52, 152, 219, 0.15);
 }
 
+/* Tower troops get their own row under the regular cards. */
+.card-filter-tower-row {
+  grid-column: 1 / -1;
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-light);
+}
+
+.card-filter-tower-title {
+  display: block;
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.card-filter-tower-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 70px);
+  gap: 0.1rem;
+  justify-content: center;
+}
+
+/* None: an empty, greyed card slot with its label on top */
+.card-filter-none-item img {
+  display: block;
+  width: 100%;
+  height: auto;
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+.card-filter-none-item span {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
 .card-filter-component-actions {
   grid-column: 1 / -1;
   display: flex;

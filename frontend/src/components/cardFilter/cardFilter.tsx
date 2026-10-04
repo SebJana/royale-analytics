@@ -3,7 +3,12 @@ import type { Card, CardMeta } from "../../types/cards";
 import { CardComponent } from "../card/card";
 import { ChevronUp } from "lucide-react";
 import { FilterSearch } from "../filterSearch/filterSearch";
-import { getCardVariantName } from "../../utils/getCardMetaFields";
+import {
+  getCardVariantName,
+  isSupportCard,
+  NO_SUPPORT_ID,
+} from "../../utils/getCardMetaFields";
+import rareOutlineImg from "../../assets/cards/rareOutline.png";
 import "./cardFilter.css";
 
 /**
@@ -25,7 +30,7 @@ function sortCards(cards: CardMeta[]): CardMeta[] {
     if (rarityDiff !== 0) return rarityDiff;
 
     // 2. Within same rarity, compare (sort by) elixirCost
-    return a.elixirCost - b.elixirCost; // ascending
+    return (a.elixirCost ?? 0) - (b.elixirCost ?? 0); // ascending
   });
 }
 
@@ -98,21 +103,46 @@ function createCardList(cards: CardMeta[]): Card[] {
   return cardList;
 }
 
+/**
+ * Sorts tower troops by rarity, then name. They cost no elixir, so the
+ * regular card sort does not apply.
+ * @param towers - Tower troop metadata to sort
+ * @returns Sorted array of tower troop metadata
+ */
+function sortTowers(towers: CardMeta[]): CardMeta[] {
+  const rarityOrder = ["common", "rare", "epic", "legendary", "champion"];
+  const rarityMap = new Map(rarityOrder.map((r, i) => [r, i]));
+  return [...towers].sort(
+    (a, b) =>
+      (rarityMap.get(a.rarity) ?? Infinity) -
+        (rarityMap.get(b.rarity) ?? Infinity) || a.name.localeCompare(b.name),
+  );
+}
+
 export function CardFilter({
   cards,
   selected,
   onCardsChange,
+  selectedSupportIds,
+  onSupportIdsChange,
+  showNoSupportOption = false,
   includeCardFilterMode,
   onCardFilterModeChange,
 }: Readonly<{
   cards: CardMeta[];
   selected: Card[];
   onCardsChange: (next: Card[]) => void; // emit cards
+  selectedSupportIds: number[]; // Tower troops, NO_SUPPORT_ID for None
+  onSupportIdsChange: (next: number[]) => void;
+  // Offer None, for decks of battles without tower data. Every battle should
+  // have a tower, so the page only sets this when such decks exist.
+  showNoSupportOption?: boolean;
   includeCardFilterMode?: boolean; // Optional prop to control filter mode
   onCardFilterModeChange?: (next: boolean) => void;
 }>) {
-  const sortedCards = sortCards(cards);
+  const sortedCards = sortCards(cards.filter((c) => !isSupportCard(c)));
   const cardOptions = createCardList(sortedCards);
+  const towerOptions = sortTowers(cards.filter(isSupportCard));
 
   const [isExpanded, setIsExpanded] = useState(false); // init with hidden option
   const [searchTerm, setSearchTerm] = useState("");
@@ -122,6 +152,15 @@ export function CardFilter({
         card.name.toLocaleLowerCase().includes(normalizedSearch),
       )
     : cardOptions;
+  const filteredTowerOptions = normalizedSearch
+    ? towerOptions.filter((tower) =>
+        tower.name.toLocaleLowerCase().includes(normalizedSearch),
+      )
+    : towerOptions;
+  // Also offered while selected, so a restored selection can be undone
+  const showNoSupport =
+    (showNoSupportOption || selectedSupportIds.includes(NO_SUPPORT_ID)) &&
+    (!normalizedSearch || "none".includes(normalizedSearch));
 
   // Keep track of the selected matching mode
   const [localFilterMode, setLocalFilterMode] = useState(
@@ -139,6 +178,22 @@ export function CardFilter({
     setLocalFilterMode(newMode);
     if (onCardFilterModeChange) {
       onCardFilterModeChange(newMode);
+    }
+    // A deck has one tower, so Include mode allows one. Keep the most
+    // recently selected.
+    if (newMode && selectedSupportIds.length > 1) {
+      onSupportIdsChange(selectedSupportIds.slice(-1));
+    }
+  };
+
+  const toggleSupport = (id: number) => {
+    if (selectedSupportIds.includes(id)) {
+      onSupportIdsChange(selectedSupportIds.filter((s) => s !== id));
+    } else if (localFilterMode) {
+      // Include mode: picking a tower replaces the previous one
+      onSupportIdsChange([id]);
+    } else {
+      onSupportIdsChange([...selectedSupportIds, id]);
     }
   };
 
@@ -173,6 +228,7 @@ export function CardFilter({
 
   const clearAll = () => {
     onCardsChange([]);
+    onSupportIdsChange([]);
   };
 
   return (
@@ -194,8 +250,8 @@ export function CardFilter({
           <div className="card-filter-component-mode-label">
             <span>
               {localFilterMode
-                ? "Only show decks that include all selected cards"
-                : "Show decks that share the most cards with your selection"}
+                ? "Only show decks that include all selected cards and the selected tower troop"
+                : "Show decks that share the most cards and tower troops with your selection"}
             </span>
             <div className="card-filter-component-toggle-container">
               <span className="card-filter-component-toggle-label">Match</span>
@@ -240,8 +296,51 @@ export function CardFilter({
             <CardComponent card={c} cards={cards ?? []} />
           </button>
         ))}
-        {filteredCardOptions.length === 0 && (
-          <p className="card-filter-empty">No cards found.</p>
+        {filteredCardOptions.length === 0 &&
+          filteredTowerOptions.length === 0 &&
+          !showNoSupport && (
+            <p className="card-filter-empty">No cards found.</p>
+          )}
+        {(filteredTowerOptions.length > 0 || showNoSupport) && (
+          <div className="card-filter-tower-row">
+            <span className="card-filter-tower-title">Tower Troops</span>
+            <div className="card-filter-tower-grid">
+              {filteredTowerOptions.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`card-filter-item ${
+                    selectedSupportIds.includes(t.id) ? "is-selected" : ""
+                  }`}
+                  onClick={() => toggleSupport(t.id)}
+                  aria-label={t.name}
+                  aria-pressed={selectedSupportIds.includes(t.id)}
+                >
+                  <CardComponent
+                    card={{ id: t.id, name: t.name }}
+                    cards={cards}
+                  />
+                </button>
+              ))}
+              {showNoSupport && (
+                <button
+                  type="button"
+                  className={`card-filter-item card-filter-none-item ${
+                    selectedSupportIds.includes(NO_SUPPORT_ID)
+                      ? "is-selected"
+                      : ""
+                  }`}
+                  onClick={() => toggleSupport(NO_SUPPORT_ID)}
+                  aria-label="No tower troop recorded"
+                  aria-pressed={selectedSupportIds.includes(NO_SUPPORT_ID)}
+                  title="Decks of battles without tower troop data"
+                >
+                  <img src={rareOutlineImg} alt="" />
+                  <span>None</span>
+                </button>
+              )}
+            </div>
+          </div>
         )}
         <div className="card-filter-component-actions">
           <button

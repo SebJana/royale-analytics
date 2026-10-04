@@ -36,7 +36,7 @@ export const BattleComponent = memo(function BattleComponent({
         <div className="battle-component-header-left">
           <div
             className={`battle-component-header-result battle-component-result-${getResultColor(
-              battle.gameResult
+              battle.gameResult,
             )}`}
           >
             {battle.gameResult}
@@ -71,6 +71,8 @@ export const BattleComponent = memo(function BattleComponent({
               </div>
               <DeckComponent
                 deck={t.cards ?? []}
+                support={t.supportCards ?? []}
+                supportSide="left"
                 cards={cards ?? []}
                 elixirLeaked={t.elixirLeaked}
               />
@@ -94,6 +96,7 @@ export const BattleComponent = memo(function BattleComponent({
               </div>
               <DeckComponent
                 deck={o.cards ?? []}
+                support={o.supportCards ?? []}
                 cards={cards ?? []}
                 elixirLeaked={o.elixirLeaked}
               />
