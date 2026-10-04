@@ -174,6 +174,12 @@ at `/card-images/<version>/<cardId>[-<variant>].webp`. Details are in
 
 ### 3. Restoring Data
 
+Mongo backups use `mongodump --gzip`: collection data and metadata are
+compressed as `.bson.gz` and `.metadata.json.gz` files inside timestamped
+backup directories. Both restore scripts only accept these compressed dumps and
+stop with an error, before touching the database, for a directory without
+`.bson.gz` files.
+
 Example Commands for restoring data
 
 #### On Linux/macOS/WSL

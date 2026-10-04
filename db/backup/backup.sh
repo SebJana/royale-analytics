@@ -27,6 +27,7 @@ backup_once() {
     --password "${MONGO_PWD}" \
     --authenticationDatabase "${MONGO_AUTH_DB}" \
     --db "${MONGO_DB}" \
+    --gzip \
     --out "${OUT_DIR}"
 
   echo "[backup] dump done"
