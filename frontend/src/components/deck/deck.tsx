@@ -2,6 +2,7 @@ import { memo } from "react";
 import { CardComponent } from "../card/card";
 import {
   getCardElixirCost,
+  getCardRarity,
   getSupportId,
   hasKnownElixirCost,
   MIRROR_ID,
@@ -183,9 +184,23 @@ export const DeckComponent = memo(function DeckComponent({
   const matchedCardKeys = new Set(
     matchedCards?.map((card) => `${card.id}:${card.evolutionLevel ?? 0}`),
   );
-  // TODO sort cards here: regular evolutions (evoLevel = 1), the heroes (evoLevel = 2, so ascending evoLevel), champions and then regular cards
-  for (let i = 0; i < deck.length; i += cardsPerRow) {
-    const group = deck.slice(i, i + cardsPerRow); // put the cards into one row of display
+  // Evolutions, then heroes and champions, then the rest. The sort is
+  // stable, so cards of one group keep the order they came in.
+  // NOTE: Heroes and champions share one deck slot in the game, so they sort
+  // as one group, in their incoming order.
+  const slotRank = (card: Card) => {
+    if (card.evolutionLevel === 1) return 0;
+    if (
+      card.evolutionLevel === 2 ||
+      getCardRarity(card.id, cards) === "champion"
+    ) {
+      return 1;
+    }
+    return 2;
+  };
+  const sortedDeck = [...deck].sort((a, b) => slotRank(a) - slotRank(b));
+  for (let i = 0; i < sortedDeck.length; i += cardsPerRow) {
+    const group = sortedDeck.slice(i, i + cardsPerRow); // put the cards into one row of display
     rows.push(
       <div key={`row-${i}`} className="deck-component-deck-row">
         {group.map((card) => (
@@ -222,7 +237,9 @@ export const DeckComponent = memo(function DeckComponent({
   // Works for both mobile and desktop because the Clash Royale Website handles
   // showing a qr code (desktop) and a copy link (mobile)
   const handleCopy = () => {
-    window.open(generateCopyLink(deck, getSupportId(support)), "_blank");
+    // Shown order, so the evolutions, heroes and champions come first, where
+    // the game puts its evolution and hero/champion slots
+    window.open(generateCopyLink(sortedDeck, getSupportId(support)), "_blank");
   };
 
   return (
