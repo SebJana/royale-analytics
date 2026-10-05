@@ -163,9 +163,9 @@ def place_colored_component(
     left = random.randint(2, background.width - mask.width - 3)
     top = random.randint(2, background.height - mask.height - 3)
     clearance = get_exclusion_mask(exclusion, background.size)
-    if ImageChops.multiply(mask, clearance.crop(
-        (left, top, left + mask.width, top + mask.height)
-    )).getbbox():
+    if ImageChops.multiply(
+        mask, clearance.crop((left, top, left + mask.width, top + mask.height))
+    ).getbbox():
         return 0
     indices = component_pixel_indices(mask, left, top, background.width)
     if not component_placement_is_valid(indices, occupied, exclusion):
@@ -197,10 +197,7 @@ def choose_decoy_sources(fruit: str, amount: int) -> list[tuple[str, float]]:
     # cards run out of space. Each accepted blob gets its own shade.
     random.shuffle(sources)
     shades = [random.choice(BACKGROUND_DECOY_SHADES) for _ in range(count)]
-    return [
-        (source, brightness)
-        for source, brightness in zip(sources, shades)
-    ]
+    return [(source, brightness) for source, brightness in zip(sources, shades)]
 
 
 def try_place_decoy(

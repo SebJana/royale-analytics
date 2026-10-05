@@ -26,10 +26,7 @@ export function calibrateHalliGalli(
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(url);
     let finished = false;
-    const timeout = window.setTimeout(
-      () => fail("CALIBRATION_TIMEOUT"),
-      20000,
-    );
+    const timeout = window.setTimeout(() => fail("CALIBRATION_TIMEOUT"), 20000);
     const abort = () => fail("CALIBRATION_CANCELLED");
     signal.addEventListener("abort", abort, { once: true });
 
@@ -73,10 +70,16 @@ export function calibrateHalliGalli(
           resolve(message.calibration_id);
         } else if (message.type === "calibration_failed") {
           const reason = message.reason;
-          fail(reason === "invalid_wordle_token" ? "WORDLE_TOKEN_EXPIRED"
-            : reason === "connection latency is too unstable" ? "CALIBRATION_UNSTABLE"
-            : reason === "not enough valid probe replies" || reason === "authentication_timeout_or_invalid"
-              ? "CALIBRATION_TIMEOUT" : "CALIBRATION_INVALID");
+          fail(
+            reason === "invalid_wordle_token"
+              ? "WORDLE_TOKEN_EXPIRED"
+              : reason === "connection latency is too unstable"
+                ? "CALIBRATION_UNSTABLE"
+                : reason === "not enough valid probe replies" ||
+                    reason === "authentication_timeout_or_invalid"
+                  ? "CALIBRATION_TIMEOUT"
+                  : "CALIBRATION_INVALID",
+          );
         }
       } catch {
         fail("CALIBRATION_INVALID");

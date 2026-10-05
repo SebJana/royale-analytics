@@ -183,6 +183,15 @@ async def record_battle_sync(
             # $max keeps the watermark from moving backwards if two syncs of
             # the same player overlap after an expired claim.
             update["$max"] = {"lastBattleTime": newest_battle_time}
+        # TODO Keep a roughly accurate stored battle count per tracked player
+        # (e.g. battleCount), so pages and the explore list need no count over
+        # the battles collection. Not per insert: either $inc it here by the
+        # sync's new battles (one write per sync, already batched), or let a
+        # periodic job recount from the referencePlayerTag index. The $inc
+        # drifts, e.g. when two overlapping syncs after an expired claim both
+        # count the same battles, or when battles are removed later, so it
+        # could be combined with a rare recount. "Somewhat accurate" is
+        # enough; store when it was last counted (battleCountAt) next to it.
         if new_battle_count > 0:
             update["$inc"] = {"syncVersion": 1}
 
@@ -246,105 +255,4 @@ async def record_battle_sync_failure(
 
     except Exception as e:
         print(f"[DB] [ERROR] recording the failed sync of {player_tag}", e)
-        raise
-
-
-async def backfill_tracking_gaps(conn: MongoConn) -> int:
-    """
-    Adds trackingGaps to players stored before the field existed.
-
-    Earlier versions only kept the last deactivatedAt and reactivatedAt, so at
-    most the latest untracked period can be recovered: when the reactivation
-    followed the deactivation. Only players without trackingGaps are touched,
-    so this is safe to run on every start.
-
-    Args:
-        conn (MongoConn): Active MongoDB connection instance.
-
-    Returns:
-        int: Number of updated players
-
-    Raises:
-        Exception: Any exception that occurs during the update.
-    """
-
-    try:
-        await ensure_connected(conn)
-
-        both_present = {
-            "$and": [
-                {"$ne": [{"$type": "$deactivatedAt"}, "missing"]},
-                {"$ne": [{"$type": "$reactivatedAt"}, "missing"]},
-                # Both are "YYYY-MM-DD HH-MM-SS" strings, which sort by time
-                {"$lte": ["$deactivatedAt", "$reactivatedAt"]},
-            ]
-        }
-        res = await conn.db.players.update_many(
-            {"trackingGaps": {"$exists": False}},
-            [
-                {
-                    "$set": {
-                        "trackingGaps": {
-                            "$cond": [
-                                both_present,
-                                [{"from": "$deactivatedAt", "to": "$reactivatedAt"}],
-                                [],
-                            ]
-                        }
-                    }
-                }
-            ],
-        )
-        return res.modified_count
-
-    except Exception as e:
-        print("[DB] [ERROR] backfilling the tracking gaps", e)
-        raise
-
-
-async def backfill_player_sync_fields(conn: MongoConn) -> int:
-    """
-    Adds the per-player sync fields to players stored before they existed.
-
-    Sets syncVersion to 0 and lastBattleTime to the newest stored battle of the
-    player. Only players without syncVersion are touched, so this is safe to
-    run on every start.
-
-    Args:
-        conn (MongoConn): Active MongoDB connection instance.
-
-    Returns:
-        int: Number of updated players
-
-    Raises:
-        Exception: Any exception that occurs during the lookup or update.
-    """
-
-    try:
-        await ensure_connected(conn)
-
-        updated = 0
-        cursor = conn.db.players.find(
-            {"syncVersion": {"$exists": False}}, {"_id": 0, "playerTag": 1}
-        )
-        async for doc in cursor:
-            player_tag = doc["playerTag"]
-            # Served by the unique (referencePlayerTag, battleTime) index
-            newest = await conn.db.battles.find_one(
-                {"referencePlayerTag": player_tag},
-                {"_id": 0, "battleTime": 1},
-                sort=[("battleTime", -1)],
-            )
-            fields = {"syncVersion": 0}
-            if newest:
-                fields["lastBattleTime"] = newest["battleTime"]
-            res = await conn.db.players.update_one(
-                {"playerTag": player_tag, "syncVersion": {"$exists": False}},
-                {"$set": fields},
-            )
-            updated += res.modified_count
-        return updated
-
-    except Exception as e:
-        print("[DB] [ERROR] backfilling the player sync fields", e)
         raise

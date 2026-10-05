@@ -202,6 +202,7 @@ def _clean_single_battle(battle, player_tag):
     clean_battle(battle)
 
     battle["gameResult"] = determine_game_result(battle)
+    battle["deckKey"] = build_deck_key(battle, player_tag)
 
     # Remove the unnecessary stats from each battle
     keys_to_remove = [
@@ -218,6 +219,43 @@ def _clean_single_battle(battle, player_tag):
     battle["gameMode"] = battle["gameMode"].get("name")
 
     return battle
+
+
+def build_deck_key(battle, player_tag):
+    """
+    Builds the identity of the reference player's deck as one string.
+
+    The deck statistics group battles by it, so they need not extract and sort
+    every battle's cards at read time. Card levels stay out: a deck is the
+    same deck at any level. Its parts are already the card filter's keys.
+
+    NOTE The format is parsed by deck_card_filter_stages (mongo/query_utils.py)
+    and has to stay identical to what the deck statistics expect:
+    "<id>-<evolutionLevel>,..." sorted as strings, "|", then the tower troop
+    ids sorted as strings, e.g. "26000000-1,26000010-0,...|159000000". A deck
+    without a tower troop ends in "|". A card without an id uses its name.
+
+    Args:
+        battle (dict): Cleaned battle, evolution levels as stored
+        player_tag (str): Tag of the player whose deck is keyed
+
+    Returns:
+        str: The deck key, "|" if the player is not on the team
+    """
+
+    # Should always use the id for the key, fallback to name if no id is present.
+    # This is (hopefully) redundant and Clash Royale (hopefully) will always
+    # provide a stable id for the same card.
+    def identity(card):
+        return card.get("id") if card.get("id") is not None else card.get("name")
+
+    member = next((m for m in battle["team"] if m.get("tag") == player_tag), {})
+    cards = sorted(
+        f"{identity(card)}-{int(card.get('evolutionLevel') or 0)}"
+        for card in member.get("cards") or []
+    )
+    towers = sorted(str(identity(tower)) for tower in member.get("supportCards") or [])
+    return ",".join(cards) + "|" + ",".join(towers)
 
 
 def extract_duel_battles(battle):
@@ -330,6 +368,52 @@ def clean_battle(battle):
         remove_unnecessary_card_fields(player.get("supportCards"))
 
         player.pop("globalRank", None)
+
+    remove_boat_defense_evolutions(battle)
+
+
+def remove_boat_defense_evolutions(battle):
+    """
+    Drops the evolution levels of a ClanWar_BoatBattle defense.
+
+    The API reports them on the 12 defense cards, but they follow the
+    defender's unlocked variants (1 evolution, 2 hero, 3 both) instead of
+    anything played, so they would split identical defenses and invent a
+    level 3 that no card has. Works on raw and stored battles alike, so a
+    backfill can reuse it.
+
+    NOTE Assumes evolutions never take part in a boat defense, which held for
+    every battle checked so far. If the game ever lets them, this rule has to
+    go, and the stored defenses need their levels back from the API.
+
+    Args:
+        battle (dict): Battle with team, opponent, gameMode (dict or name)
+            and boatBattleSide, the reference player's side
+
+    Returns:
+        bool: True if the battle is a boat battle and a defense was cleaned
+    """
+
+    game_mode = battle.get("gameMode")
+    if isinstance(game_mode, dict):
+        game_mode = game_mode.get("name")
+    if game_mode != "ClanWar_BoatBattle":
+        return False
+
+    # The team is always the reference player's side
+    side = battle.get("boatBattleSide")
+    if side == "defender":
+        defenders = battle.get("team") or []
+    elif side == "attacker":
+        defenders = battle.get("opponent") or []
+    else:
+        logger.warning("Boat battle without a known side: %r", side)
+        return False
+
+    for player in defenders:
+        for card in player.get("cards") or []:
+            card.pop("evolutionLevel", None)
+    return True
 
 
 def get_player_name(battles, player_tag):

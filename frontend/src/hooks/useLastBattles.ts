@@ -27,12 +27,12 @@ export function usePlayerBattlesInfinite(
   playerTag: string,
   limit = 50,
   enabled = true,
-  beforeDate?: string
+  beforeDate?: string,
 ) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(
     () => ["playerBattles", playerTag, limit, beforeDate] as const,
-    [playerTag, limit, beforeDate]
+    [playerTag, limit, beforeDate],
   );
 
   const q = useInfiniteQuery<

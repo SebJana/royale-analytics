@@ -549,8 +549,9 @@ def attach_image_urls(cards: dict, image_set: ImageSet | None) -> dict:
     """Add the self-hosted image URLs to a card list.
 
     Each card gets an imageUrls object with the same keys as iconUrls, for
-    every image the set holds for the card's current source URL. Missing
-    entries make the frontend fall back to the CDN URL in iconUrls.
+    every image the set holds for the card's current source URL. The
+    frontend shows a placeholder for a key missing here, and only falls back
+    to the CDN URL in iconUrls for a card without any imageUrls.
 
     Args:
         cards (dict): Validated response of the Clash Royale /cards endpoint.

@@ -8,7 +8,7 @@ const min = 60_000;
 // so the "Battles updated" hint does not stay at "not synced yet".
 const firstSyncPollInterval = 3_000;
 // Poll interval while a player has no profile snapshot yet. Only players
-// tracked before snapshots existed, until the scraper's first refresh.
+// inserted without the API (e.g. in bulk), until the scraper's first refresh.
 const notSyncedPollInterval = 30_000;
 
 /**

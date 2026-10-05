@@ -67,8 +67,8 @@ class Settings:
     BACKLOG_SPREAD: float = 0.5
     # Retries after failures, which often hit many players at once
     FAILURE_BACKOFF_JITTER: float = 0.2
-    # First profile refresh of a player without a stored profile (bulk
-    # inserted, or tracked before snapshots existed): random time within this
+    # First profile refresh of a player without a stored profile (e.g. bulk
+    # inserted): random time within this
     # window instead of all at once. A late profile is only stale.
     PROFILE_FIRST_REFRESH_SPREAD: float = 6 * 60 * 60  # 6 hours
 

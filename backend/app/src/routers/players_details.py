@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi_limiter.depends import RateLimiter
-from typing import Optional, List
+from typing import Literal, Optional, List
 from datetime import datetime
 
 from core.deps import (
@@ -14,6 +14,7 @@ from helpers.validate import (
     validate_between_request,
     validate_battles_request,
     validate_game_modes,
+    validate_deck_card_filter,
     ParamsRequestError,
 )
 from models.schema import BetweenRequest, BattlesRequest
@@ -72,9 +73,9 @@ async def get_player_profile(
         )
 
     if not stored or not stored.get("profile"):
-        # Only players tracked before snapshots existed, until the scraper's
-        # first profile refresh for them. The frontend shows a placeholder
-        # with the name, so it needs no second request for it.
+        # Only players inserted without the API (e.g. in bulk), until the
+        # scraper's first profile refresh for them. The frontend shows a
+        # placeholder with the name, so it needs no second request for it.
         raise HTTPException(
             status_code=404,
             detail={
@@ -176,7 +177,8 @@ async def last_battles(
     "/{player_tag}/decks/stats",
     responses={
         403: {
-            "description": "Invalid or untracked player, or invalid request parameters"
+            "description": "Invalid or untracked player, or invalid request "
+            "parameters (dates, unknown or conflicting cards, too many cards)"
         },
         404: {"description": "No decks found for the player"},
         500: {"description": "Deck statistics lookup failed"},
@@ -188,11 +190,33 @@ async def deck_percentage_stats(
     mongo_conn: DbConn,
     redis_conn: RedConn,
     game_modes: Optional[List[str]] = Query(None),
+    card_mode: Literal["include", "match"] = "include",
+    # Cards as "<cardId>-<evolutionLevel>", e.g. "26000000-1" for the
+    # evolution. Tower troops by id, 0 for decks without tower data.
+    cards: Optional[List[str]] = Query(None),
+    exclude_cards: Optional[List[str]] = Query(None),
+    support_ids: Optional[List[int]] = Query(None),
+    exclude_support_ids: Optional[List[int]] = Query(None),
+    # Order of the decks before the cap. Match mode ranks by matched cards
+    # first. Usage rate orders like battleCount, so it has no own option.
+    sort_by: Literal["battleCount", "wins", "winRate", "lastSeen"] = "battleCount",
+    sort_order: Literal["asc", "desc"] = "desc",
+    # Decks played fewer times are left out, list and totals alike
+    min_battles: int = Query(1, ge=1, le=10_000),
     req: BetweenRequest = Depends(),
 ):
     try:
         validate_between_request(req)
         validated_game_modes = await validate_game_modes(redis_conn, game_modes)
+        card_filter = await validate_deck_card_filter(
+            mongo_conn,
+            redis_conn,
+            card_mode,
+            cards,
+            exclude_cards,
+            support_ids,
+            exclude_support_ids,
+        )
         # TODO add input sanitization for all user-provided parameters
         params = {
             "playerTag": player_tag,
@@ -200,10 +224,22 @@ async def deck_percentage_stats(
             "endDate": req.end_date,
             "timezone": req.timezone,
             "gameModes": validated_game_modes,
+            "sortBy": sort_by,
+            "sortOrder": sort_order,
+            "minBattles": min_battles,
         }
+        # Without a card filter the key stays the one of all decks
+        if card_filter:
+            params |= {
+                "cardMode": card_filter["mode"],
+                "cards": card_filter["cards"],
+                "excludeCards": card_filter["exclude_cards"],
+                "supportIds": card_filter["support_ids"],
+                "excludeSupportIds": card_filter["exclude_support_ids"],
+            }
         key = build_redis_key(
             service="crApi",
-            resource="playerDecksV2",  # V2: decks split by tower troop
+            resource="playerDecks",
             params=params,
             player_version=player.sync_version,
         )
@@ -223,6 +259,11 @@ async def deck_percentage_stats(
             req.end_date,
             validated_game_modes,
             req.timezone,
+            card_filter,
+            sort_by,
+            sort_order == "asc",
+            settings.DECK_STATS_LIMIT,
+            min_battles,
         )
 
         if not decks:
@@ -281,7 +322,7 @@ async def card_percentage_stats(
         }
         key = build_redis_key(
             service="crApi",
-            resource="playerCardsV2",  # V2: adds supportCards
+            resource="playerCards",
             params=params,
             player_version=player.sync_version,
         )

@@ -30,8 +30,6 @@ from metrics import (
 )
 from mongo import (
     MongoConn,
-    backfill_player_sync_fields,
-    backfill_tracking_gaps,
     get_database_health,
     get_game_modes,
     insert_game_modes,
@@ -348,7 +346,6 @@ async def main():
     """Start the scraper and run its loops until the process is stopped.
 
     - Waits for dependent services and validates the scraper key pool.
-    - Adds the per-player sync fields to players stored before they existed.
     - Rebuilds the schedules from the tracked players in Mongo.
     - Runs the workers, the timer loops, and the status endpoint concurrently.
     - On SIGTERM (docker stop) or SIGINT, hands claimed players back, flushes
@@ -367,15 +364,6 @@ async def main():
             loop.add_signal_handler(sig, main_task.cancel)
 
     cr_api, key_redis, redis_conn, mongo_conn = await init()
-
-    # Update the existing players (once) that were added while
-    # the system was still operating as a batch based data scraper
-    backfilled = await backfill_player_sync_fields(mongo_conn)
-    if backfilled:
-        logger.info("Added sync fields to %d existing players", backfilled)
-    backfilled = await backfill_tracking_gaps(mongo_conn)
-    if backfilled:
-        logger.info("Added tracking gaps to %d existing players", backfilled)
 
     battles = Schedule(key_redis, BATTLES_SCHEDULE)
     profiles = Schedule(key_redis, PROFILES_SCHEDULE)

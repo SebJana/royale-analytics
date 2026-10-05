@@ -100,13 +100,16 @@ def add_fruit_patch_artifacts(
         left = max(0, math.floor(position.x * CARD_WIDTH))
         top = max(0, math.floor(position.y * CARD_HEIGHT))
         right = min(CARD_WIDTH, math.ceil((position.x + position.width) * CARD_WIDTH))
-        bottom = min(CARD_HEIGHT, math.ceil((position.y + position.height) * CARD_HEIGHT))
+        bottom = min(
+            CARD_HEIGHT, math.ceil((position.y + position.height) * CARD_HEIGHT)
+        )
         interior = alpha.crop((left, top, right, bottom)).point(
             lambda opacity: 255 if opacity >= 200 else 0
         )
         points = [
             (index % interior.width, index // interior.width)
-            for index, opacity in enumerate(interior.getdata()) if opacity
+            for index, opacity in enumerate(interior.getdata())
+            if opacity
         ]
         remaining = int(len(points) * FRUIT_ARTIFACT_PATCH_COVERAGE)
         if remaining < 32:
@@ -116,7 +119,9 @@ def add_fruit_patch_artifacts(
         for patch_index in range(patch_count):
             for _ in range(FRUIT_ARTIFACT_PATCH_ATTEMPTS):
                 center_x, center_y = random.choice(points)
-                area = remaining / (patch_count - patch_index) * random.uniform(0.55, 0.85)
+                area = (
+                    remaining / (patch_count - patch_index) * random.uniform(0.55, 0.85)
+                )
                 aspect = random.uniform(0.65, 1.5)
                 radius_x = max(3, round(math.sqrt(area * aspect / math.pi)))
                 radius_y = max(3, round(math.sqrt(area / aspect / math.pi)))
@@ -126,18 +131,29 @@ def add_fruit_patch_artifacts(
                 # A side lobe makes a broad uneven discoloration patch. Size
                 # follows the central coverage budget rather than adding marks.
                 draw_blob_lobe(
-                    draw, center_x + radius_x // 2, center_y - radius_y // 2,
-                    max(2, radius_x * 2 // 3), max(2, radius_y * 2 // 3),
+                    draw,
+                    center_x + radius_x // 2,
+                    center_y - radius_y // 2,
+                    max(2, radius_x * 2 // 3),
+                    max(2, radius_y * 2 // 3),
                 )
                 mask = ImageChops.multiply(shape, interior)
                 painted = mask.histogram()[255]
-                if not painted or painted > remaining or ImageChops.multiply(mask, covered).getbbox():
+                if (
+                    not painted
+                    or painted > remaining
+                    or ImageChops.multiply(mask, covered).getbbox()
+                ):
                     continue
                 source = random.choice(get_contrasting_fruits(fruit))
                 texture = create_component_texture(
                     interior.size, get_decoy_palette(source), random.uniform(0.9, 1.1)
                 ).convert("RGBA")
-                texture.putalpha(mask.point(lambda opacity: FRUIT_ARTIFACT_PATCH_ALPHA if opacity else 0))
+                texture.putalpha(
+                    mask.point(
+                        lambda opacity: FRUIT_ARTIFACT_PATCH_ALPHA if opacity else 0
+                    )
+                )
                 artifacts.alpha_composite(texture, (left, top))
                 covered = ImageChops.lighter(covered, mask)
                 remaining -= painted
@@ -191,7 +207,9 @@ def downsample_artifact_mask(mask: Image.Image, size: tuple[int, int]) -> Image.
 
 
 def add_card_artifacts(
-    card: Image.Image, foreground: Image.Image, fruit_positions: list[FruitImagePosition]
+    card: Image.Image,
+    foreground: Image.Image,
+    fruit_positions: list[FruitImagePosition],
 ) -> Image.Image:
     """Draw neutral rings and long strokes across the entire composed card.
 
@@ -202,7 +220,9 @@ def add_card_artifacts(
     size = (card.width * scale, card.height * scale)
     artifacts = Image.new("RGBA", card.size)
     covered = Image.new("L", card.size)
-    interior = foreground.getchannel("A").point(lambda value: 255 if value >= 200 else 0)
+    interior = foreground.getchannel("A").point(
+        lambda value: 255 if value >= 200 else 0
+    )
     fruit_regions = []
     for position in fruit_positions:
         bounds = (
@@ -225,9 +245,14 @@ def add_card_artifacts(
             if kind == "ring":
                 radius = random.randint(18, 50)
                 x, y = random.randrange(card.width), random.randrange(card.height)
-                draw.ellipse(tuple(value * scale for value in
-                                   (x - radius, y - radius, x + radius, y + radius)),
-                             outline=255, width=width)
+                draw.ellipse(
+                    tuple(
+                        value * scale
+                        for value in (x - radius, y - radius, x + radius, y + radius)
+                    ),
+                    outline=255,
+                    width=width,
+                )
             else:
                 width = random.randint(*CARD_ARTIFACT_LINE_WIDTH) * scale
                 angle = random.uniform(0, math.pi)
@@ -242,18 +267,30 @@ def add_card_artifacts(
                     t = step / 160
                     wave = t * 2 * math.pi * cycles + phase
                     # A smaller second wave makes the wiggles less uniform.
-                    offset = amplitude * (math.sin(wave) + 0.22 * math.sin(2.3 * wave + phase))
-                    points.append(((x + (t - 0.5) * dx - math.sin(angle) * offset) * scale,
-                                   (y + (t - 0.5) * dy + math.cos(angle) * offset) * scale))
+                    offset = amplitude * (
+                        math.sin(wave) + 0.22 * math.sin(2.3 * wave + phase)
+                    )
+                    points.append(
+                        (
+                            (x + (t - 0.5) * dx - math.sin(angle) * offset) * scale,
+                            (y + (t - 0.5) * dy + math.cos(angle) * offset) * scale,
+                        )
+                    )
                 draw.line(points, fill=255, width=width, joint="curve")
             mask = downsample_artifact_mask(mask, card.size)
             footprint = mask.point(lambda value: 255 if value >= 16 else 0)
             candidate = ImageChops.lighter(covered, footprint)
-            if candidate.histogram()[255] > card.width * card.height * CARD_ARTIFACT_COVERAGE:
+            if (
+                candidate.histogram()[255]
+                > card.width * card.height * CARD_ARTIFACT_COVERAGE
+            ):
                 continue
-            if any(ImageChops.multiply(candidate.crop(bounds), pixels).histogram()[255]
-                   > count * CARD_ARTIFACT_FRUIT_COVERAGE
-                   for bounds, pixels, count in fruit_regions if count):
+            if any(
+                ImageChops.multiply(candidate.crop(bounds), pixels).histogram()[255]
+                > count * CARD_ARTIFACT_FRUIT_COVERAGE
+                for bounds, pixels, count in fruit_regions
+                if count
+            ):
                 continue
             gray = random.randint(90, 145)
             opacity = random.randint(115, 165)

@@ -3,7 +3,7 @@ import "./playerInfo.css";
 /**
  * Header shown while a player has no stored profile yet.
  *
- * Only players tracked before profile snapshots existed reach this, until
+ * Only players inserted without the API (e.g. in bulk) reach this, until
  * the data scraper's first profile refresh for them. Battles and statistics
  * below work without the profile.
  */

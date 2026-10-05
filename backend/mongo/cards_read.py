@@ -15,8 +15,7 @@ async def get_cards(conn: MongoConn):
     Returns:
         dict | None: {"payload": <served card list>, "imageVersion": str | None,
             "imagesComplete": bool, "imagesMissing": int, "updatedAt":
-            datetime}, or None if no card list was stored yet. Lists stored
-            before the image fields existed lack them.
+            datetime}, or None if no card list was stored yet.
 
     Raises:
         Exception: If the lookup fails

@@ -47,14 +47,15 @@
   border-right: 1px solid;
 }
 
-.deck-component-support .card-component-card,
-.deck-component-support-empty {
+.deck-component-support .card-component-card {
   position: relative;
   width: 100%;
 }
 
-.deck-component-support-empty .deck-component-empty-card {
-  flex: none;
+/* A deck without a tower troop gives the cards the full width. Only decks
+   placed side by side keep the slot as a blank (see battle.css). */
+.deck-component-support.is-absent {
+  display: none;
 }
 
 .deck-component-support-label {
@@ -134,8 +135,7 @@
 }
 
 .deck-component-deck-row .card-component-card.is-matched .card-component-wrap,
-.deck-component-support .card-component-card.is-matched .card-component-wrap,
-.deck-component-support-empty.is-matched {
+.deck-component-support .card-component-card.is-matched .card-component-wrap {
   border-radius: var(--radius-md);
   background: rgba(52, 152, 219, 0.15);
 }
@@ -146,8 +146,7 @@
   .card-component-wrap::after,
 .deck-component-support
   .card-component-card.is-matched
-  .card-component-wrap::after,
-.deck-component-support-empty.is-matched::after {
+  .card-component-wrap::after {
   content: "";
   position: absolute;
   inset: 0;

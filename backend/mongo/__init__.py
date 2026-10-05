@@ -23,8 +23,6 @@ from .players_write import (
     deactivate_tracked_player,
     record_battle_sync,
     record_battle_sync_failure,
-    backfill_player_sync_fields,
-    backfill_tracking_gaps,
 )
 
 from .game_modes_write import insert_game_modes
@@ -64,8 +62,6 @@ __all__ = [
     "deactivate_tracked_player",
     "record_battle_sync",
     "record_battle_sync_failure",
-    "backfill_player_sync_fields",
-    "backfill_tracking_gaps",
     # game_modes
     ## read
     "get_game_modes",

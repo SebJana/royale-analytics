@@ -413,7 +413,9 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
 
   const renderSecurityStep = () => (
     <div className="auth-step">
-      <h3 className="auth-stage-heading">Prove your elite Clash Royale knowledge</h3>
+      <h3 className="auth-stage-heading">
+        Prove your elite Clash Royale knowledge
+      </h3>
       <div className="security-questions">
         <div className="question-group">
           <label htmlFor="annoying-card">

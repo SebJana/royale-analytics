@@ -12,6 +12,14 @@
   text-align: left;
 }
 
+/* The sort and further control groups of a page, wrapping on narrow screens */
+.sort-by-container-groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-lg) var(--spacing-2xl);
+}
+
 .sort-by-container-content {
   display: flex;
   align-items: center;

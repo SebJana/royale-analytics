@@ -7,7 +7,7 @@ import { PlayerError } from "../../components/playerError/playerError";
 import { usePageLoadingState } from "../../hooks/usePageLoadingState";
 import CircularProgress from "@mui/material/CircularProgress";
 import { useGameModes } from "../../hooks/useGameModes";
-import { round } from "../../utils/number";
+import { formatNumber, round } from "../../utils/number";
 import { pluralize } from "../../utils/plural";
 import { getCurrentFilterState } from "../../utils/filter";
 import {
@@ -29,19 +29,50 @@ import { FilterContainer } from "../../components/filterContainer/filterContaine
 import type { FilterState } from "../../components/filterContainer/filterContainer";
 import { SortByContainer } from "../../components/sortByContainer/sortByContainer";
 import type { Card, CardMeta } from "../../types/cards";
-import type { Deck } from "../../types/deckStats";
-import { getSupportId, NO_SUPPORT_ID } from "../../utils/getCardMetaFields";
+import type { Deck, DeckCardFilter, DeckSort } from "../../types/deckStats";
+import { getCardFilterKey } from "../../utils/getCardMetaFields";
 import "./decks.css";
+
+// Minimum battles per deck the sort box offers. 1 shows every deck.
+const MIN_BATTLE_OPTIONS = [1, 2, 3, 5, 10, 25, 50];
+
+// The order of the first request. Its result tells whether every deck fits
+// into the response; then the browser sorts and filters by itself.
+const DEFAULT_SORT: DeckSort = {
+  sortBy: "battleCount",
+  sortOrder: "desc",
+  minBattles: 1,
+};
+
+/**
+ * Sorts decks like the backend does: by the given field, ties by battles and
+ * then by last seen, both highest first.
+ *
+ * @param decks - Decks to sort, not changed
+ * @param sort - Field and direction
+ * @returns A sorted copy
+ */
+function sortDecksLikeBackend(decks: Deck[], sort: DeckSort): Deck[] {
+  const direction = sort.sortOrder === "asc" ? 1 : -1;
+  const compare = (a: number | string, b: number | string) =>
+    a < b ? -1 : a > b ? 1 : 0;
+  return [...decks].sort(
+    (a, b) =>
+      direction * compare(a[sort.sortBy], b[sort.sortBy]) ||
+      compare(b.battleCount, a.battleCount) ||
+      compare(b.lastSeen, a.lastSeen),
+  );
+}
 
 // Helper type to rate/score the decks when using the card filter match mode
 type DeckWithMatchScore = Deck & {
   matchPercentage: number;
-  matchCount: number;
+  matchedCardCount: number;
 };
 
 // Type for deck sorting that includes actual Deck fields and computed fields
 type DeckSortFields = {
-  count: number; // Direct field from Deck (battles)
+  battleCount: number; // Direct field from Deck
   wins: number; // Direct field from Deck
   winRate: number; // Direct field from Deck
   usageRate: number; // Computed field
@@ -207,8 +238,8 @@ function VirtualDeckList({
                   <span className="decks-card-match-value">{`${round(
                     d.matchPercentage,
                     1,
-                  )}% (${d.matchCount} matching ${pluralize(
-                    d.matchCount,
+                  )}% (${d.matchedCardCount} matching ${pluralize(
+                    d.matchedCardCount,
                     "Card",
                     "Cards",
                   )})`}</span>
@@ -228,8 +259,8 @@ function VirtualDeckList({
             </div>
             <div className="deck-stats-container">
               <StatCard
-                label={pluralize(d.count, "Battle", "Battles")}
-                value={d.count}
+                label={pluralize(d.battleCount, "Battle", "Battles")}
+                value={d.battleCount}
               />
               <StatCard
                 label={pluralize(d.wins, "Win", "Wins")}
@@ -238,7 +269,7 @@ function VirtualDeckList({
               <StatCard label="Win Rate" value={`${round(d.winRate, 1)}%`} />
               <StatCard
                 label="Usage Rate"
-                value={calculateAndFormatUsageRate(d.count, totalBattles)}
+                value={calculateAndFormatUsageRate(d.battleCount, totalBattles)}
               />
               <GameModesStat modes={d.modes} />
               <StatCard
@@ -253,8 +284,8 @@ function VirtualDeckList({
   );
 }
 
-// TODO page and filters should load and display upon error only regarding decks/cards/plots routes
-// not game modes and cards
+// TODO The cards and plots pages should keep their filters on screen when
+// their statistics route fails, like this page does for the decks
 
 // TODO add same error handling for all pages if no data is found or the tag is invalid
 export default function PlayerDecks() {
@@ -311,8 +342,11 @@ export default function PlayerDecks() {
   // Sort state management
   // Tracks which field to sort by and the sort direction
   const [selectedSortOption, setSelectedSortOption] =
-    useState<keyof DeckSortFields>("count"); // Default: sort by battles (most relevant)
+    useState<keyof DeckSortFields>("battleCount"); // Default: sort by battles (most relevant)
   const [sortAscending, setSortAscending] = useState(false); // Default to descending (highest values first)
+  // Decks played fewer times are left out, so e.g. a deck won once does not
+  // top the win rate. Applied by the backend, like the sort.
+  const [minBattles, setMinBattles] = useState(1);
 
   const {
     data: cards,
@@ -359,12 +393,43 @@ export default function PlayerDecks() {
 
   // Available sort options for decks
   const sortOptions: (keyof DeckSortFields)[] = [
-    "count",
+    "battleCount",
     "wins",
     "winRate",
     "usageRate",
     "lastSeen",
   ];
+
+  // Every selected card is one match term, and the tower selection adds one
+  // more. More selected towers widen that term instead of adding terms, so
+  // they never lower a deck's score.
+  const matchTermCount =
+    appliedFilters.cards.length +
+    (appliedFilters.supportIds.length > 0 ? 1 : 0);
+  const showMatch = !appliedFilters.includeCardFilterMode && matchTermCount > 0;
+
+  // The backend filters the decks by cards and tower troops:
+  // 1) Include mode: decks HAVE to include ALL selected cards and the selected tower
+  // 2) Match mode: decks need one of them and come ranked by how many they share
+  // Excluded cards and towers drop a deck in both modes. Without any selection
+  // the filter is left out, so the request is the one for all decks.
+  const hasCardFilter =
+    matchTermCount > 0 ||
+    appliedFilters.excludedCards.length > 0 ||
+    appliedFilters.excludedSupportIds.length > 0;
+  // Sorted, so the same selection in another click order is the same query
+  // and cache entry
+  const cardFilter: DeckCardFilter | undefined = hasCardFilter
+    ? {
+        mode: appliedFilters.includeCardFilterMode ? "include" : "match",
+        cards: appliedFilters.cards.map(getCardFilterKey).sort(),
+        excludeCards: appliedFilters.excludedCards.map(getCardFilterKey).sort(),
+        supportIds: [...appliedFilters.supportIds].sort((a, b) => a - b),
+        excludeSupportIds: [...appliedFilters.excludedSupportIds].sort(
+          (a, b) => a - b,
+        ),
+      }
+    : undefined;
 
   // Deck statistics API call
   // Fetch deck statistics only when game modes are properly initialized
@@ -373,181 +438,154 @@ export default function PlayerDecks() {
   const queryGameModes = gameModesInitialized
     ? gameModesForQuery(appliedFilters.gameModes, gameModes)
     : null;
-  const {
-    data: deckStats,
-    isLoading: decksLoading,
-    isError: isDecksError,
-    refetch: refetchDecks,
-  } = useDeckStats(
+  // Usage rate orders like battle count. Match mode ranks by matched cards
+  // and disables the sort, so it keeps the default.
+  const deckSort: DeckSort = showMatch
+    ? DEFAULT_SORT
+    : {
+        sortBy:
+          selectedSortOption === "usageRate"
+            ? "battleCount"
+            : selectedSortOption,
+        sortOrder: sortAscending ? "asc" : "desc",
+        minBattles,
+      };
+  // First request: the default order. If every deck of the filter context
+  // fits into it (real players have 150-200 decks, the cap is 250), sorting
+  // and the minimum battles run in the browser without another request.
+  const base = useDeckStats(
     playerTag,
     appliedFilters.startDate,
     appliedFilters.endDate,
     queryGameModes,
+    cardFilter,
+    DEFAULT_SORT,
   );
+  const baseStats = base.data?.deck_statistics;
+  const allDecksLoaded =
+    baseStats !== undefined && baseStats.decks.length >= baseStats.deckCount;
+  // Only a capped result needs the backend for another order: its top decks
+  // of that order may not be in the browser at all.
+  const needsBackendSort =
+    baseStats !== undefined &&
+    !allDecksLoaded &&
+    JSON.stringify(deckSort) !== JSON.stringify(DEFAULT_SORT);
+  const sorted = useDeckStats(
+    playerTag,
+    appliedFilters.startDate,
+    appliedFilters.endDate,
+    queryGameModes,
+    cardFilter,
+    deckSort,
+    needsBackendSort,
+  );
+  // Until the requested order arrives, the previous order stays on screen,
+  // dimmed: the last backend sort, or the default order on the first one
+  const sortPending =
+    needsBackendSort &&
+    !sorted.isError &&
+    (sorted.isPlaceholderData || !sorted.data);
+  const decksQuery = needsBackendSort && sorted.data ? sorted : base;
+  const decksLoading = base.isLoading;
+  const isDecksError = base.isError || (needsBackendSort && sorted.isError);
+  // Both queries can fail on their own, and retrying only one would leave the
+  // other's error on screen
+  const refetchDecks = () =>
+    Promise.allSettled([
+      base.isError ? base.refetch() : undefined,
+      needsBackendSort && sorted.isError ? sorted.refetch() : undefined,
+    ]);
 
-  // Helper function to check if a deck contains a specific card
-  const deckContainsCard = (deck: Deck, appliedCard: Card) => {
-    return deck.deck?.some(
-      (deckCard) =>
-        deckCard.id === appliedCard.id &&
-        (deckCard.evolutionLevel ?? 0) === (appliedCard.evolutionLevel ?? 0),
+  // The shown decks and their totals: the backend's, or computed here when
+  // every deck is in the browser
+  const deckStats = (() => {
+    const stats = decksQuery.data?.deck_statistics;
+    if (!stats || needsBackendSort || !allDecksLoaded || showMatch) {
+      return stats;
+    }
+    const kept = stats.decks.filter(
+      (deck) => deck.battleCount >= deckSort.minBattles,
     );
-  };
+    return {
+      ...stats,
+      decks: sortDecksLikeBackend(kept, deckSort),
+      deckCount: kept.length,
+      battleCount: kept.reduce((sum, deck) => sum + deck.battleCount, 0),
+      wins: kept.reduce((sum, deck) => sum + deck.wins, 0),
+    };
+  })();
 
-  // A deck has one tower troop, so the tower selection is any-of: the deck's
-  // tower has to be one of the selected ones. No selection accepts any tower.
-  const deckMatchesSupport = (deck: Deck) =>
-    appliedFilters.supportIds.length === 0 ||
-    appliedFilters.supportIds.includes(getSupportId(deck.support));
-
-  // Every selected card is one match term, and the tower selection adds one
-  // more. More selected towers widen that term instead of adding terms, so
-  // they never lower a deck's score.
-  const matchTermCount =
-    appliedFilters.cards.length +
-    (appliedFilters.supportIds.length > 0 ? 1 : 0);
-
-  // Helper function to calculate match percentage for a deck
-  const calculateMatchPercentage = (deck: Deck) => {
-    const matchingCards = calculateMatchCount(deck);
-    return (matchingCards / matchTermCount) * 100;
-  };
-
-  // Helper function to calculate amount of matched terms (cards and the
-  // tower troop) for a deck
-  const calculateMatchCount = (deck: Deck) => {
-    const matchingCards = appliedFilters.cards.filter((appliedCard) =>
-      deckContainsCard(deck, appliedCard),
-    );
-    const matchingSupport =
-      appliedFilters.supportIds.length > 0 && deckMatchesSupport(deck) ? 1 : 0;
-    return matchingCards.length + matchingSupport;
-  };
-
-  // Helper function to sort decks based on selected sort option
-  // Creates a new sorted array without mutating the original deck statistics
-  const sortDecks = (decksToSort: Deck[]): Deck[] => {
-    return [...decksToSort].sort((a, b) => {
-      let valueA: number | string;
-      let valueB: number | string;
-
-      if (selectedSortOption === "usageRate") {
-        // Usage rate has the same ordering as battle count because every deck
-        // uses the same total number of battles as its denominator.
-        valueA = a.count;
-        valueB = b.count;
-      } else {
-        // Direct field access using bracket notation
-        // Works for: count (battles), wins, winRate, lastSeen
-        // TypeScript ensures selectedSortOption is a valid key of DeckSortFields
-        valueA = a[selectedSortOption];
-        valueB = b[selectedSortOption];
-      }
-
-      // Handle string comparison (specifically for lastSeen ISO date strings)
-      if (typeof valueA === "string" && typeof valueB === "string") {
-        const comparison = valueA.localeCompare(valueB);
-        return sortAscending ? comparison : -comparison;
-      }
-
-      // Handle numeric comparison for all other fields (count, wins, winRate, usageRate)
-      const numA = Number(valueA);
-      const numB = Number(valueB);
-
-      // Sort direction: ascending (low to high) or descending (high to low)
-      // Default is descending to show highest values first (most battles, highest win rates, etc.)
-      return sortAscending ? numA - numB : numB - numA;
-    });
-  };
-
-  // Filter and sort decks based on applied cards and tower troops with two modes:
-  // 1) Include mode: decks HAVE to include ALL selected cards and the selected tower
-  // 2) Match mode: decks are scored by percentage of selected cards they contain and sorted by match percentage
+  // Match mode adds the score for the match header
   const filteredDecks = (() => {
-    if (!deckStats?.deck_statistics.decks) return [];
-
-    const allDecks = deckStats.deck_statistics.decks;
-
-    // If no cards or towers are applied as filters, show all decks with sorting applied
-    if (matchTermCount === 0) {
-      // Apply user-selected sorting to all available decks
-      return sortDecks(allDecks);
-    }
-
-    if (appliedFilters.includeCardFilterMode === true) {
-      // TODO Move include mode to the backend: match the selected cards with
-      // $all early in get_decks_win_percentage and add them to the cache key.
-      // Over long date ranges the route returns thousands of decks only to
-      // filter most of them out here. Match mode below stays in the frontend,
-      // since it scores every deck anyway.
-      // Include mode: deck must contain ALL selected cards (strict filtering)
-      const filteredDecks = allDecks.filter((deck) => {
-        return (
-          deckMatchesSupport(deck) &&
-          appliedFilters.cards.every((appliedCard) =>
-            deckContainsCard(deck, appliedCard),
-          )
-        );
-      });
-
-      // Apply user-selected sorting to the filtered decks
-      return sortDecks(filteredDecks);
-    } else {
-      // Match mode: calculate match percentage and sort by it
-      const decksWithMatchScore = allDecks.map((deck) => {
-        const matchPercentage = calculateMatchPercentage(deck);
-        const matchCount = calculateMatchCount(deck);
-        return {
-          ...deck,
-          matchPercentage,
-          matchCount,
-        };
-      });
-
-      // Filter out decks with 0% match and sort by match percentage (highest first)
-      return decksWithMatchScore
-        .filter((deck) => deck.matchPercentage > 0)
-        .sort((a, b) => b.matchPercentage - a.matchPercentage);
-    }
-    // Either return the Deck (include mode) or the Deck and its score (match mode)
+    const decks = deckStats?.decks ?? [];
+    if (!showMatch) return decks;
+    return decks.map((deck) => ({
+      ...deck,
+      matchedCardCount: deck.matchedCardCount ?? 0,
+      matchPercentage: ((deck.matchedCardCount ?? 0) / matchTermCount) * 100,
+    }));
   })() as (Deck | DeckWithMatchScore)[];
-
-  // Battles without tower data form the None category. Every battle should
-  // have a tower, so the filter only offers None when such decks exist.
-  const hasNoSupportDecks =
-    deckStats?.deck_statistics.decks.some(
-      (deck) => getSupportId(deck.support) === NO_SUPPORT_ID,
-    ) ?? false;
 
   // Use the modes actually sent to the API for the loading state dependency.
   const modesKey = queryGameModes?.join("|") ?? "";
+  // Every backend filter of the deck request
+  const decksContextKey = `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${modesKey}-${JSON.stringify(cardFilter ?? {})}`;
 
   // Loading state management
   // Determines when to show loading spinner vs content
   // Uses a custom hook that tracks multiple loading states and prevents flickering
-  // NOTE: Cards filter is frontend-only, so not included in resetDependency
   const { isInitialLoad } = usePageLoadingState({
     loadingStates: [decksLoading, cardsLoading, gameModesLoading],
     errorStates: [isDecksError, isCardsError, isGameModesError],
     hasData: () => Boolean(filteredDecks && filteredDecks.length > 0),
     // Reset dependency ensures loading state recalculates when any backend filter changes
-    resetDependency: `${playerTag}}-${appliedFilters.startDate}-${appliedFilters.endDate}-${modesKey}`,
+    resetDependency: decksContextKey,
   });
 
-  // Calculate totals based on filtered decks
-  let totalBattles = 0;
-  let totalWins = 0;
-  for (const deck of filteredDecks) {
-    totalBattles += deck.count;
-    totalWins += deck.wins;
-  }
-  const totalDecks = filteredDecks.length;
+  // Totals over every deck of the filter context, not only the returned top
+  // decks. They are also the usage rate's denominator.
+  const totalBattles = deckStats?.battleCount ?? 0;
+  const totalWins = deckStats?.wins ?? 0;
+  const totalDecks = deckStats?.deckCount ?? 0;
+  // The backend returns at most its DECK_STATS_LIMIT top decks
+  const hiddenDecks = totalDecks - filteredDecks.length;
+  // Why only these decks are shown, for the hint above the list
+  const capHint = (() => {
+    const shown = formatNumber(filteredDecks.length);
+    const total = formatNumber(totalDecks);
+    const minimum =
+      deckSort.minBattles > 1 ? ` with ${deckSort.minBattles}+ battles` : "";
+    if (showMatch) {
+      return `Showing ${shown} of ${total} decks, ranked by matched cards (most first).`;
+    }
+    // The option the user picked, also usage rate, which is sent as battles
+    const names: Record<keyof DeckSortFields, string> = {
+      battleCount: "battle count",
+      wins: "wins",
+      winRate: "win rate",
+      usageRate: "usage rate",
+      lastSeen: "last seen",
+    };
+    const first =
+      deckSort.sortBy === "lastSeen"
+        ? sortAscending
+          ? "oldest first"
+          : "newest first"
+        : sortAscending
+          ? "lowest first"
+          : "highest first";
+    const ranking = `${minimum}, ranked by ${names[selectedSortOption]} (${first})`;
+    // The shown decks still have the previous order and counts
+    if (sortPending) return `Loading the top decks${ranking}...`;
+    return `Showing ${shown} of ${total} decks${ranking}.`;
+  })();
 
-  if (isDecksError || isCardsError || isGameModesError) {
+  // The filters need the cards and game modes. A deck error shows in the
+  // results instead, so a filter or sort the backend rejects can be changed.
+  if (isCardsError || isGameModesError) {
     return (
       <PlayerError
         sources={[
-          { label: "decks", failed: isDecksError, retry: refetchDecks },
           { label: "cards", failed: isCardsError, retry: refetchCards },
           {
             label: "game modes",
@@ -583,7 +621,6 @@ export default function PlayerDecks() {
               gameModesLoading={gameModesLoading}
               onFiltersApply={handleFiltersApply}
               showCardFilter={true}
-              showNoSupportOption={hasNoSupportDecks}
               appliedFilters={appliedFilters}
               initialFilters={getCurrentFilterState()}
             />
@@ -593,33 +630,74 @@ export default function PlayerDecks() {
               selectedOption={selectedSortOption}
               ascending={sortAscending}
               // Only enable deck sorting in Include mode (when cards are filtered/selected with include mode)
-              disableSort={
-                matchTermCount > 0 && !appliedFilters.includeCardFilterMode
-              }
+              disableSort={showMatch}
               onSelectedOptionChange={handleSortChange}
-            />
+            >
+              <div className="sort-by-container-group">
+                <h2 className="sort-by-container-header">Min. battles</h2>
+                <div className="sort-by-container-content">
+                  <select
+                    className="sort-by-container-select decks-min-battles-select"
+                    value={minBattles}
+                    onChange={(e) => setMinBattles(Number(e.target.value))}
+                    aria-label="Minimum battles per deck"
+                  >
+                    {MIN_BATTLE_OPTIONS.map((n) => (
+                      <option key={n} value={n}>
+                        {n === 1 ? "Any" : `${n}+`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </SortByContainer>
+
+            {isDecksError && (
+              <PlayerError
+                // A new filter or sort starts with fresh retry attempts
+                key={`${decksContextKey}-${JSON.stringify(deckSort)}`}
+                compact
+                title="Couldn't load the decks"
+                message="The decks didn't load. Try again, or change the filters or sort."
+                sources={[
+                  { label: "decks", failed: true, retry: refetchDecks },
+                ]}
+              />
+            )}
 
             {/* Show decks if there is any data to display */}
-            {filteredDecks && filteredDecks.length > 0 && (
-              <div className="decks-stats">
+            {!isDecksError && filteredDecks && filteredDecks.length > 0 && (
+              <div
+                className={`decks-stats${sortPending ? " is-pending" : ""}`}
+                aria-busy={sortPending}
+              >
                 <h2>Overall Performance</h2>
-                <div className="decks-general-stats">
-                  <StatCard
-                    label={pluralize(totalBattles, "Battle", "Battles")}
-                    value={totalBattles}
-                  />
-                  <StatCard
-                    label={pluralize(totalDecks, "Deck", "Decks")}
-                    value={totalDecks}
-                  />
-                  <StatCard
-                    label={pluralize(totalWins, "Win", "Wins")}
-                    value={totalWins}
-                  />
-                  <StatCard
-                    label="Win Rate"
-                    value={`${round((totalWins / totalBattles) * 100, 1)}%`}
-                  />
+                {/* The hint sits above the divider, with the totals it explains */}
+                <div className="decks-general-stats-block">
+                  <div className="decks-general-stats">
+                    <StatCard
+                      label={pluralize(totalBattles, "Battle", "Battles")}
+                      value={totalBattles}
+                    />
+                    <StatCard
+                      label={pluralize(totalDecks, "Deck", "Decks")}
+                      value={totalDecks}
+                    />
+                    <StatCard
+                      label={pluralize(totalWins, "Win", "Wins")}
+                      value={totalWins}
+                    />
+                    <StatCard
+                      label="Win Rate"
+                      value={`${round((totalWins / totalBattles) * 100, 1)}%`}
+                    />
+                  </div>
+                  {hiddenDecks > 0 && (
+                    <p className="decks-cap-hint">
+                      {capHint} Tighten the filters (time range, game modes,
+                      cards) to see other decks.
+                    </p>
+                  )}
                 </div>
                 <VirtualDeckList
                   decks={filteredDecks}
@@ -628,9 +706,7 @@ export default function PlayerDecks() {
                   matchedCards={appliedFilters.cards}
                   matchedSupportIds={appliedFilters.supportIds}
                   scrollingToTopRef={scrollingToTopRef}
-                  showMatch={
-                    !appliedFilters.includeCardFilterMode && matchTermCount > 0
-                  }
+                  showMatch={showMatch}
                 />
               </div>
             )}
@@ -638,6 +714,7 @@ export default function PlayerDecks() {
 
             {/* Show message when no decks are found and not still loading */}
             {(!filteredDecks || filteredDecks.length === 0) &&
+              !isDecksError &&
               !decksLoading &&
               !gameModesLoading &&
               !cardsLoading && (

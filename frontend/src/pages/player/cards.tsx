@@ -4,7 +4,7 @@ import { useCardStats } from "../../hooks/useCardStats";
 import { usePageLoadingState } from "../../hooks/usePageLoadingState";
 import CircularProgress from "@mui/material/CircularProgress";
 import { useGameModes } from "../../hooks/useGameModes";
-import { round } from "../../utils/number";
+import { formatNumber, round } from "../../utils/number";
 import { pluralize } from "../../utils/plural";
 import { getCurrentFilterState } from "../../utils/filter";
 import { gameModesForQuery } from "../../utils/gameModes";
@@ -89,13 +89,13 @@ function CardStatTile({
       </div>
       <div className="card-item-stats">
         <div className="card-item-stat">
-          <span className="card-stat-value">{stat.usage}</span>
+          <span className="card-stat-value">{formatNumber(stat.usage)}</span>
           <span className="card-stat-label">
             {pluralize(stat.usage, "Battle", "Battles")}
           </span>
         </div>
         <div className="card-item-stat">
-          <span className="card-stat-value">{stat.wins}</span>
+          <span className="card-stat-value">{formatNumber(stat.wins)}</span>
           <span className="card-stat-label">
             {pluralize(stat.wins, "Win", "Wins")}
           </span>

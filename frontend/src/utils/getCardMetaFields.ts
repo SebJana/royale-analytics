@@ -5,8 +5,11 @@ export function getCardName(cardID: number, cards: CardMeta[]): string {
 }
 
 // Variants by the evolutionLevel of a played card, with the iconUrls key of
-// their art. A battle card is always one variant; the card list's
-// maxEvolutionLevel 3 means a card has both, it is never a played level.
+// their art. A played card is always one variant. The card list's
+// maxEvolutionLevel 3 means a card has both. The API also reports level 3 on
+// ClanWar_BoatBattle defenses, but the data scraper drops defense levels, so
+// no stored battle has one (if this is ever adjusted, there needs to be reworking
+// of various files and modules here and in the backend).
 // NOTE: A level missing here (a variant added after this table) still renders,
 // labelled "Variant <level>" with a placeholder, never as the regular card.
 // Add it here and in createCardList (cardFilter.tsx).
@@ -32,6 +35,18 @@ export function getCardVariantName(
 ): string {
   const label = getCardVariantLabel(evolutionLevel);
   return label ? `${label} ${name}` : name;
+}
+
+/**
+ * Key of a card variant in the deck card filter: "<cardId>-<evolutionLevel>",
+ * e.g. "26000000-1" for the evolved Knight. Any future level fits the form.
+ * NOTE: The backend parses this form (CARD_FILTER_KEY_PATTERN in validate.py).
+ *
+ * @param card The card, without evolutionLevel for the regular variant.
+ * @returns The filter key.
+ */
+export function getCardFilterKey(card: Card): string {
+  return `${card.id}-${card.evolutionLevel ?? 0}`;
 }
 
 export function getCardRarity(cardID: number, cards: CardMeta[]): string {
@@ -71,24 +86,19 @@ export function hasKnownElixirCost(cardID: number, cards: CardMeta[]): boolean {
   );
 }
 
-// Tower troop id of the "None" category: a battle without tower data. Every
-// battle should have a tower, so this is only a fallback. Clash Royale ids are
+// Tower troop id of a deck whose battles report no tower troop. That is no
+// missing data: Clan War (river race, boat battles), friendlies and
+// tournaments use a special or fixed tower, so it must not be shown as Tower
+// Princess. Ranked and Ladder battles always report one. Clash Royale ids are
 // never 0.
-// TODO possibly fall back to TOWER_PRINCESS_ID
-// that might be the only way support card is not there
-// from a battle that was from before tower troops were added to the game.
-// Tower troops came with the update of 13 December 2023: Princess Towers
-// became Crown Towers, with Tower Princess as the first Tower Troop. Cannoneer
-// followed in January 2024 (Season 55), Dagger Duchess in April 2024 (Season
-// 58). Battles before 13 December 2023 had Tower Princess on every tower, but
-// possibly not yet tracked in the battle data like it is today?
 export const NO_SUPPORT_ID = 0;
 
-// Tower troop the game falls back to, e.g. for copy links of None decks
+// Default tower troop, e.g. for copy links of decks without one, since the
+// game needs a tower to copy a deck
 export const TOWER_PRINCESS_ID = 159000000;
 
 /**
- * Tower troop id of a deck, NO_SUPPORT_ID if the battles have no tower data.
+ * Tower troop id of a deck, NO_SUPPORT_ID if its battles report none.
  *
  * @param support The deck's support cards (at most one in practice).
  * @returns The id of the first support card, or NO_SUPPORT_ID.
@@ -108,7 +118,8 @@ export function isSupportCard(card: CardMeta): boolean {
 /**
  * Lists the image URLs of a card variant, best first: the self-hosted WebP
  * copy, then the Clash Royale CDN original. The caller moves on to the next
- * URL when one fails to load.
+ * URL when one fails to load. The CDN is skipped for a variant the self-hosted
+ * images of the card lack, since the data scraper found it missing there.
  *
  * A missing variant does not fall back to the base art, which would pass a
  * new evolution or hero off as the regular card. The caller shows a labelled
@@ -127,6 +138,14 @@ export function getCardIconSources(
   const card = cards.find((c) => c.id === cardID);
   const key = CARD_VARIANTS[evolutionLevel]?.iconKey;
   if (!card || !key) return [];
+  // A card with self-hosted images but without this variant means the data
+  // scraper found it missing on the CDN (the card list names art before
+  // Clash Royale publishes it). Requesting the CDN would only log a 404 on
+  // every page with the card, so the placeholder shows until the scraper's
+  // retry mirrors it. Only cards without any self-hosted image (no set yet,
+  // e.g. a fresh install) fall back to the CDN. A source change shows the
+  // placeholder too, until the scraper mirrors the new art.
+  if (card.imageUrls && !card.imageUrls[key]) return [];
   // iconUrls is guarded too: an entry without art falls back to the
   // placeholder instead of breaking every deck it appears in
   return [card.imageUrls?.[key], card.iconUrls?.[key]].filter(

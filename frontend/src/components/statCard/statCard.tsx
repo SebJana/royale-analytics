@@ -1,6 +1,7 @@
 import "./statCard.css";
 import Tooltip from "@mui/material/Tooltip";
 import type { ReactNode } from "react";
+import { formatNumber } from "../../utils/number";
 
 export function StatCard({
   value,
@@ -9,7 +10,10 @@ export function StatCard({
 }: Readonly<{ value: string | number; label: string; tooltip?: ReactNode }>) {
   const card = (
     <div className="stat-card">
-      <div className="stat-card-number">{value}</div>
+      {/* Numbers get thousands separators; strings (e.g. "54.6%") show as given */}
+      <div className="stat-card-number">
+        {typeof value === "number" ? formatNumber(value) : value}
+      </div>
       <div className="stat-card-label">{label}</div>
     </div>
   );

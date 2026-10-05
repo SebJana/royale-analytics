@@ -29,5 +29,5 @@ export interface AuthContextType extends AuthState {
  * Access via useAuth hook for type-safe context consumption
  */
 export const AuthContext = createContext<AuthContextType | undefined>(
-  undefined
+  undefined,
 );

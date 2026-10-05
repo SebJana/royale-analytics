@@ -2,7 +2,6 @@
 
 import re
 
-
 # Match keys for custom pools: CR_API_POOL_<UTF-8 pool name in hex>_KEY_<number>.
 # Group 1 is the encoded pool name and group 2 is the numbered key slot.
 # For example, pool "team" and slot 2 use CR_API_POOL_7465616D_KEY_2.
@@ -24,8 +23,8 @@ def env_key_prefix(pool: str) -> str:
 def parse_env_key_name(name: str) -> tuple[str, int] | None:
     for pool in ("app", "scraper"):
         prefix = env_key_prefix(pool)
-        if name.startswith(prefix) and name[len(prefix):].isdigit():
-            return pool, int(name[len(prefix):])
+        if name.startswith(prefix) and name[len(prefix) :].isdigit():
+            return pool, int(name[len(prefix) :])
     match = _CUSTOM_ENTRY.fullmatch(name)
     if match:
         try:

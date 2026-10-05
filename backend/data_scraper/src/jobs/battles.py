@@ -216,10 +216,8 @@ async def sync_player_battles(
         player_tag, battle_logs, cleaned, new_count, last_battle_time
     )
 
-    # The watermark comes from all fetched battles, not only the new ones, so
-    # it is also set for players whose battles were stored before this field
-    # existed and the backfill found none.
-    # It also moves past battles the cleaner skipped as malformed, so those
+    # The watermark comes from all fetched battles, not only the new ones.
+    # It moves past battles the cleaner skipped as malformed, so those
     # are not retried, even after a cleaner fix. Holding the watermark below
     # them would resend every newer battle on each sync and make the player
     # look active (lastSyncNewBattles) until the entry leaves the log.

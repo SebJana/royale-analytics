@@ -16,7 +16,6 @@ from ..halli_galli_card import (
     RGBColor,
 )
 
-
 # Source assets and their painted hulls do not change while the application is
 # running, so retain them directly in process memory after their first use to avoid
 # unnecessary file read and calculation workload

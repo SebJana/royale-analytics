@@ -134,16 +134,11 @@ async def get_players_count(conn: MongoConn):
 
 
 def _tracking_gaps(doc: dict) -> list[dict]:
-    """Untracked periods of a player, also before the scraper's backfill ran."""
+    """Untracked periods of a player. A never reactivated player has no field."""
 
-    if "trackingGaps" in doc:
-        return [gap for gap in doc["trackingGaps"] if gap.get("from") and gap.get("to")]
-    # Not backfilled yet: only the latest period is known, and only if the
-    # reactivation came after the deactivation.
-    deactivated, reactivated = doc.get("deactivatedAt"), doc.get("reactivatedAt")
-    if deactivated and reactivated and deactivated <= reactivated:
-        return [{"from": deactivated, "to": reactivated}]
-    return []
+    return [
+        gap for gap in doc.get("trackingGaps", []) if gap.get("from") and gap.get("to")
+    ]
 
 
 async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
@@ -181,16 +176,13 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
                 "insertedAt": 1,
                 "playerName": 1,
                 "trackingGaps": 1,
-                "deactivatedAt": 1,
-                "reactivatedAt": 1,
             },
         )
 
         if not doc:
             return None
         return {
-            # Players stored before per-player versions existed have no field yet
-            "syncVersion": doc.get("syncVersion", 0),
+            "syncVersion": doc["syncVersion"],
             "firstSyncPending": doc.get("lastBattlesSyncAt") is None,
             "lastBattlesSyncAt": doc.get("lastBattlesSyncAt"),
             "insertedAt": doc.get("insertedAt"),

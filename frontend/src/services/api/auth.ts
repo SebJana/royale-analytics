@@ -193,11 +193,15 @@ export async function verifySecurityQuestions(
 export async function getRemovePlayerToken(
   securityToken: string,
 ): Promise<RemovePlayerTokenResponse> {
-  const response = await api.post<RemovePlayerTokenResponse>("/auth/remove_player_token", undefined, {
-    headers: {
-      Authorization: `Bearer ${securityToken}`,
+  const response = await api.post<RemovePlayerTokenResponse>(
+    "/auth/remove_player_token",
+    undefined,
+    {
+      headers: {
+        Authorization: `Bearer ${securityToken}`,
+      },
     },
-  });
+  );
   return response.data;
 }
 

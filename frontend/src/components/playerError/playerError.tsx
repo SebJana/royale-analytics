@@ -23,8 +23,7 @@ export function PlayerError({
 }>) {
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryAttempts, setRetryAttempts] = useState(0);
-  const retriesExhausted =
-    retryAttempts >= MAX_RETRY_ATTEMPTS && !isRetrying;
+  const retriesExhausted = retryAttempts >= MAX_RETRY_ATTEMPTS && !isRetrying;
   const failedSources = sources.filter((source) => source.failed);
   const names = failedSources.map((source) => source.label);
   const sourceList =
@@ -56,8 +55,8 @@ export function PlayerError({
           ? `Still couldn't load the ${sourceList}. Please try again later.`
           : retryAttempts > 0 && !isRetrying
             ? `Trying again didn't work. The ${sourceList} still couldn't load.`
-          : (message ??
-            `Looks like the ${sourceList} went missing on the way here. Try again in a moment.`)}
+            : (message ??
+              `Looks like the ${sourceList} went missing on the way here. Try again in a moment.`)}
       </p>
       {!retriesExhausted && (
         <div className="player-page-error-actions">

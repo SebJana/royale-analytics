@@ -177,3 +177,149 @@ def extract_deck_stage(player_tag: str):
             }
         }
     }
+
+
+# Tower troop id of decks without tower data
+# NOTE Match NO_SUPPORT_ID in the app's helpers/validate.py and the frontend.
+NO_SUPPORT_ID = 0
+
+
+def deck_card_filter_stages(card_filter: dict) -> list:
+    """
+    Build the stages that filter grouped decks by cards and tower troops.
+
+    They run on the output of the deck `$group`, whose `_id` is the stored
+    deck key "<id>-<evolutionLevel>,...|<tower ids>" (build_deck_key in the
+    data scraper's clean.py). Its card part already holds the filter's keys,
+    so a split gives the set to compare. Filtering the distinct decks instead
+    of the battles checks each deck once, after the indexed match on tag, time
+    and mode has done the narrowing. A deck has at most 12 cards, so each check
+    costs a few set operations on a small array; the `$group` over the battles
+    dominates either way.
+
+    Include mode keeps decks with all selected cards and the selected tower
+    troop. Match mode keeps decks that share at least one of them and adds
+    `matchedCardCount`: the shared cards, plus 1 if the tower troop is one of the
+    selected ones. Excluded cards and tower troops drop a deck in both modes.
+
+    Args:
+        card_filter (dict): Normalized filter from the app's
+            validate_deck_card_filter: "mode", "cards" and "exclude_cards" as
+            "<cardId>-<evolutionLevel>", "support_ids" and "exclude_support_ids".
+
+    Returns:
+        list: Aggregation stages to insert right after the deck `$group`.
+
+    Notes: This function is a pure builder and does not execute any database operation
+    """
+
+    stages = [
+        {"$addFields": {"keyParts": {"$split": ["$_id", "|"]}}},
+        {
+            "$addFields": {
+                # Same "<cardId>-<evolutionLevel>" form as the request
+                "cardKeys": {
+                    "$let": {
+                        "vars": {"cards": {"$first": "$keyParts"}},
+                        "in": {
+                            "$cond": [
+                                {"$eq": ["$$cards", ""]},
+                                [],
+                                {"$split": ["$$cards", ","]},
+                            ]
+                        },
+                    }
+                },
+                # The first tower troop id, NO_SUPPORT_ID for an empty tower
+                # part. A tower stored by name only never equals a requested id.
+                "supportId": {
+                    "$let": {
+                        "vars": {"towers": {"$last": "$keyParts"}},
+                        "in": {
+                            "$cond": [
+                                {"$eq": ["$$towers", ""]},
+                                NO_SUPPORT_ID,
+                                {
+                                    "$convert": {
+                                        "input": {
+                                            "$first": {"$split": ["$$towers", ","]}
+                                        },
+                                        "to": "long",
+                                        "onError": -1,
+                                    }
+                                },
+                            ]
+                        },
+                    }
+                },
+            }
+        },
+    ]
+    conditions = []
+
+    if card_filter["exclude_cards"]:
+        conditions.append(
+            {
+                "$eq": [
+                    {
+                        "$size": {
+                            "$setIntersection": [
+                                "$cardKeys",
+                                card_filter["exclude_cards"],
+                            ]
+                        }
+                    },
+                    0,
+                ]
+            }
+        )
+    if card_filter["exclude_support_ids"]:
+        conditions.append(
+            {"$not": [{"$in": ["$supportId", card_filter["exclude_support_ids"]]}]}
+        )
+
+    if card_filter["mode"] == "match":
+        stages.append(
+            {
+                "$addFields": {
+                    "matchedCardCount": {
+                        "$add": [
+                            {
+                                "$size": {
+                                    "$setIntersection": [
+                                        "$cardKeys",
+                                        card_filter["cards"],
+                                    ]
+                                }
+                            },
+                            (
+                                {
+                                    "$cond": [
+                                        {
+                                            "$in": [
+                                                "$supportId",
+                                                card_filter["support_ids"],
+                                            ]
+                                        },
+                                        1,
+                                        0,
+                                    ]
+                                }
+                                if card_filter["support_ids"]
+                                else 0
+                            ),
+                        ]
+                    }
+                }
+            }
+        )
+        conditions.append({"$gt": ["$matchedCardCount", 0]})
+    else:
+        if card_filter["cards"]:
+            conditions.append({"$setIsSubset": [card_filter["cards"], "$cardKeys"]})
+        if card_filter["support_ids"]:
+            conditions.append({"$in": ["$supportId", card_filter["support_ids"]]})
+
+    if conditions:
+        stages.append({"$match": {"$expr": {"$and": conditions}}})
+    return stages

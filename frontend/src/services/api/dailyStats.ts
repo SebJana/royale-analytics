@@ -6,7 +6,7 @@ export async function fetchDailyStats(
   playerTag: string,
   startDate: string,
   endDate: string,
-  gameModes?: string[]
+  gameModes?: string[],
 ): Promise<DailyStats> {
   // Throw error if an invalid player tag was passed
   if (!validatePlayerTagSyntax(playerTag)) {

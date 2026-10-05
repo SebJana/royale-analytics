@@ -39,8 +39,8 @@ export default function PlayerLayout() {
     playerError?.message === "Invalid player tag" ||
     errorCode === "INVALID_PLAYER_TAG" ||
     errorCode === "PLAYER_NOT_TRACKED";
-  // Players tracked before profile snapshots existed have none until the
-  // scraper's first refresh. The rest of the page works without it.
+  // Players inserted without the API (e.g. in bulk) have no profile until
+  // the scraper's first refresh. The rest of the page works without it.
   const profileNotSynced = errorCode === "PROFILE_NOT_SYNCED";
   const notSyncedName = axios.isAxiosError<{ detail?: { name?: string } }>(
     playerError,

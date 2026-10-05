@@ -18,6 +18,13 @@ from settings import settings
 
 logger = logging.getLogger(__name__)
 
+# TODO only store info needed for this app
+# drop achievements, badges, card level progress, etc.
+# If the storage is negligible still dont serve that info to the
+# frontend to make the payload smaller and faster
+# Maybe CR picked favorite deck storing to compare with what this analytics
+# will determine as favorite deck
+
 
 def _retry_delay() -> float:
     # Failures usually hit many profiles at once (API errors, timeouts).

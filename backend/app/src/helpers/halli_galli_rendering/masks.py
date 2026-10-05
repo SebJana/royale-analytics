@@ -41,7 +41,8 @@ def expand_mask(mask: Image.Image, width: int) -> Image.Image:
             distance = min(step, remaining)
             dx, dy = (distance, 0) if axis == 0 else (0, distance)
             expanded = ImageChops.lighter(
-                expanded, ImageChops.lighter(
+                expanded,
+                ImageChops.lighter(
                     ImageChops.offset(expanded, dx, dy),
                     ImageChops.offset(expanded, -dx, -dy),
                 ),
@@ -70,12 +71,23 @@ def create_background_fruit_contacts(
     for fruit_index, position in enumerate(positions):
         left = max(0, math.floor(position.x * CARD_WIDTH) - padding)
         top = max(0, math.floor(position.y * CARD_HEIGHT) - padding)
-        right = min(CARD_WIDTH, math.ceil((position.x + position.width) * CARD_WIDTH) + padding)
-        bottom = min(CARD_HEIGHT, math.ceil((position.y + position.height) * CARD_HEIGHT) + padding)
-        nearby = expand_mask(alpha.crop((left, top, right, bottom)), BACKGROUND_FRUIT_CONTACT_WIDTH)
+        right = min(
+            CARD_WIDTH, math.ceil((position.x + position.width) * CARD_WIDTH) + padding
+        )
+        bottom = min(
+            CARD_HEIGHT,
+            math.ceil((position.y + position.height) * CARD_HEIGHT) + padding,
+        )
+        nearby = expand_mask(
+            alpha.crop((left, top, right, bottom)), BACKGROUND_FRUIT_CONTACT_WIDTH
+        )
         for index, opacity in enumerate(nearby.getdata()):
             if opacity:
-                card_index = (top + index // nearby.width) * CARD_WIDTH + left + index % nearby.width
+                card_index = (
+                    (top + index // nearby.width) * CARD_WIDTH
+                    + left
+                    + index % nearby.width
+                )
                 labels[card_index] |= 1 << fruit_index
     return BackgroundFruitContacts(
         labels=bytes(labels),
@@ -97,8 +109,11 @@ def component_pixel_indices(
 @lru_cache(maxsize=128)
 def get_component_offsets(width: int, mask_bytes: bytes) -> tuple[tuple[int, int], ...]:
     """Reuse a decoy's painted coordinates across placement retries."""
-    return tuple((index % width, index // width)
-                 for index, value in enumerate(mask_bytes) if value)
+    return tuple(
+        (index % width, index // width)
+        for index, value in enumerate(mask_bytes)
+        if value
+    )
 
 
 def component_placement_is_valid(

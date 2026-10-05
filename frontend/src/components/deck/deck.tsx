@@ -123,43 +123,38 @@ function SupportSlot({
   const supportId = getSupportId(support);
   const matched = matchedSupportIds?.includes(supportId) ?? false;
 
+  // Clan War modes (river race, boat battles), friendlies and tournaments
+  // report no tower troop: they use a special or fixed tower, not a missing
+  // one. Nothing is shown. The slot only keeps its width as a blank where
+  // decks sit side by side (battle.css); elsewhere the cards fill it.
+  if (support.length === 0) {
+    return (
+      <div className="deck-component-support is-absent" aria-hidden="true" />
+    );
+  }
+
   return (
     <div className="deck-component-support">
-      {support.length === 0 ? (
-        // Every battle should have a tower. This only shows for battles
-        // without tower data, never as Tower Princess.
-        <div
-          className={`deck-component-support-empty${matched ? " is-matched" : ""}`}
-          title="No tower troop recorded for this battle"
-        >
-          <div className="deck-component-empty-card">
-            <img src={rareOutlineImg} alt="No tower troop" />
-          </div>
-        </div>
-      ) : (
-        support.map((s) => (
-          <CardComponent
-            key={s.id}
-            card={s}
-            cards={cards}
-            matched={matched}
-            isSupport
-            // The full "Level 16" label is too wide for the slot. The short
-            // caption below shows it; the tooltip names it in full.
-            showLevelLabel={false}
-          />
-        ))
-      )}
-      {support.length > 0 && support[0].level != null ? (
+      {support.map((s) => (
+        <CardComponent
+          key={s.id}
+          card={s}
+          cards={cards}
+          matched={matched}
+          isSupport
+          // The full "Level 16" label is too wide for the slot. The short
+          // caption below shows it; the tooltip names it in full.
+          showLevelLabel={false}
+        />
+      ))}
+      {support[0].level != null ? (
         // Battles carry the tower's level, deck statistics do not. Styled
         // like the cards' "Level 16" labels, shortened to fit the slot.
         <span className="deck-component-support-label is-level">
           Lvl {support[0].level}
         </span>
       ) : (
-        <span className="deck-component-support-label">
-          {support.length === 0 ? "None" : "Tower"}
-        </span>
+        <span className="deck-component-support-label">Tower</span>
       )}
     </div>
   );
@@ -266,7 +261,15 @@ export const DeckComponent = memo(function DeckComponent({
         />
       </div>
       {/* TODO add elixir droplet icon to value*/}
-      <div className="deck-component-footer">
+      {/* Without a tower troop the bar ends where the cards end, also where
+          a blank slot keeps the width (battle.css) */}
+      <div
+        className={`deck-component-footer${
+          support.length === 0
+            ? ` no-support${supportSide === "left" ? " support-left" : ""}`
+            : ""
+        }`}
+      >
         <div className="deck-component-stats">
           <div className="deck-component-stat-item">
             <p className="deck-component-stat-value" title={unknownCostTitle}>

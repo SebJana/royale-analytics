@@ -1,8 +1,8 @@
 """Keeps the schedules consistent with the tracked players in Mongo.
 
 Mongo is the source of truth. The API adds and removes players in the schedules
-directly, but a failed Redis write, a lost Redis volume, or players tracked
-before the schedules existed would otherwise leave players unscheduled forever.
+directly, but a failed Redis write, a lost Redis volume, or players inserted
+without the API would otherwise leave players unscheduled forever.
 """
 
 import logging
@@ -34,8 +34,8 @@ def _battle_due_ms(sync: dict) -> int:
 
 def _profile_due_ms(sync: dict) -> int:
     if sync["lastProfileSyncAt"] is None:
-        # Players without a profile: bulk inserted, or tracked before
-        # snapshots existed. Spread over PROFILE_FIRST_REFRESH_SPREAD instead
+        # Players without a profile, e.g. bulk inserted. Spread over
+        # PROFILE_FIRST_REFRESH_SPREAD instead
         # of all due now, which would put every one of them into one block
         # (intervals.py, "Spreading due times"). Never score 0: profiles never
         # jump ahead of due battle syncs unless they are late by more than

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronUp } from "lucide-react";
 import type { Player } from "../../types/player";
-import { round } from "../../utils/number";
+import { formatNumber, round } from "../../utils/number";
 import { formatDateForInput, formatTimeAgo } from "../../utils/datetime";
 import { StatCard } from "../statCard/statCard";
 import "./playerInfo.css";
@@ -105,7 +105,7 @@ export function PlayerInfo({
   player: Player;
 }>) {
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(
-    getExpandedInfoState()
+    getExpandedInfoState(),
   );
   const now = useNow(SYNC_HINT_REFRESH_MS);
 
@@ -125,7 +125,7 @@ export function PlayerInfo({
   // account. Counting a missing badge as 0 days would show today as the
   // creation date, so both show the same dash as other missing dates.
   const accountAgeDays = player?.badges?.find(
-    (b) => b.name === "YearsPlayed"
+    (b) => b.name === "YearsPlayed",
   )?.progress;
 
   const accountCreationDate =
@@ -155,7 +155,7 @@ export function PlayerInfo({
           </p>
           {Boolean(player?.trophies) && (
             <p className="player-info-component-trophies">
-              🏆 {player.trophies.toLocaleString()}
+              🏆 {formatNumber(player.trophies)}
             </p>
           )}
           {player?.syncInfo && (
@@ -242,21 +242,12 @@ export function PlayerInfo({
         <div className="player-info-component-battle-stats-section">
           <h3>Battle Statistics</h3>
           <div className="player-info-component-stats-grid">
-            <StatCard
-              value={player?.wins?.toLocaleString() ?? 0}
-              label="Wins"
-            />
-            <StatCard
-              value={player?.losses?.toLocaleString() ?? 0}
-              label="Losses"
-            />
-            <StatCard
-              value={player?.battleCount?.toLocaleString() ?? 0}
-              label="Total Battles"
-            />
+            <StatCard value={player?.wins ?? 0} label="Wins" />
+            <StatCard value={player?.losses ?? 0} label="Losses" />
+            <StatCard value={player?.battleCount ?? 0} label="Total Battles" />
             <StatCard value={`${winPercentage}%`} label="Win Rate" />
             <StatCard
-              value={player?.threeCrownWins.toLocaleString()}
+              value={player?.threeCrownWins ?? 0}
               label="Three Crown Wins"
             />
           </div>

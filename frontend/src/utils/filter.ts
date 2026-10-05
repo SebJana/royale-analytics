@@ -44,7 +44,7 @@ export function getFilterStateFromLocalStorage(): FilterState | null {
 
     // If within the TTL, return the parsed filter state
     if (diffSeconds <= FILTER_TTL_SECONDS) {
-      return migrateFilterState(JSON.parse(rawFilters) as FilterState);
+      return JSON.parse(rawFilters) as FilterState;
     }
 
     // Otherwise treat as expired
@@ -53,27 +53,6 @@ export function getFilterStateFromLocalStorage(): FilterState | null {
     console.error("Failed to parse filter state from localStorage:", error);
     return null;
   }
-}
-
-/**
- * Brings a saved filter state up to the current shape. States saved before
- * tower troops have no supportIds. Include mode allows one tower troop, so a
- * longer list keeps its most recently selected entry.
- *
- * @param filters - Filter state as parsed from localStorage
- * @returns The filter state with valid supportIds
- */
-function migrateFilterState(filters: FilterState): FilterState {
-  const supportIds = Array.isArray(filters.supportIds)
-    ? filters.supportIds.filter((id) => Number.isInteger(id))
-    : [];
-  return {
-    ...filters,
-    supportIds:
-      filters.includeCardFilterMode !== false
-        ? supportIds.slice(-1)
-        : supportIds,
-  };
 }
 
 /**
@@ -119,6 +98,7 @@ function extractFirstNumber(str: string): number | null {
  * - Game modes: Empty array (no filters applied)
  * - Cards: Empty array (no filters applied)
  * - Tower troops: Empty array (no filters applied)
+ * - Excluded cards and tower troops: Empty arrays (no filters applied)
  * - Card inclusion filter mode: true, meaning all selected cards HAVE to be included in the shown decks
  * - Timespan option: "Last DEFAULT_DAY_RANGE days"
  *
@@ -134,6 +114,8 @@ export function getDefaultFilterState(): FilterState {
     gameModes: [],
     cards: [],
     supportIds: [],
+    excludedCards: [],
+    excludedSupportIds: [],
     includeCardFilterMode: true,
     timespanOption: `Last ${DEFAULT_DAY_RANGE} days`,
   };
@@ -172,6 +154,8 @@ export function getCurrentFilterState(): FilterState {
         gameModes: filters.gameModes,
         cards: filters.cards,
         supportIds: filters.supportIds,
+        excludedCards: filters.excludedCards,
+        excludedSupportIds: filters.excludedSupportIds,
         includeCardFilterMode: filters.includeCardFilterMode,
         timespanOption: filters.timespanOption,
       };

@@ -15,9 +15,10 @@ from pathlib import Path
 
 from names import env_key_prefix, parse_env_key_name
 
-
 ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 DEFAULT_POOLS = ("app", "scraper")
+
+
 def entries(lines):
     """Return the line index, group, key number, and value of known key entries.
 
@@ -34,7 +35,7 @@ def entries(lines):
         parsed = parse_env_key_name(name.strip())
         if parsed:
             pool, number = parsed
-            found.append((index, pool, number, value.strip().strip('"\'')))
+            found.append((index, pool, number, value.strip().strip("\"'")))
     return found
 
 
@@ -83,7 +84,11 @@ def _choose_pool(pools):
 
 
 def _choose_key(lines, pool):
-    candidates = [(index, number, value) for index, name, number, value in entries(lines) if name == pool]
+    candidates = [
+        (index, number, value)
+        for index, name, number, value in entries(lines)
+        if name == pool
+    ]
     if not candidates:
         print("This group has no keys.")
         return None
@@ -93,7 +98,11 @@ def _choose_key(lines, pool):
     answer = input("Key number (Enter to cancel): ").strip()
     if not answer:
         return None
-    matches = [(index, number, value) for index, number, value in candidates if str(number) == answer]
+    matches = [
+        (index, number, value)
+        for index, number, value in candidates
+        if str(number) == answer
+    ]
     if len(matches) != 1:
         print("Key number not found or duplicated in .env.")
         return None
@@ -102,7 +111,11 @@ def _choose_key(lines, pool):
 
 def _read_key(*, empty_cancels=False):
     # getpass avoids placing a raw token in terminal output or process args.
-    prompt = "Clash Royale API key (Enter to finish): " if empty_cancels else "Clash Royale API key: "
+    prompt = (
+        "Clash Royale API key (Enter to finish): "
+        if empty_cancels
+        else "Clash Royale API key: "
+    )
     value = getpass.getpass(prompt).strip()
     # Only repeated entry treats Enter as "done"; a single-key action needs
     # an actual value. None means invalid input and is skipped by the caller.
@@ -124,10 +137,14 @@ def _append_line(lines, line):
 def _list(pools, lines):
     known = entries(lines)
     for pool in pools:
-        pool_keys = [(number, value) for _, name, number, value in known if name == pool]
+        pool_keys = [
+            (number, value) for _, name, number, value in known if name == pool
+        ]
         print(f"{pool}: {len(pool_keys)} key(s)")
         for number, value in pool_keys:
-            print(f"  #{number}: sha256:{hashlib.sha256(value.encode()).hexdigest()[:12]}")
+            print(
+                f"  #{number}: sha256:{hashlib.sha256(value.encode()).hexdigest()[:12]}"
+            )
 
 
 def _add_group(pools, lines):
@@ -224,7 +241,9 @@ def _remove_key(pools, lines):
     save_env(lines)
     # A custom group has no independent record. Removing its last key makes
     # it disappear from the current menu as well as future runs.
-    if pool not in DEFAULT_POOLS and not any(name == pool for _, name, _, _ in entries(lines)):
+    if pool not in DEFAULT_POOLS and not any(
+        name == pool for _, name, _, _ in entries(lines)
+    ):
         pools.remove(pool)
     print(f"Removed key #{number} from {pool}. Restart affected services.")
 
@@ -253,7 +272,11 @@ def main():
     if len(sys.argv) != 1:
         print("Run this program without arguments; choose an action from the menu.")
         return
-    lines = ENV_PATH.read_text(encoding="utf-8").splitlines(keepends=True) if ENV_PATH.exists() else []
+    lines = (
+        ENV_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
+        if ENV_PATH.exists()
+        else []
+    )
     pools = load_pools(lines)
     actions = {
         "1": lambda: _list(pools, lines),

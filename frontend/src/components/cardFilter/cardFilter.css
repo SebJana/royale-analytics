@@ -120,6 +120,59 @@
   background-color: rgba(52, 152, 219, 0.15);
 }
 
+/* Excluded cards: red, the counterpart to the blue selection */
+.card-filter-item.is-excluded,
+.card-filter-item.is-excluded:focus,
+.card-filter-item.is-excluded:focus-visible {
+  border-color: var(--color-error);
+  background-color: rgba(239, 68, 68, 0.15);
+}
+
+.card-filter-item.is-excluded:hover {
+  border-color: var(--color-error);
+  background-color: rgba(239, 68, 68, 0.25);
+}
+
+/* Marked cards and tower troops above the grid, a click removes one */
+.card-filter-selected {
+  margin: var(--spacing-xs) 0 var(--spacing-sm);
+  text-align: left;
+}
+
+.card-filter-selected-title {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.card-filter-selected-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem;
+}
+
+/* Thin line between the cards and the tower troops, drawn on the first
+   tower so the two always wrap together */
+.card-filter-selected-first-tower {
+  margin-left: calc(2 * var(--spacing-md));
+}
+
+.card-filter-selected-first-tower::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--spacing-md) - 1px);
+  width: 1px;
+  background: var(--border-light);
+}
+
+.card-filter-selected-item {
+  width: 52px;
+}
+
 /* Tower troops get their own row under the regular cards. */
 .card-filter-tower-row {
   grid-column: 1 / -1;
@@ -142,37 +195,6 @@
   grid-template-columns: repeat(auto-fill, 70px);
   gap: 0.1rem;
   justify-content: center;
-}
-
-/* None: an empty, greyed card slot with its label on top */
-.card-filter-none-item img {
-  display: block;
-  width: 100%;
-  height: auto;
-  opacity: 0.3;
-  filter: grayscale(1);
-}
-
-.card-filter-none-item span {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--font-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-secondary);
-  text-transform: uppercase;
-}
-
-.card-filter-component-actions {
-  grid-column: 1 / -1;
-  display: flex;
-  gap: var(--spacing-md);
-  justify-content: left;
-  margin-top: var(--spacing-md);
-  padding-top: var(--spacing-md);
-  border-top: 1px solid var(--border-light);
 }
 
 .card-filter-component-action-button {
@@ -218,26 +240,56 @@
   box-shadow: 0 4px 8px var(--shadow-light);
 }
 
-.card-filter-component-mode-toggle {
+/* Mode and click switches side by side, Clear at the end of the row */
+.card-filter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-md) var(--spacing-xl);
   padding: var(--spacing-sm) 0;
   margin-bottom: var(--spacing-sm);
   border-bottom: 1px solid var(--border-light);
-}
-
-.card-filter-component-mode-label {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  font-size: var(--font-md);
-  color: var(--text-secondary);
-  flex-wrap: wrap;
-}
-
-.card-filter-component-mode-label > span {
   text-align: left;
-  flex: 1;
-  min-width: 200px;
+}
+
+.card-filter-switch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.card-filter-switch-title {
+  font-size: var(--font-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.card-filter-switch-hint {
+  display: grid;
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+}
+
+.card-filter-switch-hint > span {
+  grid-area: 1 / 1;
+}
+
+.card-filter-switch-hint > .is-hidden {
+  visibility: hidden;
+}
+
+.card-filter-controls-clear {
+  margin-left: auto;
+  align-self: center;
+}
+
+.card-filter-controls-clear:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
 }
 
 .card-filter-component-toggle-container {
@@ -295,6 +347,13 @@
 .card-filter-component-toggle-input:checked
   + .card-filter-component-toggle-slider {
   background-color: var(--color-primary);
+}
+
+/* Exclude is the red counterpart, like the excluded cards */
+.card-filter-component-slide-toggle.is-exclude
+  .card-filter-component-toggle-input:checked
+  + .card-filter-component-toggle-slider {
+  background-color: var(--color-error);
 }
 
 .card-filter-component-toggle-input:checked

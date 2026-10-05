@@ -44,8 +44,10 @@ createRoot(document.getElementById("root")!).render(
           // CARD_IMAGE_SET_RETENTION (7 days) as a grace period for saved card
           // lists. Keep this well below it.
           maxAge: day,
-          // v2: tower troops in the card list and in deck and card statistics
-          buster: "v2",
+          // Change whenever a cached API response changes shape, so browsers
+          // drop the saved cache instead of rendering the old shape for up
+          // to maxAge.
+          buster: "2026-10-05b",
           // Decide wether or not to keep the query progress
           dehydrateOptions: {
             shouldDehydrateQuery: (q) => q.meta?.persist !== false, // skip those with persist:false

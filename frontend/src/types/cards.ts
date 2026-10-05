@@ -23,8 +23,8 @@ export type CardMeta = {
 
 export type CardsResponse = {
   items: CardMeta[];
-  // Tower troops; missing in a card list stored before they were mirrored
-  supportItems?: CardMeta[];
+  // Tower troops
+  supportItems: CardMeta[];
 };
 
 export type Card = {

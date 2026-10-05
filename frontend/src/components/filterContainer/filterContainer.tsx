@@ -17,8 +17,11 @@ export type FilterState = {
   endDate: string;
   gameModes: string[];
   cards: Card[];
-  // Tower troop ids, NO_SUPPORT_ID for None. At most one in Include mode.
+  // Tower troop ids. At most one in Include mode.
   supportIds: number[];
+  // Cards and tower troops no shown deck may contain, in both modes
+  excludedCards: Card[];
+  excludedSupportIds: number[];
   includeCardFilterMode: boolean;
   timespanOption: string;
 };
@@ -30,7 +33,6 @@ type FilterContainerProps = {
   onFiltersApply: (filters: FilterState) => void;
   initialFilters?: Partial<FilterState>;
   showCardFilter?: boolean; // Optional prop to show/hide card filter
-  showNoSupportOption?: boolean; // Offer None in the tower troop row
   // Optional prop to control wether the card filter works by definite inclusion (true) or closest match (false)
   includeCardFilterMode?: boolean;
   appliedFilters?: FilterState; // Current applied filters to sync UI
@@ -43,7 +45,6 @@ export function FilterContainer({
   onFiltersApply,
   initialFilters,
   showCardFilter,
-  showNoSupportOption,
   includeCardFilterMode,
   appliedFilters,
 }: Readonly<FilterContainerProps>) {
@@ -75,6 +76,36 @@ export function FilterContainer({
   const [appliedSupportIds, setAppliedSupportIds] = useState<number[]>(
     showCardFilter
       ? appliedFilters?.supportIds || initialFilters?.supportIds || []
+      : [],
+  );
+
+  const [selectedExcludedCards, setSelectedExcludedCards] = useState<Card[]>(
+    showCardFilter
+      ? appliedFilters?.excludedCards || initialFilters?.excludedCards || []
+      : [],
+  );
+  const [appliedExcludedCards, setAppliedExcludedCards] = useState<Card[]>(
+    showCardFilter
+      ? appliedFilters?.excludedCards || initialFilters?.excludedCards || []
+      : [],
+  );
+
+  const [selectedExcludedSupportIds, setSelectedExcludedSupportIds] = useState<
+    number[]
+  >(
+    showCardFilter
+      ? appliedFilters?.excludedSupportIds ||
+          initialFilters?.excludedSupportIds ||
+          []
+      : [],
+  );
+  const [appliedExcludedSupportIds, setAppliedExcludedSupportIds] = useState<
+    number[]
+  >(
+    showCardFilter
+      ? appliedFilters?.excludedSupportIds ||
+          initialFilters?.excludedSupportIds ||
+          []
       : [],
   );
 
@@ -131,6 +162,8 @@ export function FilterContainer({
       if (showCardFilter) {
         setSelectedCards(appliedFilters.cards);
         setSelectedSupportIds(appliedFilters.supportIds);
+        setSelectedExcludedCards(appliedFilters.excludedCards);
+        setSelectedExcludedSupportIds(appliedFilters.excludedSupportIds);
       }
 
       // Also update applied state to match
@@ -141,6 +174,8 @@ export function FilterContainer({
       if (showCardFilter) {
         setAppliedCards(appliedFilters.cards);
         setAppliedSupportIds(appliedFilters.supportIds);
+        setAppliedExcludedCards(appliedFilters.excludedCards);
+        setAppliedExcludedSupportIds(appliedFilters.excludedSupportIds);
       }
     }
   }, [appliedFilters, showCardFilter]);
@@ -160,7 +195,12 @@ export function FilterContainer({
   useEffect(() => {
     const cardsChanged = showCardFilter
       ? JSON.stringify(appliedCards) !== JSON.stringify(selectedCards) ||
-        JSON.stringify(appliedSupportIds) !== JSON.stringify(selectedSupportIds)
+        JSON.stringify(appliedSupportIds) !==
+          JSON.stringify(selectedSupportIds) ||
+        JSON.stringify(appliedExcludedCards) !==
+          JSON.stringify(selectedExcludedCards) ||
+        JSON.stringify(appliedExcludedSupportIds) !==
+          JSON.stringify(selectedExcludedSupportIds)
       : false;
     const cardFilterModeChanged =
       appliedIncludeCardFilterMode !== selectedIncludeCardFilterMode;
@@ -186,12 +226,16 @@ export function FilterContainer({
     appliedGameModes,
     appliedCards,
     appliedSupportIds,
+    appliedExcludedCards,
+    appliedExcludedSupportIds,
     appliedIncludeCardFilterMode,
     selectedStartDate,
     selectedEndDate,
     selectedGameModes,
     selectedCards,
     selectedSupportIds,
+    selectedExcludedCards,
+    selectedExcludedSupportIds,
     selectedIncludeCardFilterMode,
     showCardFilter,
   ]);
@@ -204,6 +248,8 @@ export function FilterContainer({
       gameModes: selectedGameModes,
       cards: showCardFilter ? selectedCards : [], // Only include cards if card filter is enabled
       supportIds: showCardFilter ? selectedSupportIds : [],
+      excludedCards: showCardFilter ? selectedExcludedCards : [],
+      excludedSupportIds: showCardFilter ? selectedExcludedSupportIds : [],
       includeCardFilterMode: selectedIncludeCardFilterMode,
       timespanOption: selectedTimespanOption,
     };
@@ -215,6 +261,8 @@ export function FilterContainer({
     if (showCardFilter) {
       setAppliedCards(selectedCards);
       setAppliedSupportIds(selectedSupportIds);
+      setAppliedExcludedCards(selectedExcludedCards);
+      setAppliedExcludedSupportIds(selectedExcludedSupportIds);
     }
 
     // Save the current state of the filter to the local Storage
@@ -235,6 +283,8 @@ export function FilterContainer({
     if (showCardFilter) {
       setSelectedCards(defaultFilters.cards);
       setSelectedSupportIds(defaultFilters.supportIds);
+      setSelectedExcludedCards(defaultFilters.excludedCards);
+      setSelectedExcludedSupportIds(defaultFilters.excludedSupportIds);
     }
   };
 
@@ -261,7 +311,10 @@ export function FilterContainer({
           onCardsChange={setSelectedCards}
           selectedSupportIds={selectedSupportIds}
           onSupportIdsChange={setSelectedSupportIds}
-          showNoSupportOption={showNoSupportOption}
+          excluded={selectedExcludedCards}
+          onExcludedChange={setSelectedExcludedCards}
+          excludedSupportIds={selectedExcludedSupportIds}
+          onExcludedSupportIdsChange={setSelectedExcludedSupportIds}
           includeCardFilterMode={selectedIncludeCardFilterMode}
           onCardFilterModeChange={setSelectedIncludeCardFilterMode}
         />

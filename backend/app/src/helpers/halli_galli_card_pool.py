@@ -27,7 +27,6 @@ from helpers.halli_galli_card import (
 )
 from redis_service import RedisConn
 
-
 # Redis EXPIRE takes seconds, while the game setting is kept in minutes.
 SECONDS_PER_MINUTE = 60
 

@@ -38,9 +38,7 @@ export type HalliGalliGameResponse = {
 
 export type HalliGalliGameStatus = "playing" | "player_won" | "player_lost";
 export type HalliGalliRoundResult =
-  | "player_won"
-  | "player_lost"
-  | "no_halli_galli";
+  "player_won" | "player_lost" | "no_halli_galli";
 export type HalliGalliRoundReason =
   | "correct_buzz"
   | "late_buzz"

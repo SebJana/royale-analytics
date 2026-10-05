@@ -194,6 +194,24 @@ class Settings:
     CACHE_TTL_DECK_STATS: int = 10 * 60  # 10 minutes
     CACHE_TTL_CARD_STATS: int = 10 * 60  # 10 minutes
 
+    # Card filter limits of the deck statistics. Include mode keeps decks that
+    # contain every selected card, so more cards than a deck holds can never
+    # match. Decks have 8 cards; only the 12-card ClanWar_BoatBattle defenses
+    # are larger, and filtering for a full defense is not a use case, so the
+    # limit stays at a regular deck. Match mode scores decks by shared cards
+    # and excluded cards drop decks, so both may name more.
+    # NOTE Keep equal to the limits in the frontend's cardFilter.tsx.
+    DECK_FILTER_MAX_INCLUDE_CARDS: int = 8
+    DECK_FILTER_MAX_CARDS: int = 32
+    # Tower troops per list. Include mode allows one: a deck has one tower.
+    DECK_FILTER_MAX_SUPPORT: int = 8
+    # Decks returned per deck statistics request, the top ones of the sort
+    # order. Real players have 150-200 decks over their whole history, so this
+    # only cuts extreme ranges; the response stays at about 200 KB of JSON,
+    # well inside the browser's ~5 MB persisted query cache. The response
+    # counts every matching deck, so the page can ask for tighter filters.
+    DECK_STATS_LIMIT: int = 250
+
     # Retry-After for /cards before the data scraper's first card refresh on a
     # fresh install. The scraper refreshes right after it starts.
     CARDS_NOT_READY_RETRY_AFTER: int = 30  # seconds

@@ -1,10 +1,23 @@
+import re
 from datetime import date, datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from models.schema import BetweenRequest, BattlesRequest
-from core.deps import RedConn
-from redis_service import GAME_MODES_CACHE_KEY, get_redis_json
-from typing import Optional, List
+from core.deps import DbConn, RedConn
+from redis_service import CARDS_CACHE_KEY, GAME_MODES_CACHE_KEY, get_redis_json
+from mongo import get_cards as get_stored_cards
+from typing import Literal, Optional, List
 from core.settings import settings
+
+# A filtered card is "<cardId>-<evolutionLevel>": 0 regular, 1 evolution,
+# 2 hero. Any level parses, so a variant added to the game later needs no
+# change here; a level no deck has simply matches nothing. ASCII digits only:
+# \d would also accept other scripts' digits.
+CARD_FILTER_KEY_PATTERN = re.compile(r"([0-9]{1,12})-([0-9]{1,2})")
+
+# Tower troop id of decks from battles without tower data. Clash Royale ids
+# are never 0.
+# NOTE Match NO_SUPPORT_ID in the frontend's getCardMetaFields.ts.
+NO_SUPPORT_ID = 0
 
 
 class ParamsRequestError(Exception):
@@ -203,3 +216,161 @@ async def validate_game_modes(redis_conn: RedConn, game_modes: Optional[List[str
         return []
 
     return unique_modes
+
+
+async def _get_card_list(mongo_conn: DbConn, redis_conn: RedConn) -> Optional[dict]:
+    """Card list as served by /cards, from the cache or else from Mongo.
+
+    Returns:
+        Optional[dict]: {"items": [...], "supportItems": [...]}, or None while
+            no list is stored.
+    """
+    try:
+        cached = await get_redis_json(redis_conn, CARDS_CACHE_KEY)
+    except Exception as e:
+        print(f"[CACHE] [WARNING] reading the cards failed, using Mongo: {e}")
+        cached = None
+    if cached is not None:
+        return cached
+    stored = await get_stored_cards(mongo_conn)
+    return stored.get("payload") if stored else None
+
+
+def _canonical_card_keys(keys: Optional[List[str]]) -> set[str]:
+    """Parse card filter keys into the form the pipeline builds from the decks.
+
+    The pipeline compares strings, so "26000000-00" or "026000000-0" would
+    match no deck and let an excluded card through. Canonical keys also make
+    deduplication and the selected/excluded conflict check reliable.
+
+    Args:
+        keys (Optional[List[str]]): Keys as sent, "<cardId>-<evolutionLevel>".
+
+    Returns:
+        set[str]: The keys as "<int id>-<int level>", without leading zeros.
+
+    Raises:
+        ParamsRequestError: For a key that is not in that format.
+    """
+    canonical = set()
+    for key in keys or []:
+        parsed = CARD_FILTER_KEY_PATTERN.fullmatch(key)
+        if not parsed:
+            raise ParamsRequestError(
+                f"Card {key!r} is not in the <cardId>-<evolutionLevel> format"
+            )
+        canonical.add(f"{int(parsed[1])}-{int(parsed[2])}")
+    return canonical
+
+
+async def validate_deck_card_filter(
+    mongo_conn: DbConn,
+    redis_conn: RedConn,
+    card_mode: Literal["include", "match"],
+    cards: Optional[List[str]],
+    exclude_cards: Optional[List[str]],
+    support_ids: Optional[List[int]],
+    exclude_support_ids: Optional[List[int]],
+) -> Optional[dict]:
+    """Normalize the card filter of the deck statistics and check it against the card list.
+
+    Only cards of the current card list can be filtered. A card that left the
+    game, or an event card the list never had, is rejected, since dropping it
+    would silently widen an include filter. While no card list is stored (a
+    fresh install before the data scraper's first card refresh), any well
+    formed id is accepted; an id no deck has matches nothing.
+
+    Without any selection there is no filter.
+    Without selected cards or tower troops, the mode makes no difference and
+    is normalized to include, so such requests share one cache entry.
+
+    Args:
+        mongo_conn (DbConn): Mongo connection, for the card list on a cache miss.
+        redis_conn (RedConn): Redis connection holding the cached card list.
+        card_mode (Literal["include", "match"]): "include" keeps decks with all
+            selected cards and the selected tower troop, "match" keeps decks
+            with at least one of them, ranked by how many they share.
+        cards (Optional[List[str]]): Selected cards as "<cardId>-<evolutionLevel>".
+        exclude_cards (Optional[List[str]]): Cards no returned deck may contain.
+        support_ids (Optional[List[int]]): Selected tower troop ids,
+            NO_SUPPORT_ID for decks without tower data.
+        exclude_support_ids (Optional[List[int]]): Tower troops no returned
+            deck may have.
+
+    Returns:
+        Optional[dict]: None without any selection, otherwise {"mode", "cards",
+            "exclude_cards", "support_ids", "exclude_support_ids"}, each list
+            deduplicated and sorted for a stable cache key.
+
+    Raises:
+        ParamsRequestError: For a malformed or unknown card, a card or tower
+            troop that is both selected and excluded, or a list over its limit.
+    """
+    card_set = _canonical_card_keys(cards)
+    exclude_card_set = _canonical_card_keys(exclude_cards)
+    support_set = set(support_ids or [])
+    exclude_support_set = set(exclude_support_ids or [])
+
+    if not (card_set or exclude_card_set or support_set or exclude_support_set):
+        return None
+
+    max_cards = (
+        settings.DECK_FILTER_MAX_INCLUDE_CARDS
+        if card_mode == "include"
+        else settings.DECK_FILTER_MAX_CARDS
+    )
+    if len(card_set) > max_cards:
+        raise ParamsRequestError(
+            f"At most {max_cards} cards can be selected in {card_mode} mode"
+        )
+    if len(exclude_card_set) > settings.DECK_FILTER_MAX_CARDS:
+        raise ParamsRequestError(
+            f"At most {settings.DECK_FILTER_MAX_CARDS} cards can be excluded"
+        )
+    max_support = 1 if card_mode == "include" else settings.DECK_FILTER_MAX_SUPPORT
+    if len(support_set) > max_support:
+        raise ParamsRequestError(
+            f"Too many tower troops selected for {card_mode} mode (max {max_support})"
+        )
+    if len(exclude_support_set) > settings.DECK_FILTER_MAX_SUPPORT:
+        raise ParamsRequestError(
+            f"At most {settings.DECK_FILTER_MAX_SUPPORT} tower troops can be excluded"
+        )
+    if card_set & exclude_card_set or support_set & exclude_support_set:
+        raise ParamsRequestError("A card can not be both selected and excluded")
+
+    card_list = await _get_card_list(mongo_conn, redis_conn)
+    # Without a stored list only the syntax is checked. The keys are compared
+    # by value in the pipeline, so they cannot inject query operators.
+    known_card_ids = {c["id"] for c in card_list["items"]} if card_list else None
+    known_support_ids = (
+        {s["id"] for s in card_list["supportItems"]} | {NO_SUPPORT_ID}
+        if card_list
+        else None
+    )
+
+    # TODO Decide whether the 12-card ClanWar_BoatBattle defenses belong in
+    # the deck statistics at all. Their evolution levels are dropped while
+    # cleaning (remove_boat_defense_evolutions in the data scraper's
+    # clean.py), so no stored card has a level above 2. The level is not
+    # checked against maxEvolutionLevel.
+    if known_card_ids is not None:
+        for key in card_set | exclude_card_set:
+            card_id = int(key.split("-")[0])
+            if card_id not in known_card_ids:
+                raise ParamsRequestError(f"Card {card_id} is not a current card")
+
+    if known_support_ids is not None:
+        unknown = (support_set | exclude_support_set) - known_support_ids
+        if unknown:
+            raise ParamsRequestError(
+                f"Tower troop {min(unknown)} is not a current tower troop"
+            )
+
+    return {
+        "mode": card_mode if card_set or support_set else "include",
+        "cards": sorted(card_set),
+        "exclude_cards": sorted(exclude_card_set),
+        "support_ids": sorted(support_set),
+        "exclude_support_ids": sorted(exclude_support_set),
+    }

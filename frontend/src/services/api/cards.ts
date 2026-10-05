@@ -9,10 +9,11 @@ export async function fetchAllCards(): Promise<CardMeta[]> {
   const { data } = await api.get<CardsResponse>("/cards");
   return [
     ...data.items.map((card) => ({ ...card, category: "card" as const })),
-    // Optional and cleaned up by the data scraper. Still guarded, so a
-    // malformed field can never break every page that needs the card list.
-    ...(Array.isArray(data.supportItems) ? data.supportItems : [])
-      .filter((card) => card?.id != null && Boolean(card.name))
-      .map((card) => ({ ...card, category: "support" as const })),
+    // The data scraper always stores the list, entries without an id or
+    // name already removed
+    ...data.supportItems.map((card) => ({
+      ...card,
+      category: "support" as const,
+    })),
   ];
 }

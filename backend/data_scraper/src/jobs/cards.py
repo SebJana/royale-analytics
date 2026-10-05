@@ -169,8 +169,7 @@ def seconds_until_cards_due(stored: dict | None) -> float:
 
     A restart therefore does not trigger an extra card request when the stored
     list is still recent. A list stored without a complete image set is due
-    again after CARDS_RETRY_DELAY, which also builds the first set for a list
-    stored before images were mirrored. A list with images the CDN does not
+    again after CARDS_RETRY_DELAY. A list with images the CDN does not
     deliver yet is due after CARD_IMAGE_MISSING_RETRY_DELAY.
 
     Args:

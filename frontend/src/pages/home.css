@@ -143,14 +143,25 @@
 }
 
 @keyframes untrack-unlock-pop {
-  0% { transform: scale(0.7) rotate(-15deg); }
-  50% { transform: scale(1.25) rotate(8deg); }
-  100% { transform: scale(1) rotate(0); }
+  0% {
+    transform: scale(0.7) rotate(-15deg);
+  }
+  50% {
+    transform: scale(1.25) rotate(8deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
 }
 
 @keyframes untrack-unlock-glow {
-  0%, 100% { box-shadow: 0 0 0 0 transparent; }
-  40% { box-shadow: 0 0 0 4px var(--color-success); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  40% {
+    box-shadow: 0 0 0 4px var(--color-success);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -93,6 +93,27 @@
   align-items: start;
 }
 
+/* Side by side, a deck without a tower troop keeps a blank slot, so its
+   cards stay as large as the other deck's. Stacked on mobile, the cards take
+   the full width instead (deck.css hides the slot). The stat bar ends with
+   the cards, not at the blank slot.
+   NOTE Keep the clamp equal to the flex basis of .deck-component-support. */
+@media (min-width: 769px) {
+  .battle-component-decks .deck-component-support.is-absent {
+    display: flex;
+    visibility: hidden;
+  }
+
+  .battle-component-decks .deck-component-footer.no-support {
+    margin-right: calc(clamp(34px, 13%, 84px) + var(--spacing-sm));
+  }
+
+  .battle-component-decks .deck-component-footer.no-support.support-left {
+    margin-right: 0;
+    margin-left: calc(clamp(34px, 13%, 84px) + var(--spacing-sm));
+  }
+}
+
 .battle-component-col {
   display: grid;
   grid-auto-rows: min-content;

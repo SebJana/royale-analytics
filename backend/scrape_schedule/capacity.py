@@ -186,8 +186,7 @@ async def read_capacity(redis: Redis, max_age_s: float) -> Capacity | None:
         usable_keys=int(fields["usable_keys"]),
         request_rate=float(fields["request_rate"]),
         battle_rate=float(fields["battle_rate"]),
-        # Missing while a scraper from before this field still publishes
-        battle_demand=float(fields.get("battle_demand") or 0.0),
+        battle_demand=float(fields["battle_demand"]),
         base_interval_s=float(fields["base_interval_s"]),
         max_players=int(fields["max_players"]) if fields["max_players"] else None,
         updated_at=float(fields["updated_at"]),

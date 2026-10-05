@@ -8,7 +8,7 @@ export function useCardStats(
   playerTag: string,
   startDate: string,
   endDate: string,
-  gameModes?: string[] | null // Can be null to disable query until game modes are initialized
+  gameModes?: string[] | null, // Can be null to disable query until game modes are initialized
 ) {
   const modesKey = (gameModes ?? []).join("|"); // Make game modes a stable key
 
@@ -21,7 +21,7 @@ export function useCardStats(
         string,
         string,
         string,
-        string
+        string,
       ];
       const modes = modesString ? modesString.split("|") : undefined; // back to array from joined string
       return fetchCardStats(tag, start, end, modes);

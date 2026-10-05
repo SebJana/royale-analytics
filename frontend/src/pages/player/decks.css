@@ -61,13 +61,25 @@
   text-overflow: ellipsis;
 }
 
+/* Shown when the backend capped the deck list, above the divider */
+.decks-cap-hint {
+  margin: var(--spacing-lg) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  text-align: center;
+}
+
+/* The totals and the hint, closed by the divider above the deck list */
+.decks-general-stats-block {
+  margin-bottom: var(--spacing-2xl);
+  padding-bottom: var(--spacing-2xl);
+  border-bottom: 1px solid var(--border-light);
+}
+
 .decks-general-stats {
   display: flex;
   gap: var(--spacing-md);
-  margin-bottom: var(--spacing-2xl);
   flex-wrap: wrap;
-  padding-bottom: var(--spacing-2xl);
-  border-bottom: 1px solid var(--border-light);
   justify-content: center;
 }
 
@@ -264,4 +276,15 @@
   color: var(--text-secondary);
   font-style: italic;
   margin: var(--spacing-xl) 0;
+}
+
+/* Narrower than the sort select: its options are short */
+.decks-min-battles-select {
+  min-width: 120px;
+}
+
+/* The previous order stays visible while the requested one loads */
+.decks-stats.is-pending {
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
 }

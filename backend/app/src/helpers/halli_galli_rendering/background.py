@@ -74,24 +74,33 @@ def paint_background_cluster(
     if isinstance(pixels, np.ndarray):
         # These are views into this card's buffers. A rejected cluster must
         # leave both pixels and occupancy unchanged, so validate before writing.
-        painted_mask = np.frombuffer(mask.tobytes(), dtype=np.uint8).reshape(mask.height, mask.width) != 0
+        painted_mask = (
+            np.frombuffer(mask.tobytes(), dtype=np.uint8).reshape(
+                mask.height, mask.width
+            )
+            != 0
+        )
         painted = int(np.count_nonzero(painted_mask))
         if not painted:
             return 0
-        occupied_region = np.frombuffer(occupied, dtype=np.uint8).reshape(CARD_HEIGHT, CARD_WIDTH)[
-            top:top + mask.height, left:left + mask.width
-        ]
+        occupied_region = np.frombuffer(occupied, dtype=np.uint8).reshape(
+            CARD_HEIGHT, CARD_WIDTH
+        )[top : top + mask.height, left : left + mask.width]
         if np.any(occupied_region[painted_mask]):
             return 0
-        label_region = np.frombuffer(contacts.labels, dtype=np.uint8).reshape(CARD_HEIGHT, CARD_WIDTH)[
-            top:top + mask.height, left:left + mask.width
-        ]
+        label_region = np.frombuffer(contacts.labels, dtype=np.uint8).reshape(
+            CARD_HEIGHT, CARD_WIDTH
+        )[top : top + mask.height, left : left + mask.width]
         memberships = int(np.bitwise_or.reduce(label_region[painted_mask], initial=0))
-        touched = [index for index in range(len(contacts.counts)) if memberships & (1 << index)]
+        touched = [
+            index for index in range(len(contacts.counts)) if memberships & (1 << index)
+        ]
         if any(contacts.counts[index] >= contacts.limits[index] for index in touched):
             return 0
         occupied_region[painted_mask] = 1
-        pixels[top:top + mask.height, left:left + mask.width][painted_mask] = color + (255,)
+        pixels[top : top + mask.height, left : left + mask.width][painted_mask] = (
+            color + (255,)
+        )
         for index in touched:
             contacts.counts[index] += 1
         return painted
@@ -99,10 +108,14 @@ def paint_background_cluster(
     origin = top * CARD_WIDTH + left
     # Native mask intersection rejects collisions before allocating hundreds
     # of absolute pixel indices. Only copy the candidate's small rectangle.
-    occupied_region = Image.frombytes("L", mask.size, b"".join(
-        occupied[origin + y * CARD_WIDTH:origin + y * CARD_WIDTH + width]
-        for y in range(height)
-    ))
+    occupied_region = Image.frombytes(
+        "L",
+        mask.size,
+        b"".join(
+            occupied[origin + y * CARD_WIDTH : origin + y * CARD_WIDTH + width]
+            for y in range(height)
+        ),
+    )
     if ImageChops.multiply(mask, occupied_region).getbbox():
         return 0
     indices = component_pixel_indices(mask, left, top, CARD_WIDTH)
@@ -111,7 +124,9 @@ def paint_background_cluster(
     memberships = 0
     for index in indices:
         memberships |= contacts.labels[index]
-    touched = [index for index in range(len(contacts.counts)) if memberships & (1 << index)]
+    touched = [
+        index for index in range(len(contacts.counts)) if memberships & (1 << index)
+    ]
     if any(contacts.counts[index] >= contacts.limits[index] for index in touched):
         return 0
     for index in indices:
@@ -147,18 +162,27 @@ def paint_background_blob(
     deficit = needed - added
     # A walk cannot paint more than one brush plus its connector per step.
     # Skip full-mask histograms until even that upper bound reaches the deficit.
-    maximum_step_area = brush_limit ** 2 + (stride + brush_minimum) ** 2
+    maximum_step_area = brush_limit**2 + (stride + brush_minimum) ** 2
     if rng is None:
         # Standalone callers retain the standard random source. Normal card
         # generation passes one independent compiled generator for all walks.
-        values = (((random.randint(-stride, stride), random.randint(-stride, stride)),
-                   (random.randint(brush_minimum, brush_limit), random.randint(brush_minimum, brush_limit)))
-                  for _ in range(steps))
+        values = (
+            (
+                (random.randint(-stride, stride), random.randint(-stride, stride)),
+                (
+                    random.randint(brush_minimum, brush_limit),
+                    random.randint(brush_minimum, brush_limit),
+                ),
+            )
+            for _ in range(steps)
+        )
     else:
         # Batch the many bounded random draws in NumPy's compiled sampler.
         values = zip(
             rng.integers(-stride, stride + 1, size=(steps, 2), dtype=np.int16).tolist(),
-            rng.integers(brush_minimum, brush_limit + 1, size=(steps, 2), dtype=np.int16).tolist(),
+            rng.integers(
+                brush_minimum, brush_limit + 1, size=(steps, 2), dtype=np.int16
+            ).tolist(),
         )
     mask, used_steps = rasterize_background_walk(
         values, size, radius, brush_minimum, deficit, maximum_step_area
@@ -166,12 +190,16 @@ def paint_background_blob(
     mask = mask.crop(mask.getbbox())
     left = random.randrange(CARD_WIDTH - mask.width + 1)
     top = random.randrange(CARD_HEIGHT - mask.height + 1)
-    painted = paint_background_cluster(pixels, occupied, contacts, color, mask, left, top)
+    painted = paint_background_cluster(
+        pixels, occupied, contacts, color, mask, left, top
+    )
     # Keep the final footprint whole even if it modestly exceeds the deficit.
     return added + painted, used_steps
 
 
-def rasterize_background_walk(values, size, radius, brush_minimum, deficit, maximum_step_area):
+def rasterize_background_walk(
+    values, size, radius, brush_minimum, deficit, maximum_step_area
+):
     """Use Pillow's compiled drawing primitives for a connected binary walk."""
     mask = Image.new("L", (size, size), 0)
     draw = ImageDraw.Draw(mask)
@@ -264,7 +292,10 @@ def balance_background_hues(
 
 
 def add_background_blobs(
-    background: Image.Image, foreground: Image.Image, fruit: str, amount: int,
+    background: Image.Image,
+    foreground: Image.Image,
+    fruit: str,
+    amount: int,
     fruit_positions: list[FruitImagePosition],
 ) -> None:
     """Balance hue bins after placing the larger counting distractions."""
@@ -284,7 +315,9 @@ def add_background_blobs(
 
 
 def create_noisy_background(
-    foreground: Image.Image, fruit: str, amount: int,
+    foreground: Image.Image,
+    fruit: str,
+    amount: int,
     fruit_positions: list[FruitImagePosition],
 ) -> Image.Image:
     """Balance fruit-colored background pixels behind and around the fruit.

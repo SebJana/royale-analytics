@@ -68,7 +68,11 @@ def get_background_hue_bins(main_hues: list[float]) -> list[int]:
     # Wrap offsets around the circle so reds on both ends receive background marks.
     return sorted(
         set(BACKGROUND_HUE_TARGETS)
-        | {index for index, palette in enumerate(get_background_bin_palettes()) if palette}
+        | {
+            index
+            for index, palette in enumerate(get_background_bin_palettes())
+            if palette
+        }
         | {
             (round(hue * BACKGROUND_HUE_BINS) + offset) % BACKGROUND_HUE_BINS
             for hue in main_hues
@@ -166,7 +170,8 @@ def get_contrasting_fruits(fruit: str) -> tuple[str, ...]:
     # Banana and orange fills overlap in hue: neither is a useful contrasting
     # decoy for the other. Purple and red stay clearly different on both cards.
     return tuple(
-        source for source in AVAILABLE_FRUITS
+        source
+        for source in AVAILABLE_FRUITS
         if source != fruit
         and not (fruit in ("banana", "orange") and source in ("banana", "orange"))
     )

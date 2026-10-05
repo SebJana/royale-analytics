@@ -4,6 +4,7 @@ from .query_utils import (
     match_tag_before_datetime_stage,
     match_tag_date_mode_range_stage,
     extract_deck_stage,
+    deck_card_filter_stages,
 )
 from datetime import datetime, date
 from typing import Optional, Iterable
@@ -143,9 +144,18 @@ async def get_decks_win_percentage(
     end_date: date,
     game_modes: Optional[Iterable[str]] = None,
     timezone: str = "UTC",
+    card_filter: Optional[dict] = None,
+    sort_by: str = "battleCount",
+    sort_ascending: bool = False,
+    limit: int = 250,
+    min_battles: int = 1,
 ):
     """
-    Fetches every unique deck that the player has played in the given time frame.
+    Fetches the player's top decks of a time frame, with totals over all of them.
+
+    Only the first `limit` decks of the sort order are returned. The totals
+    cover every deck of the filter context, so the caller can tell whether
+    decks were left out.
 
     Args:
         conn (MongoConn): Active connection to the MongoDB database.
@@ -154,9 +164,23 @@ async def get_decks_win_percentage(
         end_date (date): Date before which the game happened.
         game_modes (Optional[Iterable[str]]): If provided/non-empty, filter to these game modes in which the game happened.
         timezone: Timezone into which the battle datetimes will be converted (default: UTC)
+        card_filter (Optional[dict]): Normalized card filter (see
+            deck_card_filter_stages), None for all decks.
+        sort_by (str): Deck field to sort by: "battleCount", "wins",
+            "winRate" or "lastSeen". Match mode ranks by matchedCardCount
+            first.
+        sort_ascending (bool): Lowest first instead of highest first.
+        limit (int): Maximum number of decks returned.
+        min_battles (int): Decks played fewer times are left out of the list
+            and the totals, e.g. so a deck won once does not top the win rate.
 
     Returns:
-        list: A list of dictionaries containing the players unique decks and their win-rates
+        dict: {"decks": [...], "deckCount": int, "battleCount": int,
+            "wins": int, "totalBattles": int}. deckCount, battleCount and
+            wins cover every deck the filters keep, decks only the first
+            `limit` of them. totalBattles counts every battle of the time
+            frame and modes, before the card filter. In match mode every deck
+            has a matchedCardCount.
     Raises:
         Exception: If there is an error while fetching the battles from the database.
     """
@@ -165,134 +189,128 @@ async def get_decks_win_percentage(
         await ensure_connected(conn)
         check_valid_date_range(start_date, end_date)
 
+        filter_stages = deck_card_filter_stages(card_filter) if card_filter else []
+        if min_battles > 1:
+            filter_stages.insert(0, {"$match": {"battleCount": {"$gte": min_battles}}})
+        match_mode = bool(card_filter) and card_filter["mode"] == "match"
+
+        direction = 1 if sort_ascending else -1
+        sort = {"matchedCardCount": -1} if match_mode else {}
+        sort[sort_by] = direction
+        # Ties keep a stable order, so the cap always cuts at the same deck
+        for field in ("battleCount", "lastSeen", "_id"):
+            sort.setdefault(field, -1)
+
         pipeline = [
             # Match the relevant files for the player and the time frame
             match_tag_date_mode_range_stage(
                 player_tag, start_date, end_date, game_modes, timezone
             ),
-            extract_deck_stage(player_tag),
-            # Drop card levels and sort the cards (evolution level first, then
-            # id) and the tower troops (by id), so neither order nor levels
-            # split a deck
+            # TODO The query scales with battles, not decks: every matched
+            # battle document is loaded for the grouping, even when only the
+            # sort or min_battles changed.
+            # Currently, a result that fits under DECK_STATS_LIMIT is sorted
+            # and filtered in the browser (pages/player/decks.tsx), so only
+            # capped results come back here for a re-sort.
+            # If re-sorts of capped results get heavy, cache the grouped decks
+            # of a filter context in Redis and sort, filter and cap them in
+            # the API, so a re-sort skips Mongo (about 7 MB at 10k decks).
             {
-                "$addFields": {
-                    "deckSorted": {
-                        "$sortArray": {
-                            "input": {
-                                "$map": {
-                                    "input": "$deck.cards",
-                                    "as": "card",
-                                    "in": {
-                                        "id": "$$card.id",
-                                        "name": "$$card.name",
-                                        "evolutionLevel": "$$card.evolutionLevel",
-                                    },
-                                }
-                            },
-                            "sortBy": {"evolutionLevel": -1, "id": 1},
-                        }
+                "$group": {
+                    # The deck key the data scraper stores per battle
+                    # (build_deck_key in clean.py): cards and tower troop,
+                    # without levels or names, so neither splits a deck.
+                    # Grouping on one string skips extracting and sorting
+                    # every battle's cards, about 5-8x (ish) faster.
+                    "_id": "$deckKey",
+                    # One battle's team, for the names on display
+                    "team": {"$first": "$team"},
+                    "battleCount": {"$sum": 1},
+                    "wins": {
+                        "$sum": {"$cond": [{"$eq": ["$gameResult", "Victory"]}, 1, 0]}
                     },
-                    "supportSorted": {
-                        "$sortArray": {"input": "$deck.support", "sortBy": {"id": 1}}
-                    },
+                    "firstSeen": {"$min": "$battleTime"},
+                    "lastSeen": {"$max": "$battleTime"},
+                    "modes": {"$addToSet": "$gameMode"},
                 }
             },
-            # Group by decks and get metadata
-            # TODO Smoke test the deck output size with many battles once decks
-            # are split by tower troop. All decks of the range end up in one
-            # unpaginated array of about 700 bytes per deck, which hits the
-            # 16 MiB result limit at about 22-25k distinct decks. allowDiskUse
-            # does not lift that. The frontend's persisted localStorage cache
-            # (about 5 MB) fails much earlier, at about 5-7k decks. Players of
-            # draft or event modes get a new deck nearly every battle. Test
-            # with the heaviest player and a synthetic one with ~25k unique
-            # decks. If the limit is hit, consider a paginated approach with a $group
-            # stage that outputs a single document per deck, and a $sort stage
-            # that sorts by count and lastSeen, then a $skip/$limit stage to
-            # paginate the results. The frontend can then fetch the next page.
             {
                 "$facet": {
+                    # The top decks. Only those few are extracted for display.
                     "decks": [
+                        *filter_stages,
                         {
-                            "$group": {
-                                # A deck is its cards and its tower troop.
-                                # Names stay out of the key, so a renamed card
-                                # does not split a deck. A card without an id
-                                # falls back to its name.
-                                "_id": {
-                                    "cards": {
-                                        "$map": {
-                                            "input": "$deckSorted",
-                                            "as": "c",
-                                            "in": {
-                                                "id": {
-                                                    "$ifNull": ["$$c.id", "$$c.name"]
-                                                },
-                                                "evolutionLevel": "$$c.evolutionLevel",
-                                            },
-                                        }
-                                    },
-                                    "support": {
-                                        "$map": {
-                                            "input": "$supportSorted",
-                                            "as": "s",
-                                            "in": {"$ifNull": ["$$s.id", "$$s.name"]},
-                                        }
-                                    },
-                                },
-                                # Names for display
-                                "deck": {"$first": "$deckSorted"},
-                                "support": {"$first": "$supportSorted"},
-                                "count": {"$sum": 1},
-                                "wins": {
-                                    "$sum": {
-                                        "$cond": [
-                                            {"$eq": ["$gameResult", "Victory"]},
-                                            1,
-                                            0,
-                                        ]
-                                    }
-                                },
-                                "firstSeen": {"$min": "$battleTime"},
-                                "lastSeen": {"$max": "$battleTime"},
-                                "modes": {"$addToSet": "$gameMode"},
+                            "$addFields": {
+                                "winRate": {
+                                    "$multiply": [
+                                        {"$divide": ["$wins", "$battleCount"]},
+                                        100,
+                                    ]
+                                }
                             }
                         },
-                        # Calculate a win rate and evolution metrics for the end result
+                        {"$sort": sort},
+                        {"$limit": limit},
+                        extract_deck_stage(player_tag),
                         {
                             "$project": {
                                 "_id": 0,
-                                "deck": 1,  # array of {id, name, evolutionLevel} for every card
-                                "support": 1,  # array of {id, name}, [] if unknown
-                                "count": 1,
-                                "wins": 1,
-                                "winRate": {
-                                    "$cond": [
-                                        {"$eq": ["$count", 0]},
-                                        0,
-                                        {
-                                            "$multiply": [
-                                                {"$divide": ["$wins", "$count"]},
-                                                100,
-                                            ]
+                                # {id, name, evolutionLevel} per card, the
+                                # evolutions first, then by id
+                                "deck": {
+                                    "$sortArray": {
+                                        "input": {
+                                            "$map": {
+                                                "input": "$deck.cards",
+                                                "as": "card",
+                                                "in": {
+                                                    "id": "$$card.id",
+                                                    "name": "$$card.name",
+                                                    "evolutionLevel": "$$card.evolutionLevel",
+                                                },
+                                            }
                                         },
-                                    ]
+                                        "sortBy": {"evolutionLevel": -1, "id": 1},
+                                    }
                                 },
+                                # {id, name}, [] without a tower troop
+                                "support": {
+                                    "$sortArray": {
+                                        "input": "$deck.support",
+                                        "sortBy": {"id": 1},
+                                    }
+                                },
+                                "battleCount": 1,
+                                "wins": 1,
+                                "winRate": 1,
                                 "firstSeen": 1,
                                 "lastSeen": 1,
                                 "modes": 1,
+                                **({"matchedCardCount": 1} if match_mode else {}),
                             }
                         },
-                        # Sort unique decks by count (descending) and lastSeen
-                        {"$sort": {"count": -1, "lastSeen": -1}},
                     ],
-                    "meta": [{"$count": "totalBattles"}],
-                }
-            },
-            {
-                "$project": {
-                    "totalBattles": {"$ifNull": [{"$first": "$meta.totalBattles"}, 0]},
-                    "decks": "$decks",
+                    # Totals over every deck the filters keep, not only the
+                    # returned ones
+                    "matching": [
+                        *filter_stages,
+                        {
+                            "$group": {
+                                "_id": None,
+                                "deckCount": {"$sum": 1},
+                                "battleCount": {"$sum": "$battleCount"},
+                                "wins": {"$sum": "$wins"},
+                            }
+                        },
+                    ],
+                    "all": [
+                        {
+                            "$group": {
+                                "_id": None,
+                                "totalBattles": {"$sum": "$battleCount"},
+                            }
+                        }
+                    ],
                 }
             },
         ]
@@ -300,10 +318,15 @@ async def get_decks_win_percentage(
         result = await conn.db.battles.aggregate(pipeline, allowDiskUse=True).to_list(
             length=1
         )
-        if not result:
-            return {"decks": [], "totalBattles": 0}
-
-        return result[0]
+        facets = result[0] if result else {}
+        matching = (facets.get("matching") or [{}])[0]
+        return {
+            "decks": facets.get("decks", []),
+            "deckCount": matching.get("deckCount", 0),
+            "battleCount": matching.get("battleCount", 0),
+            "wins": matching.get("wins", 0),
+            "totalBattles": (facets.get("all") or [{}])[0].get("totalBattles", 0),
+        }
 
     except Exception as e:
         print(f"[DB] [ERROR] fetching decks info: {e}")
