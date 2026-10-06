@@ -42,6 +42,28 @@
   color: var(--text-primary);
 }
 
+/* NOTE Spaced and styled like the selected game modes
+   (gameModeFilter.css). Not a button: a timespan always has a value, so
+   unlike those bonbons it cannot be removed by a click. */
+.start-end-date-filter-component-summary {
+  display: flex;
+  margin: var(--spacing-sm) 0;
+}
+
+.start-end-date-filter-component-bonbon {
+  /* Buttons default to border-box, the game mode bonbons are buttons */
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  max-width: 100%;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  background: rgba(52, 152, 219, 0.15);
+  color: var(--color-primary);
+}
+
 .start-end-date-filter-component-toggle {
   width: 24px;
   height: 24px;
@@ -59,6 +81,14 @@
   transition: max-height 0.5s ease;
   margin-top: var(--spacing-md);
   margin-bottom: var(--spacing-md);
+}
+
+/* The same 16px to the options as below the card filter's selection
+   (cardFilter.css). It collapses with the bonbon's smaller bottom margin, and
+   the .hidden rule below wins while collapsed. */
+.start-end-date-filter-component-summary
+  + .start-end-date-filter-component-grid {
+  margin-top: var(--spacing-lg);
 }
 
 .start-end-date-filter-component-grid.hidden {

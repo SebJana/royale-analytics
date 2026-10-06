@@ -197,12 +197,14 @@
   justify-content: center;
 }
 
+/* NOTE Match the game mode filter's buttons (gameModeFilter.css) and Reset
+   (filterContainer.css) */
 .card-filter-component-action-button {
   padding: 0.6rem 1.2rem;
   border-radius: var(--radius-md);
   border: none;
-  font-size: var(--font-sm);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all var(--transition-fast);
   min-width: 90px;
@@ -234,7 +236,7 @@
   color: white;
 }
 
-.card-filter-component-clear:hover {
+.card-filter-component-clear:hover:not(:disabled) {
   background: linear-gradient(135deg, #5a6268, #454d55);
   transform: translateY(-1px);
   box-shadow: 0 4px 8px var(--shadow-light);
@@ -287,7 +289,7 @@
 
 .card-filter-controls-clear:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
   transform: none;
   box-shadow: none;
 }

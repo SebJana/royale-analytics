@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { formatDateForInput } from "../../utils/datetime";
+import { formatDateForInput, formatDateRange } from "../../utils/datetime";
 import { ChevronUp } from "lucide-react";
 import "./startEndDateFilter.css";
 
@@ -86,6 +86,16 @@ export function StartEndDateFilter({
           }`}
         />
       </button>
+      {/* Under the title like the selected game modes and cards, so the
+          active range stays readable while collapsed. Unlike all game modes,
+          every timespan narrows the data, so the default shows too. */}
+      <div className="start-end-date-filter-component-summary">
+        <span className="start-end-date-filter-component-bonbon">
+          {selectedOption === "Custom"
+            ? (formatDateRange(selectedStart, selectedEnd) ?? "Custom")
+            : selectedOption}
+        </span>
+      </div>
 
       {/* Hidden/shown based on isExpanded state */}
       <div

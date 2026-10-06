@@ -58,7 +58,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+}
+
+/* The same 16px to the controls as below the card filter's selection
+   (cardFilter.css). It collapses with the bonbons' smaller bottom margin. */
+.game-mode-filter-selected + .game-mode-filter-content {
+  margin-top: var(--spacing-lg);
 }
 
 .game-mode-filter-bonbon {
@@ -128,13 +134,30 @@
   border-top: 1px solid var(--border-light);
 }
 
+.game-mode-filter-trigger-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.game-mode-filter-trigger-row .game-mode-filter-dropdown-trigger {
+  flex: 1;
+  min-width: 0;
+}
+
+.game-mode-filter-trigger-row .game-mode-filter-clear {
+  flex-shrink: 0;
+}
+
+/* NOTE Match the card filter's buttons (cardFilter.css) and Reset
+   (filterContainer.css) */
 .game-mode-filter-action-button {
   padding: 0.6rem 1.2rem;
-  border: 1px solid transparent;
+  border: none;
   border-radius: var(--radius-md);
   min-width: 90px;
-  font-size: var(--font-sm);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-medium);
   letter-spacing: 0.5px;
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -167,6 +190,8 @@
 .game-mode-filter-action-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .game-mode-filter-options {

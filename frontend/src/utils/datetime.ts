@@ -85,6 +85,34 @@ export function formatDateForInput(date: Date): string {
 }
 
 /**
+ * Format a range of calendar dates in the user's locale, without repeating
+ * what both ends share: "Sep 26 – Oct 2, 2026".
+ * @param startDate Start date in YYYY-MM-DD format
+ * @param endDate End date in YYYY-MM-DD format
+ * @returns The formatted range, or null if a date is invalid
+ */
+export function formatDateRange(
+  startDate: string,
+  endDate: string,
+): string | null {
+  // Calendar dates in the browser's timezone, see isValidDateRange
+  const toDate = (value: string) => {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+  const start = toDate(startDate);
+  const end = toDate(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+  // formatRange throws when the start is after the end
+  if (start > end) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+  }).formatRange(start, end);
+}
+
+/**
  * Returns the release date of Clash Royale.
  *
  * @returns A `Date` object representing March 2, 2016.

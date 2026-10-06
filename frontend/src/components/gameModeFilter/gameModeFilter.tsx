@@ -144,50 +144,64 @@ export function GameModeFilter({
         />
       </button>
 
+      {/* Shown while collapsed too, like the selected cards, so the active
+          filter stays visible. All modes selected filters nothing, so the
+          collapsed section leaves those out. */}
+      {selectedOptions.length > 0 && (isFilterVisible || !allModesSelected) && (
+        <div
+          className="game-mode-filter-selected"
+          aria-label="Selected game modes"
+        >
+          {/* Clicking a bonbon removes it immediately; there is no separate delete state. */}
+          {selectedOptions.map((option) => (
+            <button
+              key={option.display}
+              type="button"
+              className="game-mode-filter-bonbon"
+              onClick={() => removeOption(option)}
+              aria-label={`Remove ${option.display}`}
+              title={`Remove ${option.display}`}
+            >
+              {option.display}
+            </button>
+          ))}
+        </div>
+      )}
       {isFilterVisible && (
         <div id="game-mode-filter-content" className="game-mode-filter-content">
-          {selectedOptions.length > 0 && (
-            <div
-              className="game-mode-filter-selected"
-              aria-label="Selected game modes"
+          {/* Clear sits outside the dropdown at the end of the row, like the
+              card filter's Clear, so it works without opening the list */}
+          <div className="game-mode-filter-trigger-row">
+            <button
+              type="button"
+              className="game-mode-filter-dropdown-trigger"
+              onClick={() => setIsDropdownOpen((open) => !open)}
+              aria-expanded={isDropdownOpen}
+              aria-controls="game-mode-filter-dropdown"
             >
-              {/* Clicking a bonbon removes it immediately; there is no separate delete state. */}
-              {selectedOptions.map((option) => (
-                <button
-                  key={option.display}
-                  type="button"
-                  className="game-mode-filter-bonbon"
-                  onClick={() => removeOption(option)}
-                  aria-label={`Remove ${option.display}`}
-                  title={`Remove ${option.display}`}
-                >
-                  {option.display}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <button
-            type="button"
-            className="game-mode-filter-dropdown-trigger"
-            onClick={() => setIsDropdownOpen((open) => !open)}
-            aria-expanded={isDropdownOpen}
-            aria-controls="game-mode-filter-dropdown"
-          >
-            <span>
-              {selectedOptions.length === 0
-                ? "All game modes"
-                : `${selectedOptions.length} mode${
-                    selectedOptions.length === 1 ? "" : "s"
-                  } selected`}
-            </span>
-            <ChevronDown
-              className={`game-mode-filter-component-toggle ${
-                isDropdownOpen ? "expanded" : ""
-              }`}
-              aria-hidden="true"
-            />
-          </button>
+              <span>
+                {selectedOptions.length === 0
+                  ? "All game modes"
+                  : `${selectedOptions.length} mode${
+                      selectedOptions.length === 1 ? "" : "s"
+                    } selected`}
+              </span>
+              <ChevronDown
+                className={`game-mode-filter-component-toggle ${
+                  isDropdownOpen ? "expanded" : ""
+                }`}
+                aria-hidden="true"
+              />
+            </button>
+            <button
+              type="button"
+              className="game-mode-filter-action-button game-mode-filter-clear"
+              onClick={clearSelection}
+              disabled={selected.length === 0}
+            >
+              Clear
+            </button>
+          </div>
 
           {isDropdownOpen && (
             <div
@@ -209,14 +223,6 @@ export function GameModeFilter({
                   title="Select all game modes, including search results not shown"
                 >
                   Select all
-                </button>
-                <button
-                  type="button"
-                  className="game-mode-filter-action-button game-mode-filter-clear"
-                  onClick={clearSelection}
-                  disabled={selected.length === 0}
-                >
-                  Clear selection
                 </button>
               </div>
 
