@@ -18,18 +18,21 @@ print(`[init] creating index on 'game_modes' collection for unique 'name'`);
 db.game_modes.createIndex({ name: 1 }, { unique: true, name: "name_unique" });
 
 print(
-  `[init] creating index on 'battles' collection for 'battleTime' and 'referencePlayerTag'`
+  `[init] creating index on 'battles' collection for 'battleTime' and 'referencePlayerTag'`,
 );
 
 db.battles.createIndex(
   { referencePlayerTag: 1, battleTime: -1 },
-  { unique: true, name: "referencePlayerTag_battleTime_index" }
+  { unique: true, name: "referencePlayerTag_battleTime_index" },
 );
 
-print(`[init] creating additional indexes for common query patterns`);
+print(
+  `[init] creating index on 'battles' collection for 'gameMode' filtered stats`,
+);
 
-// Compound index for player performance analysis over time
+// Mode-filtered stats seek one time range per selected mode instead of
+// fetching and discarding every other mode's battles.
 db.battles.createIndex(
-  { referencePlayerTag: 1, gameResult: 1, battleTime: -1 },
-  { name: "referencePlayerTag_result_time_index" }
+  { referencePlayerTag: 1, gameMode: 1, battleTime: -1 },
+  { name: "referencePlayerTag_gameMode_time_index" },
 );
