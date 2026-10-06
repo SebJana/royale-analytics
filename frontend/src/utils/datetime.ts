@@ -187,7 +187,8 @@ export function isValidDateRange(
 /**
  * Describe how long ago an API timestamp was, in minutes: "3 min ago".
  * From one hour on hours are added, "5 h 12 min ago", which stays readable
- * for data that is up to a day old.
+ * for data that is up to a day old. Past a day the minutes are noise and
+ * only hours are shown: "27 h ago".
  * Assumes UTC if no timezone is present, like datetimeToLocale.
  * @param time ISO 8601 string (e.g. "2025-09-08T22:52:42")
  * @param now Reference time in milliseconds (default: current time)
@@ -209,5 +210,6 @@ export function formatTimeAgo(
   if (minutes < 1) return "less than 1 min ago";
   if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.floor(minutes / 60);
+  if (hours >= 24) return `${hours} h ago`;
   return `${hours} h ${minutes % 60} min ago`;
 }
