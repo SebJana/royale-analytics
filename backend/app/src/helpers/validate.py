@@ -1,11 +1,11 @@
 import re
 from datetime import date, datetime, timedelta, time
 from zoneinfo import ZoneInfo
-from models.schema import BetweenRequest, BattlesRequest
+from models.schema import BetweenRequest, BattlesRequest, DeckCardFilterRequest
 from core.deps import DbConn, RedConn
 from redis_service import CARDS_CACHE_KEY, GAME_MODES_CACHE_KEY, get_redis_json
 from mongo import get_cards as get_stored_cards
-from typing import Literal, Optional, List
+from typing import Optional, List
 from core.settings import settings
 
 # A filtered card is "<cardId>-<evolutionLevel>": 0 regular, 1 evolution,
@@ -266,11 +266,7 @@ def _canonical_card_keys(keys: Optional[List[str]]) -> set[str]:
 async def validate_deck_card_filter(
     mongo_conn: DbConn,
     redis_conn: RedConn,
-    card_mode: Literal["include", "match"],
-    cards: Optional[List[str]],
-    exclude_cards: Optional[List[str]],
-    support_ids: Optional[List[int]],
-    exclude_support_ids: Optional[List[int]],
+    card_query: DeckCardFilterRequest,
 ) -> Optional[dict]:
     """Normalize the card filter of the deck statistics and check it against the card list.
 
@@ -287,15 +283,13 @@ async def validate_deck_card_filter(
     Args:
         mongo_conn (DbConn): Mongo connection, for the card list on a cache miss.
         redis_conn (RedConn): Redis connection holding the cached card list.
-        card_mode (Literal["include", "match"]): "include" keeps decks with all
-            selected cards and the selected tower troop, "match" keeps decks
-            with at least one of them, ranked by how many they share.
-        cards (Optional[List[str]]): Selected cards as "<cardId>-<evolutionLevel>".
-        exclude_cards (Optional[List[str]]): Cards no returned deck may contain.
-        support_ids (Optional[List[int]]): Selected tower troop ids,
-            NO_SUPPORT_ID for decks without tower data.
-        exclude_support_ids (Optional[List[int]]): Tower troops no returned
-            deck may have.
+        card_query (DeckCardFilterRequest): The filter as requested:
+            card_mode "include" keeps decks with all selected cards and the
+            selected tower troop, "match" keeps decks with at least one of
+            them, ranked by how many they share. cards and exclude_cards as
+            "<cardId>-<evolutionLevel>", support_ids and exclude_support_ids
+            as tower troop ids, NO_SUPPORT_ID for decks without tower data.
+            No returned deck contains an excluded card or tower troop.
 
     Returns:
         Optional[dict]: None without any selection, otherwise {"mode", "cards",
@@ -306,10 +300,11 @@ async def validate_deck_card_filter(
         ParamsRequestError: For a malformed or unknown card, a card or tower
             troop that is both selected and excluded, or a list over its limit.
     """
-    card_set = _canonical_card_keys(cards)
-    exclude_card_set = _canonical_card_keys(exclude_cards)
-    support_set = set(support_ids or [])
-    exclude_support_set = set(exclude_support_ids or [])
+    card_mode = card_query.card_mode
+    card_set = _canonical_card_keys(card_query.cards)
+    exclude_card_set = _canonical_card_keys(card_query.exclude_cards)
+    support_set = set(card_query.support_ids or [])
+    exclude_support_set = set(card_query.exclude_support_ids or [])
 
     if not (card_set or exclude_card_set or support_set or exclude_support_set):
         return None

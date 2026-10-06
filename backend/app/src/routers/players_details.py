@@ -17,7 +17,7 @@ from helpers.validate import (
     validate_deck_card_filter,
     ParamsRequestError,
 )
-from models.schema import BetweenRequest, BattlesRequest
+from models.schema import BetweenRequest, BattlesRequest, DeckCardFilterRequest
 from redis_service import get_redis_json, set_redis_json, build_redis_key
 from mongo import (
     get_last_battles,
@@ -190,13 +190,7 @@ async def deck_percentage_stats(
     mongo_conn: DbConn,
     redis_conn: RedConn,
     game_modes: Optional[List[str]] = Query(None),
-    card_mode: Literal["include", "match"] = "include",
-    # Cards as "<cardId>-<evolutionLevel>", e.g. "26000000-1" for the
-    # evolution. Tower troops by id, 0 for decks without tower data.
-    cards: Optional[List[str]] = Query(None),
-    exclude_cards: Optional[List[str]] = Query(None),
-    support_ids: Optional[List[int]] = Query(None),
-    exclude_support_ids: Optional[List[int]] = Query(None),
+    card_query: DeckCardFilterRequest = Depends(),
     # Order of the decks before the cap. Match mode ranks by matched cards
     # first. Usage rate orders like battleCount, so it has no own option.
     sort_by: Literal["battleCount", "wins", "winRate", "lastSeen"] = "battleCount",
@@ -211,11 +205,7 @@ async def deck_percentage_stats(
         card_filter = await validate_deck_card_filter(
             mongo_conn,
             redis_conn,
-            card_mode,
-            cards,
-            exclude_cards,
-            support_ids,
-            exclude_support_ids,
+            card_query,
         )
         # TODO add input sanitization for all user-provided parameters
         params = {

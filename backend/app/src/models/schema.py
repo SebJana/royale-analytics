@@ -1,5 +1,6 @@
+from fastapi import Query
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, List, Optional
 from datetime import date, datetime
 from core.settings import settings
 
@@ -11,6 +12,31 @@ class BetweenRequest(BaseModel):
     timezone: str = Field(
         ..., description=("Timezone of the given start and end dates")
     )
+
+
+class DeckCardFilterRequest:
+    """Card and tower troop filter of the deck statistics, as query parameters.
+
+    A plain class instead of a BaseModel: FastAPI before 0.115 reads the list
+    fields of a model dependency from the body, not from the query string.
+    """
+
+    def __init__(
+        self,
+        card_mode: Literal["include", "match"] = "include",
+        # Cards as "<cardId>-<evolutionLevel>", e.g. "26000000-1" for the
+        # evolution
+        cards: Optional[List[str]] = Query(None),
+        exclude_cards: Optional[List[str]] = Query(None),
+        # Tower troops by id, 0 for decks without tower data
+        support_ids: Optional[List[int]] = Query(None),
+        exclude_support_ids: Optional[List[int]] = Query(None),
+    ):
+        self.card_mode = card_mode
+        self.cards = cards
+        self.exclude_cards = exclude_cards
+        self.support_ids = support_ids
+        self.exclude_support_ids = exclude_support_ids
 
 
 class BattlesRequest(BaseModel):
