@@ -236,7 +236,11 @@ export const DeckComponent = memo(function DeckComponent({
 
   // Works for both mobile and desktop because the Clash Royale Website handles
   // showing a qr code (desktop) and a copy link (mobile)
-  const handleCopy = () => {
+  const handleCopy = (event: React.MouseEvent) => {
+    // A battle can wrap the deck in a link to the decks page, which must not
+    // open as well
+    event.preventDefault();
+    event.stopPropagation();
     // Shown order, so the evolutions, heroes and champions come first, where
     // the game puts its evolution and hero/champion slots
     window.open(generateCopyLink(sortedDeck, getSupportId(support)), "_blank");

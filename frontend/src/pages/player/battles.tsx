@@ -1,6 +1,14 @@
 import { useParams } from "react-router-dom";
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import { useCards } from "../../hooks/useCards";
+import { useGameModes } from "../../hooks/useGameModes";
 import { usePlayerBattlesInfinite } from "../../hooks/useLastBattles";
 import { usePageLoadingState } from "../../hooks/usePageLoadingState";
 import { BattleComponent } from "../../components/battle/battle";
@@ -11,8 +19,46 @@ import {
   getTodayDateTime,
   getClashRoyaleReleaseDate,
 } from "../../utils/datetime";
+import {
+  getBattleDeckFilterState,
+  setFilterStateToLocalStorage,
+} from "../../utils/filter";
+import type { Battle, Player } from "../../types/lastBattles";
 import CircularProgress from "@mui/material/CircularProgress";
 import "./battles.css";
+
+// Where the user left a player's battles, so returning to the page continues
+// there instead of at the newest battle
+type BattlesView = {
+  beforeDate: string;
+  appliedBeforeDate?: string;
+  scrollY: number;
+  // Loaded pages when the position was saved. The position only fits while
+  // the query cache still holds at least that many.
+  pageCount: number;
+};
+
+// Per tab, so another tab or a later visit starts at the newest battle again
+function battlesViewKey(playerTag: string) {
+  return `battlesView:${playerTag}`;
+}
+
+function readBattlesView(playerTag: string): BattlesView | null {
+  try {
+    const raw = sessionStorage.getItem(battlesViewKey(playerTag));
+    return raw ? (JSON.parse(raw) as BattlesView) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeBattlesView(playerTag: string, view: BattlesView) {
+  try {
+    sessionStorage.setItem(battlesViewKey(playerTag), JSON.stringify(view));
+  } catch {
+    // Blocked storage only costs the restored position
+  }
+}
 
 /**
  * PlayerBattles Component
@@ -27,13 +73,18 @@ export default function PlayerBattles() {
   // Extract player tag from URL parameters
   const { playerTag = "" } = useParams();
 
+  // Read once: the saved view only restores the state this page mounts with
+  const [savedView] = useState(() => readBattlesView(playerTag));
+
   // Filter state: date input field value (in local timezone)
-  const [beforeDate, setBeforeDate] = useState(getTodayDateTime()); // Pre-fill with today's date and time
+  const [beforeDate, setBeforeDate] = useState(
+    savedView?.beforeDate ?? getTodayDateTime(), // Pre-fill with today's date and time
+  );
 
   // Applied filter state: the actual filter being used for API calls (in UTC)
   const [appliedBeforeDate, setAppliedBeforeDate] = useState<
     string | undefined
-  >(undefined);
+  >(savedView?.appliedBeforeDate);
 
   // Validation state: tracks if the current date input is valid
   const [isValidFilterDate, setIsValidFilterDate] = useState(true); // Initially true since filter starts with today's date
@@ -61,6 +112,21 @@ export default function PlayerBattles() {
     isError: isCardsError,
     refetch: refetchCards,
   } = useCards();
+
+  // Only needed to select a battle's whole game mode group on the decks page,
+  // so its loading or failing never blocks the battles
+  const { data: gameModes } = useGameModes();
+
+  // The decks page starts from the stored filters, the same way filters carry
+  // over between the player pages
+  const handleOwnDeckOpen = useCallback(
+    (battle: Battle, player: Player) => {
+      setFilterStateToLocalStorage(
+        getBattleDeckFilterState(battle, player, gameModes, cards ?? []),
+      );
+    },
+    [gameModes, cards],
+  );
 
   // Fetch battles with infinite pagination
   const {
@@ -92,6 +158,50 @@ export default function PlayerBattles() {
     hasData: () => battlesList.length > 0,
     resetDependency: `${playerTag}-${appliedBeforeDate}`,
   });
+
+  // Restores the saved scroll position once the battles are on screen. With
+  // fewer pages than back then (the cache expired), the position would point
+  // past the loaded battles, so the page stays at the top.
+  const pageCount = battles?.pages.length ?? 0;
+  const scrollRestoredRef = useRef(false);
+  useLayoutEffect(() => {
+    if (scrollRestoredRef.current || isInitialLoad || pageCount === 0) return;
+    scrollRestoredRef.current = true;
+    if (savedView && pageCount >= savedView.pageCount) {
+      window.scrollTo({ top: savedView.scrollY, behavior: "instant" });
+    }
+  }, [isInitialLoad, pageCount, savedView]);
+
+  // Saved on every scroll instead of on unmount: by the time the page
+  // unmounts, the next page may have already shrunk the document and moved
+  // the scroll position.
+  const viewRef = useRef({ beforeDate, appliedBeforeDate, pageCount });
+  viewRef.current = { beforeDate, appliedBeforeDate, pageCount };
+  useEffect(() => {
+    if (!scrollRestoredRef.current) return;
+    writeBattlesView(playerTag, {
+      ...viewRef.current,
+      scrollY: window.scrollY,
+    });
+  }, [playerTag, beforeDate, appliedBeforeDate, pageCount, isInitialLoad]);
+  useEffect(() => {
+    let frame = 0;
+    const onScroll = () => {
+      if (frame || !scrollRestoredRef.current) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        writeBattlesView(playerTag, {
+          ...viewRef.current,
+          scrollY: window.scrollY,
+        });
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
+  }, [playerTag]);
 
   // Intersection Observer for auto-loading more battles when user scrolls near bottom
   useEffect(() => {
@@ -299,6 +409,8 @@ export default function PlayerBattles() {
                     key={`${b.battleTime}-${playerTag}-${i}`} // More stable unique ID
                     battle={b}
                     cards={cards ?? []} // fall back to empty list, if cards don't exist
+                    playerTag={playerTag}
+                    onOwnDeckOpen={handleOwnDeckOpen}
                   />
                 ))}
 

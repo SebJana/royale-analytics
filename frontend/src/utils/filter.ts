@@ -1,10 +1,26 @@
 import { formatDateForInput } from "./datetime";
+import { mapInternalNameToDisplayName } from "./gameModes";
+import {
+  getCardVariantName,
+  getSupportId,
+  NO_SUPPORT_ID,
+} from "./getCardMetaFields";
 import type { FilterState } from "../components/filterContainer/filterContainer";
+import type { Card, CardMeta } from "../types/cards";
+import type { GameModes } from "../types/gameModes";
+import type { Battle, Player } from "../types/lastBattles";
 
 // NOTE: Default day value HAS to exist as option of StartEndDateFilter
 // If this value isn't an option, it will still be the value used in the queries (applied filter)
 // but it WON'T be highlighted in the filter UI, no option will be shown as selected
 const DEFAULT_DAY_RANGE = 7;
+
+// Days before and after an older battle that its deck link covers, so the
+// deck's other battles of the same days count too.
+const BATTLE_DECK_DAY_MARGIN = 3;
+
+// NOTE: Match MAX_INCLUDE_CARDS in cardFilter.tsx, the backend rejects more.
+const MAX_INCLUDE_CARDS = 8;
 
 /**
  * Saves filter state to localStorage.
@@ -166,4 +182,89 @@ export function getCurrentFilterState(): FilterState {
 
   // Return default filter state
   return getDefaultFilterState();
+}
+
+/**
+ * Filters that show the deck a player used in a battle on the decks page.
+ *
+ * - Timespan: "Last 7 days" if the battle is in it, otherwise a custom range
+ *   of BATTLE_DECK_DAY_MARGIN days around the battle, never past today
+ * - Game modes: the battle's mode with every mode of the same display name,
+ *   like selecting that option in the game mode filter
+ * - Cards: Include mode with all cards of the deck and its tower troop
+ *
+ * @param battle - The battle the deck was played in
+ * @param player - The team player whose deck is shown
+ * @param gameModes - Known game modes, undefined while they load
+ * @param cards - Card metadata for the filter's card names
+ * @returns The filter state for the decks page
+ */
+export function getBattleDeckFilterState(
+  battle: Battle,
+  player: Player,
+  gameModes: GameModes | undefined,
+  cards: CardMeta[],
+): FilterState {
+  // Battle times without a timezone are UTC, see datetimeToLocale
+  const hasTZ = /(Z|[+-]\d{2}:\d{2})$/i.test(battle.battleTime);
+  const battleDate = new Date(
+    hasTZ ? battle.battleTime : battle.battleTime + "Z",
+  );
+
+  const defaultRange = getDateRange(DEFAULT_DAY_RANGE);
+  let dates = {
+    startDate: defaultRange.start,
+    endDate: defaultRange.end,
+    timespanOption: `Last ${DEFAULT_DAY_RANGE} days`,
+  };
+  // An unparsable time keeps the default range instead of an invalid one
+  if (
+    !Number.isNaN(battleDate.getTime()) &&
+    formatDateForInput(battleDate) < defaultRange.start
+  ) {
+    const start = new Date(battleDate);
+    start.setDate(start.getDate() - BATTLE_DECK_DAY_MARGIN);
+    const end = new Date(battleDate);
+    end.setDate(end.getDate() + BATTLE_DECK_DAY_MARGIN);
+    // The date filter rejects an end date in the future
+    const endDate = formatDateForInput(end);
+    dates = {
+      startDate: formatDateForInput(start),
+      endDate: endDate < defaultRange.end ? endDate : defaultRange.end,
+      timespanOption: "Custom",
+    };
+  }
+
+  const displayName = mapInternalNameToDisplayName(battle.gameMode);
+  const modes = new Set([battle.gameMode]);
+  for (const mode of Object.keys(gameModes ?? {})) {
+    if (mapInternalNameToDisplayName(mode) === displayName) modes.add(mode);
+  }
+
+  // Same shape as the card filter's own selection, so the filter shows the
+  // cards as selected and the stored state stays comparable
+  const deckCards = (player.cards ?? [])
+    .slice(0, MAX_INCLUDE_CARDS)
+    .map((card) => {
+      const evolutionLevel = card.evolutionLevel ?? 0;
+      // Event cards are missing from the card list, their battle name stays
+      const name = cards.find((c) => c.id === card.id)?.name ?? card.name;
+      const filterCard: Card = {
+        name: getCardVariantName(name, evolutionLevel),
+        id: card.id,
+      };
+      if (evolutionLevel > 0) filterCard.evolutionLevel = evolutionLevel;
+      return filterCard;
+    });
+  const supportId = getSupportId(player.supportCards);
+
+  return {
+    ...dates,
+    gameModes: [...modes].sort((a, b) => a.localeCompare(b)),
+    cards: deckCards,
+    supportIds: supportId === NO_SUPPORT_ID ? [] : [supportId],
+    excludedCards: [],
+    excludedSupportIds: [],
+    includeCardFilterMode: true,
+  };
 }

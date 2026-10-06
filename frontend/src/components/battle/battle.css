@@ -130,6 +130,37 @@
   padding: var(--spacing-md);
 }
 
+/* The global a and a:hover rules would turn the deck's text blue */
+.battle-component-deck-link,
+.battle-component-deck-link:hover {
+  display: block;
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+  outline: none;
+}
+
+/* Only the cards and tower light up, not the stats bar. The shadow widens
+   the highlight without moving the cards, and stays below the bar's
+   spacing-lg top margin, so a gap remains. */
+.battle-component-deck-link .deck-component-body {
+  border-radius: var(--radius-md);
+  transition:
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.battle-component-deck-link:hover .deck-component-body {
+  background: var(--bg-overlay-light);
+  box-shadow: 0 0 0 var(--spacing-sm) var(--bg-overlay-light);
+}
+
+.battle-component-deck-link:focus-visible .deck-component-body {
+  box-shadow:
+    0 0 0 var(--spacing-sm) var(--bg-overlay-light),
+    0 0 0 calc(var(--spacing-sm) + 2px) var(--border-active);
+}
+
 .battle-component-player-info {
   margin-bottom: var(--spacing-md);
 }
