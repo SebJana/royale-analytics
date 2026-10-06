@@ -16,6 +16,7 @@ import { buildPlotConfig, PLOT_DEFINITIONS } from "../../utils/plotConfig";
 import type { PlotDefinition } from "../../utils/plotConfig";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { FilterContainer } from "../../components/filterContainer/filterContainer";
+import { SegmentedControl } from "../../components/segmentedControl/segmentedControl";
 import type { FilterState } from "../../components/filterContainer/filterContainer";
 import "./plots.css";
 
@@ -88,34 +89,20 @@ function PlotPanel({
             </span>
           </Tooltip>
         </div>
-        <div
-          className={`plots-date-spacing-toggle${dateSpacing === "calendar" ? " is-calendar" : ""}`}
-        >
-          <span>Recorded</span>
-          <Tooltip
-            arrow
-            title={
-              dateSpacing === "calendar"
-                ? "Calendar spacing; dots mark missing periods"
-                : "Even spacing for recorded periods"
-            }
-          >
-            <label
-              className="plots-date-spacing-switch"
-              aria-label="Use calendar spacing"
-            >
-              <input
-                type="checkbox"
-                checked={dateSpacing === "calendar"}
-                onChange={(event) =>
-                  setDateSpacing(event.target.checked ? "calendar" : "recorded")
-                }
-              />
-              <span className="plots-date-spacing-slider" />
-            </label>
-          </Tooltip>
-          <span>Calendar</span>
-        </div>
+        <SegmentedControl
+          ariaLabel="Date spacing"
+          options={[
+            { value: "recorded", label: "Recorded" },
+            { value: "calendar", label: "Calendar" },
+          ]}
+          value={dateSpacing}
+          onChange={setDateSpacing}
+          tooltip={
+            dateSpacing === "calendar"
+              ? "Calendar spacing; dots mark missing periods"
+              : "Even spacing for recorded periods"
+          }
+        />
       </div>
       <h2 className="plot-title" id={`plot-${definition.id}-title`}>
         {config.title}

@@ -3,6 +3,7 @@ import type { Card, CardMeta } from "../../types/cards";
 import { CardComponent } from "../card/card";
 import { ChevronUp } from "lucide-react";
 import { FilterSearch } from "../filterSearch/filterSearch";
+import { SegmentedControl } from "../segmentedControl/segmentedControl";
 import {
   getCardVariantName,
   isSupportCard,
@@ -132,28 +133,6 @@ function isSameCard(a: Card, b: Card): boolean {
   return a.id === b.id && (a.evolutionLevel ?? 0) === (b.evolutionLevel ?? 0);
 }
 
-/**
- * Hint under a switch. Both texts share one grid cell and only the active one
- * is visible, so the switch keeps the width of the longer text in either
- * position and the row does not shift.
- */
-function SwitchHint({
-  on,
-  offText,
-  onText,
-}: Readonly<{ on: boolean; offText: string; onText: string }>) {
-  return (
-    <span className="card-filter-switch-hint">
-      <span className={on ? "is-hidden" : ""} aria-hidden={on}>
-        {offText}
-      </span>
-      <span className={on ? "" : "is-hidden"} aria-hidden={!on}>
-        {onText}
-      </span>
-    </span>
-  );
-}
-
 export function CardFilter({
   cards,
   selected,
@@ -216,9 +195,8 @@ export function CardFilter({
 
   const maxSelectedCards = localFilterMode ? MAX_INCLUDE_CARDS : MAX_CARDS;
 
-  // Handle toggle of filter mode
-  const toggleFilterMode = () => {
-    const newMode = !localFilterMode;
+  // true for Include, false for Match
+  const changeFilterMode = (newMode: boolean) => {
     setLocalFilterMode(newMode);
     if (onCardFilterModeChange) {
       onCardFilterModeChange(newMode);
@@ -395,61 +373,35 @@ export function CardFilter({
       {isExpanded && (
         <div className="card-filter-controls">
           {onCardFilterModeChange && (
-            <div className="card-filter-switch">
-              <span className="card-filter-switch-title">Filter Mode</span>
-              <div className="card-filter-component-toggle-container">
-                <span className="card-filter-component-toggle-label">
-                  Match
-                </span>
-                <label
-                  className="card-filter-component-slide-toggle"
-                  aria-label="Card filter mode, on for Include"
-                >
-                  <input
-                    type="checkbox"
-                    checked={localFilterMode}
-                    onChange={toggleFilterMode}
-                    className="card-filter-component-toggle-input"
-                  />
-                  <span className="card-filter-component-toggle-slider"></span>
-                </label>
-                <span className="card-filter-component-toggle-label">
-                  Include
-                </span>
-              </div>
-              <SwitchHint
-                on={localFilterMode}
-                offText="Decks ranked by shared cards"
-                onText="Decks need every selected card"
-              />
-            </div>
-          )}
-          <div className="card-filter-switch">
-            <span className="card-filter-switch-title">Click</span>
-            <div className="card-filter-component-toggle-container">
-              <span className="card-filter-component-toggle-label">Select</span>
-              <label
-                className="card-filter-component-slide-toggle is-exclude"
-                aria-label="Clicking a card excludes it"
-              >
-                <input
-                  type="checkbox"
-                  checked={pickExcludes}
-                  onChange={() => setPickExcludes(!pickExcludes)}
-                  className="card-filter-component-toggle-input"
-                />
-                <span className="card-filter-component-toggle-slider"></span>
-              </label>
-              <span className="card-filter-component-toggle-label">
-                Exclude
-              </span>
-            </div>
-            <SwitchHint
-              on={pickExcludes}
-              offText="Clicked cards are wanted"
-              onText="Clicked cards rule a deck out"
+            <SegmentedControl
+              title="Filter Mode"
+              ariaLabel="Card filter mode"
+              options={[
+                { value: "include", label: "Include" },
+                { value: "match", label: "Match" },
+              ]}
+              value={localFilterMode ? "include" : "match"}
+              onChange={(mode) => changeFilterMode(mode === "include")}
+              hint={{
+                match: "Decks ranked by shared cards",
+                include: "Decks need every selected card",
+              }}
             />
-          </div>
+          )}
+          <SegmentedControl
+            title="Click"
+            ariaLabel="What clicking a card does"
+            options={[
+              { value: "select", label: "Select" },
+              { value: "exclude", label: "Exclude", danger: true },
+            ]}
+            value={pickExcludes ? "exclude" : "select"}
+            onChange={(pick) => setPickExcludes(pick === "exclude")}
+            hint={{
+              select: "Clicked cards are wanted",
+              exclude: "Clicked cards rule a deck out",
+            }}
+          />
           <button
             type="button"
             className="card-filter-component-action-button card-filter-component-clear card-filter-controls-clear"

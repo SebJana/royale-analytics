@@ -289,7 +289,9 @@ export function FilterContainer({
   };
 
   return (
-    <div className="filter-component-container">
+    // The scroll-to-top button stays hidden until this panel is scrolled
+    // past, so it never covers the sticky Apply row
+    <div className="filter-component-container" data-hides-scroll-to-top>
       <h2 className="filter-component-header">Filters</h2>
       <StartEndDateFilter
         selectedStart={selectedStartDate}
@@ -319,6 +321,9 @@ export function FilterContainer({
           onCardFilterModeChange={setSelectedIncludeCardFilterMode}
         />
       )}
+      {/* Sticks to the bottom of the screen while the panel's end is below
+          it, e.g. behind an expanded card filter, so Apply stays in reach
+          without a second pair of buttons */}
       <div className="filter-component-button-container">
         <button
           type="button"

@@ -254,34 +254,6 @@
   text-align: left;
 }
 
-.card-filter-switch {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-}
-
-.card-filter-switch-title {
-  font-size: var(--font-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.card-filter-switch-hint {
-  display: grid;
-  font-size: var(--font-xs);
-  color: var(--text-secondary);
-}
-
-.card-filter-switch-hint > span {
-  grid-area: 1 / 1;
-}
-
-.card-filter-switch-hint > .is-hidden {
-  visibility: hidden;
-}
-
 .card-filter-controls-clear {
   margin-left: auto;
   align-self: center;
@@ -292,83 +264,4 @@
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
-}
-
-.card-filter-component-toggle-container {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  flex-shrink: 0;
-}
-
-.card-filter-component-toggle-label {
-  font-size: var(--font-sm);
-  color: var(--text-secondary);
-  font-weight: var(--font-weight-medium);
-}
-
-.card-filter-component-slide-toggle {
-  position: relative;
-  display: inline-block;
-  width: 50px;
-  height: 24px;
-  cursor: pointer;
-}
-
-.card-filter-component-toggle-input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.card-filter-component-toggle-slider {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: #ccc;
-  border-radius: 24px;
-  transition: all var(--transition-fast);
-  cursor: pointer;
-}
-
-.card-filter-component-toggle-slider:before {
-  position: absolute;
-  content: "";
-  height: 18px;
-  width: 18px;
-  left: 3px;
-  bottom: 3px;
-  background-color: white;
-  border-radius: 50%;
-  transition: all var(--transition-fast);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.card-filter-component-toggle-input:checked
-  + .card-filter-component-toggle-slider {
-  background-color: var(--color-primary);
-}
-
-/* Exclude is the red counterpart, like the excluded cards */
-.card-filter-component-slide-toggle.is-exclude
-  .card-filter-component-toggle-input:checked
-  + .card-filter-component-toggle-slider {
-  background-color: var(--color-error);
-}
-
-.card-filter-component-toggle-input:checked
-  + .card-filter-component-toggle-slider:before {
-  transform: translateX(26px);
-}
-
-.card-filter-component-toggle-slider:hover {
-  box-shadow: 0 0 8px rgba(52, 152, 219, 0.3);
-}
-
-.card-filter-component-toggle-input:focus
-  + .card-filter-component-toggle-slider {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
 }

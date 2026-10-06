@@ -16,12 +16,38 @@
   text-align: left;
 }
 
+/* Sticky inside the panel: it rides the bottom of the screen and settles at
+   the panel's end once that scrolls into view. It reaches over the panel's
+   side and bottom padding, so the bar spans the full width and the panel's
+   rounded corners. */
 .filter-component-button-container {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: var(--spacing-sm);
-  margin-top: var(--spacing-md);
+  margin: var(--spacing-md) calc(-1 * var(--spacing-2xl))
+    calc(-1 * var(--spacing-2xl));
+  padding: var(--spacing-md) var(--spacing-2xl);
+  border-top: 1px solid var(--border-light);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  /* The panel's translucent overlay made solid, so the filters scrolling
+     underneath stay hidden while the bar looks like the panel */
+  background:
+    linear-gradient(var(--bg-overlay-medium), var(--bg-overlay-medium)),
+    var(--bg-primary);
+}
+
+/* On phones the stuck bar meets the screen's bottom edge. Extra bottom
+   padding keeps the buttons clear of rounded screen corners and the browser's
+   bottom toolbar while it collapses; the safe-area inset adds the home
+   indicator's height where the browser reports it. */
+@media (max-width: 768px) {
+  .filter-component-button-container {
+    padding-bottom: calc(var(--spacing-lg) + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 .filter-component-apply-button {
