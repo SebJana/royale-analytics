@@ -146,10 +146,48 @@
   color: var(--text-muted);
 }
 
+/* A tile is never narrower than its number: a 6-digit total moves to the
+   next row instead of being cut to "100,...". The row length comes from the
+   section's own width: five in a row, else three and two (never four and a
+   lone one), else two per row. */
 .player-info-component-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  container-type: inline-size;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--spacing-lg);
+}
+
+.player-info-component-stats-grid .stat-card {
+  /* Bases below the exact share, so sub-pixel rounding never pushes the
+     last tile of a row into the next one. Growing fills the rest. */
+  flex: 1 1 30%;
+  /* The percentages include the padding */
+  box-sizing: border-box;
+  min-width: max-content;
+  padding-inline: var(--spacing-sm);
+}
+
+@container (min-width: 760px) {
+  .player-info-component-stats-grid .stat-card {
+    flex-basis: 18%;
+  }
+}
+
+@container (max-width: 420px) {
+  .player-info-component-stats-grid {
+    gap: var(--spacing-sm);
+  }
+
+  .player-info-component-stats-grid .stat-card {
+    flex-basis: 40%;
+    border-radius: var(--radius-md);
+  }
+}
+
+/* The label wraps inside the width the number sets, so a long label such as
+   "Three Crown Wins" does not widen its tile */
+.player-info-component-stats-grid .stat-card-label {
+  contain: inline-size;
 }
 
 /* Allow StatCard labels to wrap in playerInfo component */
@@ -163,10 +201,6 @@
   .player-info-component-container {
     padding: var(--spacing-3xl);
   }
-
-  .player-info-component-stats-grid {
-    grid-template-columns: repeat(5, 1fr);
-  }
 }
 
 @media (min-width: 768px) {
@@ -176,10 +210,6 @@
 
   .player-info-component-info-grid {
     grid-template-columns: 1fr;
-  }
-
-  .player-info-component-stats-grid {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }
 
   .player-info-component-info-label {
@@ -240,22 +270,24 @@
 }
 
 /* Collapsible content */
+/* Animates between no height and the content's own height. A max-height
+   transition needs a fixed cap, which clips taller content such as the
+   stats stacked on narrow screens. */
 .player-info-component-collapsible-content {
-  transition: all 0.3s ease;
-  overflow: hidden;
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 0.3s ease,
+    opacity 0.3s ease;
 }
 
 .player-info-component-collapsible-content.collapsed {
-  max-height: 0;
+  grid-template-rows: 0fr;
   opacity: 0;
-  margin-bottom: 0;
 }
 
-.player-info-component-collapsible-content:not(.collapsed) {
-  max-height: 1000px;
-  opacity: 1;
-}
-
-.player-info-component-details.collapsed {
-  margin-bottom: 0;
+.player-info-component-collapsible-inner {
+  min-height: 0;
+  overflow: hidden;
 }

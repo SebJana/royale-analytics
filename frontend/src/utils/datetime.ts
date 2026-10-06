@@ -28,6 +28,27 @@ export function datetimeToLocale(time: string): string {
 }
 
 /**
+ * Like datetimeToLocale, but the date and the time separately, so they can
+ * wrap onto two lines without splitting either one.
+ * @param time ISO 8601 string (e.g. "2025-09-08T22:52:42")
+ * @returns Localized date and time strings, or null if invalid
+ */
+export function datetimeToLocaleParts(
+  time: string,
+): { date: string; time: string } | null {
+  if (!time) return null;
+
+  // Treat timestamps without an explicit timezone as UTC to avoid local-time parsing.
+  const d = new Date(/(Z|[+-]\d{2}:\d{2})$/i.test(time) ? time : `${time}Z`);
+  if (Number.isNaN(d.getTime())) return null;
+
+  return {
+    date: d.toLocaleDateString(undefined, { dateStyle: "medium" }),
+    time: d.toLocaleTimeString(undefined, { timeStyle: "short" }),
+  };
+}
+
+/**
  * Convert a local time string to UTC ISO format.
  * @param time Local time string
  * @returns UTC ISO string (e.g., "2025-09-16T14:30:00.000Z")

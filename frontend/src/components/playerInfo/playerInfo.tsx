@@ -190,66 +190,73 @@ export function PlayerInfo({
       </div>
 
       <div
-        className={`player-info-component-collapsible-content player-info-component-details ${
+        className={`player-info-component-collapsible-content ${
           !isDetailsExpanded ? "collapsed" : ""
         }`}
       >
-        <div className="player-info-component-account-info-section">
-          <h3>Account Information</h3>
-          <div className="player-info-component-info-grid">
-            <div className="player-info-component-info-item">
-              <span className="player-info-component-info-label">
-                Created On:
-              </span>
-              <span className="player-info-component-info-value">
-                {accountCreationDate ?? "—"}
-              </span>
-            </div>
-            <div className="player-info-component-info-item">
-              <span className="player-info-component-info-label">
-                Account Age:
-              </span>
-              <span className="player-info-component-info-value">
-                {elapsedTimeSplit
-                  ? `${elapsedTimeSplit.years}y ${elapsedTimeSplit.weeks}w ${elapsedTimeSplit.days}d`
-                  : "—"}
-              </span>
-            </div>
-            {player?.syncInfo?.trackedSince && (
-              <div className="player-info-component-info-item">
-                <span className="player-info-component-info-label">
-                  Tracked Since:
-                </span>
-                <span className="player-info-component-info-value">
-                  {player.syncInfo.trackedSince}
-                </span>
+        <div className="player-info-component-collapsible-inner">
+          <div className="player-info-component-details">
+            <div className="player-info-component-account-info-section">
+              <h3>Account Information</h3>
+              <div className="player-info-component-info-grid">
+                <div className="player-info-component-info-item">
+                  <span className="player-info-component-info-label">
+                    Created On:
+                  </span>
+                  <span className="player-info-component-info-value">
+                    {accountCreationDate ?? "—"}
+                  </span>
+                </div>
+                <div className="player-info-component-info-item">
+                  <span className="player-info-component-info-label">
+                    Account Age:
+                  </span>
+                  <span className="player-info-component-info-value">
+                    {elapsedTimeSplit
+                      ? `${elapsedTimeSplit.years}y ${elapsedTimeSplit.weeks}w ${elapsedTimeSplit.days}d`
+                      : "—"}
+                  </span>
+                </div>
+                {player?.syncInfo?.trackedSince && (
+                  <div className="player-info-component-info-item">
+                    <span className="player-info-component-info-label">
+                      Tracked Since:
+                    </span>
+                    <span className="player-info-component-info-value">
+                      {player.syncInfo.trackedSince}
+                    </span>
+                  </div>
+                )}
+                {player?.syncInfo?.trackingGaps?.map((gap) => (
+                  <p
+                    key={`${gap.from}-${gap.to}`}
+                    className="player-info-component-gap-hint"
+                  >
+                    {gap.from === gap.to
+                      ? `Not tracked on ${gap.from} for ${gap.hours} h`
+                      : `Not tracked ${gap.from} – ${gap.to}`}
+                    , battles from then may be missing
+                  </p>
+                ))}
               </div>
-            )}
-            {player?.syncInfo?.trackingGaps?.map((gap) => (
-              <p
-                key={`${gap.from}-${gap.to}`}
-                className="player-info-component-gap-hint"
-              >
-                {gap.from === gap.to
-                  ? `Not tracked on ${gap.from} for ${gap.hours} h`
-                  : `Not tracked ${gap.from} – ${gap.to}`}
-                , battles from then may be missing
-              </p>
-            ))}
-          </div>
-        </div>
+            </div>
 
-        <div className="player-info-component-battle-stats-section">
-          <h3>Battle Statistics</h3>
-          <div className="player-info-component-stats-grid">
-            <StatCard value={player?.wins ?? 0} label="Wins" />
-            <StatCard value={player?.losses ?? 0} label="Losses" />
-            <StatCard value={player?.battleCount ?? 0} label="Total Battles" />
-            <StatCard value={`${winPercentage}%`} label="Win Rate" />
-            <StatCard
-              value={player?.threeCrownWins ?? 0}
-              label="Three Crown Wins"
-            />
+            <div className="player-info-component-battle-stats-section">
+              <h3>Battle Statistics</h3>
+              <div className="player-info-component-stats-grid">
+                <StatCard value={player?.wins ?? 0} label="Wins" />
+                <StatCard value={player?.losses ?? 0} label="Losses" />
+                <StatCard
+                  value={player?.battleCount ?? 0}
+                  label="Total Battles"
+                />
+                <StatCard value={`${winPercentage}%`} label="Win Rate" />
+                <StatCard
+                  value={player?.threeCrownWins ?? 0}
+                  label="Three Crown Wins"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>

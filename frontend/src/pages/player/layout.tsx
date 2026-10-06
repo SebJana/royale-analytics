@@ -7,7 +7,7 @@ import { House, Menu, X, ChevronLeft } from "lucide-react";
 import { PlayerInfo } from "../../components/playerInfo/playerInfo";
 import { PlayerInfoPlaceholder } from "../../components/playerInfo/playerInfoPlaceholder";
 import { PlayerErrorBoundary } from "../../components/playerError/playerErrorBoundary";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import axios from "axios";
 import Lottie from "lottie-react";
 import emptyBox from "../../assets/animations/emptyBox.json";
@@ -24,6 +24,14 @@ export default function PlayerLayout() {
 
   // Close menu after navigation
   useEffect(() => setMenuOpen(false), [pathname]);
+
+  // The window keeps its scroll position across routes, so a page opened
+  // from far down the battles would start at its own bottom. The battles
+  // page is left out: it restores its own position (battles.tsx), and this
+  // effect runs after the page's, so it would undo that.
+  useLayoutEffect(() => {
+    if (/\/(decks|cards|plots)\/?$/.test(pathname)) window.scrollTo(0, 0);
+  }, [pathname]);
 
   const {
     data: player,

@@ -112,7 +112,8 @@
    full name is in the title attribute. */
 .card-item-title {
   margin: 0 0 var(--spacing-md);
-  font-size: var(--font-lg);
+  /* Grows from its phone to its desktop size, like the stat cards */
+  font-size: clamp(var(--font-md), 0.95rem + 0.2vw, var(--font-lg));
   font-weight: var(--font-weight-semibold);
   line-height: 1.3;
   color: var(--text-primary);
@@ -147,7 +148,7 @@
 
 .card-stat-value {
   display: block;
-  font-size: var(--font-xl);
+  font-size: clamp(var(--font-base), 0.76rem + 0.6vw, var(--font-xl));
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   margin-bottom: var(--spacing-xs);
@@ -155,7 +156,7 @@
 
 .card-stat-label {
   display: block;
-  font-size: var(--font-sm);
+  font-size: clamp(var(--font-xs), 0.64rem + 0.25vw, var(--font-sm));
   color: var(--text-secondary);
   font-weight: var(--font-weight-medium);
 }
@@ -200,19 +201,10 @@
 
   .card-item-title {
     margin-bottom: var(--spacing-sm);
-    font-size: var(--font-md);
   }
 
   .card-item-stats {
     gap: var(--spacing-sm);
-  }
-
-  .card-stat-value {
-    font-size: var(--font-lg);
-  }
-
-  .card-stat-label {
-    font-size: var(--font-xs);
   }
 }
 
@@ -237,13 +229,5 @@
 
   .card-item-stat {
     padding: var(--spacing-xs);
-  }
-
-  .card-stat-value {
-    font-size: var(--font-base);
-  }
-
-  .card-stat-label {
-    font-size: var(--font-xs);
   }
 }

@@ -178,7 +178,7 @@
 .battle-component-player-name {
   margin: 0 0 var(--spacing-sm) 0;
   font-weight: var(--font-weight-semibold);
-  font-size: var(--font-2xl);
+  font-size: clamp(var(--font-lg), 0.96rem + 0.6vw, var(--font-2xl));
 }
 
 .battle-component-player-tag {
@@ -206,7 +206,6 @@
   }
 
   .battle-component-game-mode {
-    font-size: var(--font-2xl);
     text-align: center;
     order: 1;
   }
@@ -217,21 +216,12 @@
     order: 2;
   }
 
-  .battle-component-score-text {
-    font-size: var(--font-xl);
-  }
-
   .battle-component-crown {
     width: 25px;
     height: 25px;
   }
 
   .battle-component-header-result {
-    font-size: var(--font-s);
     padding: var(--spacing-sm) var(--spacing-md);
-  }
-
-  .battle-component-battle-time {
-    font-size: var(--font-s);
   }
 }

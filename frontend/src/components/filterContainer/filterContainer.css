@@ -57,8 +57,9 @@
   padding: 0.6rem 1.2rem;
   border-radius: var(--radius-md);
   border: none;
-  font-size: var(--font-sm);
-  font-weight: var(--font-weight-semibold);
+  /* Same text as the Apply button next to it */
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all var(--transition-fast);
   min-width: 90px;

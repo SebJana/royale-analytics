@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { Link } from "react-router-dom";
 import { DeckComponent } from "../deck/deck";
+import { CopyableTag } from "../copyableTag/copyableTag";
 import type { Battle, Player } from "../../types/lastBattles";
 import type { CardMeta } from "../../types/cards";
 import { Crown } from "lucide-react";
@@ -91,7 +92,10 @@ export const BattleComponent = memo(function BattleComponent({
                     {t.name ?? `Player ${i + 1}`}
                   </h3>
                   {t.tag && (
-                    <span className="battle-component-player-tag">{t.tag}</span>
+                    <CopyableTag
+                      tag={t.tag}
+                      className="battle-component-player-tag"
+                    />
                   )}
                 </div>
                 {playerTag && onOwnDeckOpen && isOwnPlayer(t) ? (
@@ -127,7 +131,10 @@ export const BattleComponent = memo(function BattleComponent({
                   {o.name ?? `Player ${i + 1}`}
                 </h3>
                 {o.tag && (
-                  <span className="battle-component-player-tag">{o.tag}</span>
+                  <CopyableTag
+                    tag={o.tag}
+                    className="battle-component-player-tag"
+                  />
                 )}
               </div>
               <DeckComponent

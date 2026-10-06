@@ -191,15 +191,16 @@
   text-align: center;
 }
 
+/* Grows from its phone to its desktop size, like the stat cards */
 .deck-component-stat-value {
-  font-size: var(--font-2xl);
+  font-size: clamp(var(--font-lg), 0.96rem + 0.6vw, var(--font-2xl));
   font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
   margin: 0;
 }
 
 .deck-component-stat-label {
-  font-size: var(--font-sm);
+  font-size: clamp(var(--font-xs), 0.64rem + 0.2vw, var(--font-sm));
   font-weight: var(--font-weight-medium);
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -214,12 +215,5 @@
   }
   .deck-component-stats {
     gap: var(--spacing-md);
-  }
-
-  .deck-component-stat-value {
-    font-size: var(--font-lg);
-  }
-  .deck-component-stat-label {
-    font-size: var(--font-xs);
   }
 }

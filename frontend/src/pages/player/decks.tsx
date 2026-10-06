@@ -14,7 +14,7 @@ import {
   gameModesForQuery,
   mapInternalNameToDisplayName,
 } from "../../utils/gameModes";
-import { datetimeToLocale } from "../../utils/datetime";
+import { datetimeToLocaleParts } from "../../utils/datetime";
 import {
   useCallback,
   useEffect,
@@ -122,6 +122,28 @@ function GameModesStat({ modes }: Readonly<{ modes: string[] }>) {
           </div>
         ) : (
           ""
+        )
+      }
+    />
+  );
+}
+
+function LastSeenStat({ lastSeen }: Readonly<{ lastSeen: string }>) {
+  const parts = datetimeToLocaleParts(lastSeen);
+  return (
+    <StatCard
+      label="Last Seen"
+      className="decks-last-seen"
+      value={
+        parts ? (
+          // Two parts that each stay whole, so a narrow tile moves the time
+          // to the next line instead of cutting it off
+          <>
+            <span className="decks-last-seen-part">{parts.date},</span>{" "}
+            <span className="decks-last-seen-part">{parts.time}</span>
+          </>
+        ) : (
+          "—"
         )
       }
     />
@@ -272,10 +294,7 @@ function VirtualDeckList({
                 value={calculateAndFormatUsageRate(d.battleCount, totalBattles)}
               />
               <GameModesStat modes={d.modes} />
-              <StatCard
-                label="Last Seen"
-                value={datetimeToLocale(d.lastSeen)}
-              />
+              <LastSeenStat lastSeen={d.lastSeen} />
             </div>
           </div>
         );

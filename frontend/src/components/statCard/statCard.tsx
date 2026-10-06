@@ -7,9 +7,15 @@ export function StatCard({
   value,
   label,
   tooltip,
-}: Readonly<{ value: string | number; label: string; tooltip?: ReactNode }>) {
+  className,
+}: Readonly<{
+  value: ReactNode;
+  label: string;
+  tooltip?: ReactNode;
+  className?: string;
+}>) {
   const card = (
-    <div className="stat-card">
+    <div className={className ? `stat-card ${className}` : "stat-card"}>
       {/* Numbers get thousands separators; strings (e.g. "54.6%") show as given */}
       <div className="stat-card-number">
         {typeof value === "number" ? formatNumber(value) : value}

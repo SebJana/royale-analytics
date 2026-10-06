@@ -71,6 +71,8 @@
 
 /* The totals and the hint, closed by the divider above the deck list */
 .decks-general-stats-block {
+  /* Lets the totals pick their columns from the width they actually get */
+  container-type: inline-size;
   margin-bottom: var(--spacing-2xl);
   padding-bottom: var(--spacing-2xl);
   border-bottom: 1px solid var(--border-light);
@@ -99,6 +101,9 @@
   gap: var(--spacing-2xl);
   align-items: center;
   flex-wrap: wrap;
+  /* The stats column can be taller than the deck and would otherwise touch
+     the divider above */
+  padding-top: var(--spacing-md);
   padding-bottom: var(--spacing-2xl);
   border-bottom: 1px solid var(--border-light);
   justify-content: center;
@@ -124,6 +129,29 @@
 .deck-stats-container .stat-card {
   flex: 0 0 auto;
   min-width: 180px;
+}
+
+/* Tiles of a row share its height. When the last seen date wraps onto two
+   lines, the other values stay centered in the taller tile and every label
+   of the row sits on the same bottom line. */
+.deck-stats-container .stat-card {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: center;
+}
+
+/* The only stat long enough to overflow; it wraps between date and time */
+.decks-last-seen .stat-card-number {
+  white-space: normal;
+}
+
+.decks-last-seen-part {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
 }
 
 .decks-game-modes-tooltip {
@@ -187,63 +215,51 @@
   }
 }
 
+/* Fixed grids instead of wrapping blocks. Type and padding shrink on their
+   own (statCard.css). */
 @media (max-width: 768px) {
   .decks-general-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: var(--spacing-sm);
-  }
-
-  .decks-general-stats .stat-card {
-    min-width: 90px;
   }
 
   .deck-stats-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: var(--spacing-sm);
   }
 
+  .decks-general-stats .stat-card,
   .deck-stats-container .stat-card {
-    flex: 1 1 calc(50% - 4px);
-    min-width: 85px;
+    min-width: 0;
+    max-width: none;
+    border-radius: var(--radius-sm);
   }
 
-  /* Responsive font sizing */
   .decks-deck-row .stat-card-number,
   .decks-general-stats .stat-card-number {
-    font-size: var(--font-2xl);
+    margin-bottom: var(--spacing-xs);
   }
+}
 
-  .decks-deck-row .stat-card-label,
-  .decks-general-stats .stat-card-label {
-    font-size: var(--font-sm);
+/* Four tiles below ~100px each get cramped. Two rows of two instead, never
+   three and one. */
+@container (max-width: 430px) {
+  .decks-general-stats {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
 @media (max-width: 480px) {
-  .decks-general-stats {
-    gap: var(--spacing-sm);
-  }
-
-  .decks-general-stats .stat-card {
-    min-width: 80px;
-  }
-
+  .decks-general-stats,
   .deck-stats-container {
-    gap: var(--spacing-sm);
+    gap: var(--spacing-xs);
   }
 
-  .deck-stats-container .stat-card {
-    flex: 1 1 calc(50% - 3px);
-    min-width: 75px;
-  }
-
-  /* Mobile font sizing */
-  .decks-deck-row .stat-card-number,
-  .decks-general-stats .stat-card-number {
-    font-size: var(--font-xl);
-  }
-
-  .decks-deck-row .stat-card-label,
-  .decks-general-stats .stat-card-label {
-    font-size: var(--font-xs);
+  /* Three rows of two leave the last seen date room to show in full */
+  .deck-stats-container {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -281,6 +297,13 @@
 /* Narrower than the sort select: its options are short */
 .decks-min-battles-select {
   min-width: 120px;
+}
+
+@media (max-width: 768px) {
+  /* Sits next to the sort, "Any" and "50+" need little room */
+  .decks-min-battles-select {
+    min-width: 72px;
+  }
 }
 
 /* The previous order stays visible while the requested one loads */

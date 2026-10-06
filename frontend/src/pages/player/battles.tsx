@@ -164,6 +164,11 @@ export default function PlayerBattles() {
   // past the loaded battles, so the page stays at the top.
   const pageCount = battles?.pages.length ?? 0;
   const scrollRestoredRef = useRef(false);
+  // Starts at the top like the other player pages (layout.tsx). Declared
+  // before the restore, which runs after it when the battles are cached.
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
   useLayoutEffect(() => {
     if (scrollRestoredRef.current || isInitialLoad || pageCount === 0) return;
     scrollRestoredRef.current = true;
