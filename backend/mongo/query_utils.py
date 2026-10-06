@@ -1,6 +1,5 @@
-from datetime import datetime, date, time, timedelta, timezone as tz_utc
+from datetime import datetime
 from typing import Optional, Iterable
-from zoneinfo import ZoneInfo
 
 
 def match_tag_before_datetime_stage(player_tag: str, before_datetime: datetime):
@@ -33,35 +32,32 @@ def match_tag_before_datetime_stage(player_tag: str, before_datetime: datetime):
     }
 
 
-def match_tag_date_mode_range_stage(
+def match_tag_time_mode_range_stage(
     player_tag: str,
-    start_date: date,
-    end_date: date,
+    start: datetime,
+    end: datetime,
     game_modes: Optional[Iterable[str]] = None,
-    timezone: str = "UTC",
 ):
     """
     Build a MongoDB $match stage that filters battles for a given player tag
-    within a full-day date window based on the given game modes.
+    within a UTC time window based on the given game modes.
 
-    The window spans from `start_date` at 00:00:00 (inclusive) to
-    `end_date + 1 day` at 00:00:00 (exclusive).
+    The caller resolves calendar days or a season to the window, so this
+    stage stays a plain range on the indexed battleTime.
 
     Args:
         player_tag (str): Player tag (e.g., "#YYRJQY28") to match against `referencePlayerTag`.
-        start_date (datetime.date): First day (inclusive).
-        end_date (datetime.date): Last day (inclusive).
+        start (datetime.datetime): Start of the window (inclusive), timezone-aware.
+        end (datetime.datetime): End of the window (exclusive), timezone-aware.
         game_modes: Optional iterable of game mode names; if provided and non-empty,
                     the match includes {"gameMode": {"$in": <game_modes>}}.
-        timezone: Timezone into which the start_date and end_date will be transformed (default: UTC)
-
 
     Returns:
         dict: An aggregation stage of the form:
               {
                 "$match": {
                   "referencePlayerTag": <player_tag>,
-                  "battleTime": { "$gte": <start_dt>, "$lt": <end_dt_plus_1> },
+                  "battleTime": { "$gte": <start>, "$lt": <end> },
                   "gameMode": {"$in": <game_modes>} (if game modes isn't empty)
 
                 }
@@ -70,23 +66,9 @@ def match_tag_date_mode_range_stage(
     Notes: This function is a pure builder and does not execute any database operation
     """
 
-    # Check if the given timezone exists and is valid
-    try:
-        tz = ZoneInfo(timezone)
-    except Exception as e:
-        raise ValueError(f"Invalid timezone: {timezone}") from e
-
-    # Turn start/end date into requested timezone dates
-    start_local = datetime.combine(start_date, time(0, 0), tzinfo=tz)
-    end_local = datetime.combine(end_date + timedelta(days=1), time(0, 0), tzinfo=tz)
-
-    # Convert to UTC for lookup in database
-    start_utc = start_local.astimezone(tz_utc.utc)
-    end_utc = end_local.astimezone(tz_utc.utc)
-
     match = {
         "referencePlayerTag": player_tag,
-        "battleTime": {"$gte": start_utc, "$lt": end_utc},
+        "battleTime": {"$gte": start, "$lt": end},
     }
 
     # Only add the mode filter if provided and non-empty

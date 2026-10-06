@@ -6,6 +6,8 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Tooltip from "@mui/material/Tooltip";
 import { useGameModes } from "../../hooks/useGameModes";
 import { getCurrentFilterState } from "../../utils/filter";
+import { getTimeRange } from "../../utils/seasons";
+import { formatDateForInput } from "../../utils/datetime";
 import { gameModesForQuery } from "../../utils/gameModes";
 import { useEffect, useState } from "react";
 import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
@@ -169,15 +171,14 @@ export default function PlayerPlots() {
     isLoading: statsLoading,
     isError: isStatsError,
     refetch: refetchStats,
-  } = useDailyStats(
-    playerTag,
-    appliedFilters.startDate,
-    appliedFilters.endDate,
-    queryGameModes,
-  );
+  } = useDailyStats(playerTag, getTimeRange(appliedFilters), queryGameModes);
 
   // Use the modes actually sent to the API for the loading state dependency.
   const modesKey = queryGameModes?.join("|") ?? "";
+  // The current season ends in the future, the days after today have no data
+  const today = formatDateForInput(new Date());
+  const chartEndDate =
+    appliedFilters.endDate < today ? appliedFilters.endDate : today;
 
   // Loading state management
   // Determines when to show loading spinner vs content
@@ -187,7 +188,7 @@ export default function PlayerPlots() {
     errorStates: [isStatsError, isGameModesError],
     hasData: () => Boolean(stats && stats.daily_statistics.daily.length > 0),
     // Reset dependency ensures loading state recalculates when any backend filter changes
-    resetDependency: `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${modesKey}`,
+    resetDependency: `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${appliedFilters.season}-${modesKey}`,
   });
 
   if (isStatsError || isGameModesError) {
@@ -238,7 +239,7 @@ export default function PlayerPlots() {
                     definition={definition}
                     stats={stats}
                     startDate={appliedFilters.startDate}
-                    endDate={appliedFilters.endDate}
+                    endDate={chartEndDate}
                   />
                 ))}
               </div>

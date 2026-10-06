@@ -116,7 +116,7 @@ function extractFirstNumber(str: string): number | null {
  * - Tower troops: Empty array (no filters applied)
  * - Excluded cards and tower troops: Empty arrays (no filters applied)
  * - Card inclusion filter mode: true, meaning all selected cards HAVE to be included in the shown decks
- * - Timespan option: "Last DEFAULT_DAY_RANGE days"
+ * - Timespan option: "Last DEFAULT_DAY_RANGE days", no season
  *
  * @returns FilterState object with either restored or default filter values
 
@@ -134,6 +134,7 @@ export function getDefaultFilterState(): FilterState {
     excludedSupportIds: [],
     includeCardFilterMode: true,
     timespanOption: `Last ${DEFAULT_DAY_RANGE} days`,
+    season: null,
   };
 }
 
@@ -143,6 +144,7 @@ export function getDefaultFilterState(): FilterState {
  *
  * Behavior:
  * 1. If filters exist in localStorage:
+ *    - For a season: Keeps that season, not whichever one is current now
  *    - For non-"Custom" timespan options: Recalculates dates based on the saved timespan
  *    - For "Custom" timespan: Uses the exact saved dates
  *    - Preserves saved game modes and cards
@@ -154,30 +156,31 @@ export function getCurrentFilterState(): FilterState {
   const filters = getFilterStateFromLocalStorage();
   // Check if there are filters saved
   if (filters) {
+    // State saved before seasons existed has no season field
+    if (filters.season || filters.timespanOption === "Custom") {
+      return { ...filters, season: filters.season ?? null };
+    }
     // If timespan is NOT custom, calculate start and end date new, because last X days
     // might mean a different time span, now that possibly the day the user uses the site on changed
-    if (filters.timespanOption !== "Custom") {
-      // Extract which Last X days option is selected (Extract the X)
-      // Fall back to specified value if no day amount could be extracted
-      const days =
-        extractFirstNumber(filters.timespanOption) ?? DEFAULT_DAY_RANGE;
-      const newlyCalcDates = getDateRange(days);
+    // Extract which Last X days option is selected (Extract the X)
+    // Fall back to specified value if no day amount could be extracted
+    const days =
+      extractFirstNumber(filters.timespanOption) ?? DEFAULT_DAY_RANGE;
+    const newlyCalcDates = getDateRange(days);
 
-      // Return updated filter state, with new start and end date
-      return {
-        startDate: newlyCalcDates.start,
-        endDate: newlyCalcDates.end,
-        gameModes: filters.gameModes,
-        cards: filters.cards,
-        supportIds: filters.supportIds,
-        excludedCards: filters.excludedCards,
-        excludedSupportIds: filters.excludedSupportIds,
-        includeCardFilterMode: filters.includeCardFilterMode,
-        timespanOption: filters.timespanOption,
-      };
-    }
-    // Return (unchanged) saved filter state
-    return filters;
+    // Return updated filter state, with new start and end date
+    return {
+      startDate: newlyCalcDates.start,
+      endDate: newlyCalcDates.end,
+      gameModes: filters.gameModes,
+      cards: filters.cards,
+      supportIds: filters.supportIds,
+      excludedCards: filters.excludedCards,
+      excludedSupportIds: filters.excludedSupportIds,
+      includeCardFilterMode: filters.includeCardFilterMode,
+      timespanOption: filters.timespanOption,
+      season: null,
+    };
   }
 
   // Return default filter state
@@ -216,6 +219,7 @@ export function getBattleDeckFilterState(
     startDate: defaultRange.start,
     endDate: defaultRange.end,
     timespanOption: `Last ${DEFAULT_DAY_RANGE} days`,
+    season: null as string | null,
   };
   // An unparsable time keeps the default range instead of an invalid one
   if (
@@ -232,6 +236,7 @@ export function getBattleDeckFilterState(
       startDate: formatDateForInput(start),
       endDate: endDate < defaultRange.end ? endDate : defaultRange.end,
       timespanOption: "Custom",
+      season: null,
     };
   }
 

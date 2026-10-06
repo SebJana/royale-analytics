@@ -24,6 +24,9 @@ export type FilterState = {
   excludedSupportIds: number[];
   includeCardFilterMode: boolean;
   timespanOption: string;
+  // Season id ("YYYY-MM") sent instead of the dates, which then only show
+  // the season's days. null for a date range.
+  season: string | null;
 };
 
 type FilterContainerProps = {
@@ -148,6 +151,17 @@ export function FilterContainer({
       "Last 7 days",
   );
 
+  const [selectedSeason, setSelectedSeason] = useState<string | null>(
+    appliedFilters?.season ?? initialFilters?.season ?? null,
+  );
+  const [appliedSeason, setAppliedSeason] = useState<string | null>(
+    appliedFilters?.season ?? initialFilters?.season ?? null,
+  );
+
+  // Counts resets, so the timespan filter can switch back to the day options
+  // even when no selected value changes
+  const [resetCount, setResetCount] = useState(0);
+
   const [gameModesInitialized, setGameModesInitialized] = useState(false);
   const [applyButtonDisabled, setApplyButtonDisabled] = useState(true);
 
@@ -158,6 +172,7 @@ export function FilterContainer({
       setSelectedEndDate(appliedFilters.endDate);
       setSelectedGameModes(appliedFilters.gameModes);
       setSelectedTimespanOption(appliedFilters.timespanOption);
+      setSelectedSeason(appliedFilters.season ?? null);
       setSelectedIncludeCardFilterMode(appliedFilters.includeCardFilterMode);
       if (showCardFilter) {
         setSelectedCards(appliedFilters.cards);
@@ -169,6 +184,7 @@ export function FilterContainer({
       // Also update applied state to match
       setAppliedStartDate(appliedFilters.startDate);
       setAppliedEndDate(appliedFilters.endDate);
+      setAppliedSeason(appliedFilters.season ?? null);
       setAppliedGameModes(appliedFilters.gameModes);
       setAppliedIncludeCardFilterMode(appliedFilters.includeCardFilterMode);
       if (showCardFilter) {
@@ -205,11 +221,15 @@ export function FilterContainer({
     const cardFilterModeChanged =
       appliedIncludeCardFilterMode !== selectedIncludeCardFilterMode;
 
-    const validDateRange = isValidDateRange(selectedStartDate, selectedEndDate);
+    // A season's days only show it, and the current one ends in the future
+    const validDateRange =
+      selectedSeason !== null ||
+      isValidDateRange(selectedStartDate, selectedEndDate);
 
     if (
       (appliedStartDate !== selectedStartDate ||
         appliedEndDate !== selectedEndDate ||
+        appliedSeason !== selectedSeason ||
         JSON.stringify(appliedGameModes) !==
           JSON.stringify(selectedGameModes) ||
         cardsChanged ||
@@ -223,6 +243,7 @@ export function FilterContainer({
   }, [
     appliedStartDate,
     appliedEndDate,
+    appliedSeason,
     appliedGameModes,
     appliedCards,
     appliedSupportIds,
@@ -231,6 +252,7 @@ export function FilterContainer({
     appliedIncludeCardFilterMode,
     selectedStartDate,
     selectedEndDate,
+    selectedSeason,
     selectedGameModes,
     selectedCards,
     selectedSupportIds,
@@ -252,10 +274,12 @@ export function FilterContainer({
       excludedSupportIds: showCardFilter ? selectedExcludedSupportIds : [],
       includeCardFilterMode: selectedIncludeCardFilterMode,
       timespanOption: selectedTimespanOption,
+      season: selectedSeason,
     };
 
     setAppliedStartDate(selectedStartDate);
     setAppliedEndDate(selectedEndDate);
+    setAppliedSeason(selectedSeason);
     setAppliedGameModes(selectedGameModes);
     setAppliedIncludeCardFilterMode(selectedIncludeCardFilterMode);
     if (showCardFilter) {
@@ -274,10 +298,12 @@ export function FilterContainer({
   // Reset clears the selection, user still has to click apply for the default to take effect
   const resetAllFilters = () => {
     const defaultFilters = getDefaultFilterState();
+    setResetCount((count) => count + 1);
 
     setSelectedStartDate(defaultFilters.startDate);
     setSelectedEndDate(defaultFilters.endDate);
     setSelectedTimespanOption(defaultFilters.timespanOption);
+    setSelectedSeason(defaultFilters.season);
     setSelectedGameModes(defaultFilters.gameModes);
     setSelectedIncludeCardFilterMode(defaultFilters.includeCardFilterMode);
     if (showCardFilter) {
@@ -297,9 +323,12 @@ export function FilterContainer({
         selectedStart={selectedStartDate}
         selectedEnd={selectedEndDate}
         selectedOption={selectedTimespanOption}
+        selectedSeason={selectedSeason}
         onStartChange={setSelectedStartDate}
         onEndChange={setSelectedEndDate}
         onOptionChange={setSelectedTimespanOption}
+        onSeasonChange={setSelectedSeason}
+        resetCount={resetCount}
       />
       <GameModeFilter
         gameModes={gameModes}

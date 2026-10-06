@@ -12,6 +12,7 @@ from routers import (
     cards,
     game_modes,
     total_battles,
+    seasons,
     auth,
 )
 from core.settings import settings
@@ -239,6 +240,7 @@ app.include_router(players_details.router, prefix="/api")
 app.include_router(cards.router, prefix="/api")
 app.include_router(game_modes.router, prefix="/api")
 app.include_router(total_battles.router, prefix="/api")
+app.include_router(seasons.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 
 

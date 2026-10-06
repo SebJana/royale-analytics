@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchDeckStats } from "../services/api/deckStats";
 import type { DeckCardFilter, DeckSort, DeckStats } from "../types/deckStats";
+import type { TimeRange } from "../types/seasons";
 
 const min = 60_000;
 
@@ -14,8 +15,7 @@ const min = 60_000;
  */
 export function useDeckStats(
   playerTag: string,
-  startDate: string,
-  endDate: string,
+  range: TimeRange,
   gameModes?: string[] | null, // Can be null to disable query until game modes are initialized
   cardFilter?: DeckCardFilter,
   sort?: DeckSort,
@@ -23,30 +23,22 @@ export function useDeckStats(
 ) {
   const modesKey = (gameModes ?? []).join("|"); // Make game modes a stable key
   // Plain objects, which React Query hashes by value
-  const filterKey = [
-    "deckStats",
-    playerTag,
-    startDate,
-    endDate,
-    modesKey,
-    cardFilter,
-  ];
+  const filterKey = ["deckStats", playerTag, range, modesKey, cardFilter];
 
   return useQuery<DeckStats, Error>({
     queryKey: [...filterKey, sort],
     // Pass the playerTag to the query function from the query key
     queryFn: ({ queryKey }) => {
-      const [, tag, start, end, modesString, filter, order] = queryKey as [
+      const [, tag, timeRange, modesString, filter, order] = queryKey as [
         string,
         string,
-        string,
-        string,
+        TimeRange,
         string,
         DeckCardFilter | undefined,
         DeckSort | undefined,
       ];
       const modes = modesString ? modesString.split("|") : undefined; // back to array from joined string
-      return fetchDeckStats(tag, start, end, modes, filter, order);
+      return fetchDeckStats(tag, timeRange, modes, filter, order);
     },
     // Same filters, other sort: keep showing the previous decks
     placeholderData: (previous, previousQuery) =>

@@ -29,6 +29,7 @@ from mongo import (
 
 # TODO: Add consistent rate limits to all player data routes (profile, battles,
 # decks, cards, and daily stats), with HTTP 429 and Retry-After for frontend handling.
+
 router = APIRouter(
     prefix="/players",
     tags=["Player Details"],
@@ -178,7 +179,8 @@ async def last_battles(
     responses={
         403: {
             "description": "Invalid or untracked player, or invalid request "
-            "parameters (dates, unknown or conflicting cards, too many cards)"
+            "parameters (dates or season, unknown or conflicting cards, too many "
+            "cards)"
         },
         404: {"description": "No decks found for the player"},
         500: {"description": "Deck statistics lookup failed"},
@@ -200,7 +202,7 @@ async def deck_percentage_stats(
     req: BetweenRequest = Depends(),
 ):
     try:
-        validate_between_request(req)
+        start, end = validate_between_request(req)
         validated_game_modes = await validate_game_modes(redis_conn, game_modes)
         card_filter = await validate_deck_card_filter(
             mongo_conn,
@@ -208,11 +210,12 @@ async def deck_percentage_stats(
             card_query,
         )
         # TODO add input sanitization for all user-provided parameters
+        # Keyed by the resolved UTC window, not by how it was requested. The
+        # timezone only placed the dates, which the window already holds.
         params = {
             "playerTag": player_tag,
-            "startDate": req.start_date,
-            "endDate": req.end_date,
-            "timezone": req.timezone,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
             "gameModes": validated_game_modes,
             "sortBy": sort_by,
             "sortOrder": sort_order,
@@ -245,10 +248,9 @@ async def deck_percentage_stats(
         decks = await get_decks_win_percentage(
             mongo_conn,
             player_tag,
-            req.start_date,
-            req.end_date,
+            start,
+            end,
             validated_game_modes,
-            req.timezone,
             card_filter,
             sort_by,
             sort_order == "asc",
@@ -285,7 +287,8 @@ async def deck_percentage_stats(
     "/{player_tag}/cards/stats",
     responses={
         403: {
-            "description": "Invalid or untracked player, or invalid request parameters"
+            "description": "Invalid or untracked player, or invalid request "
+            "parameters (dates or season)"
         },
         404: {"description": "No cards found for the player"},
         500: {"description": "Card statistics lookup failed"},
@@ -300,14 +303,13 @@ async def card_percentage_stats(
     req: BetweenRequest = Depends(),
 ):
     try:
-        validate_between_request(req)
+        start, end = validate_between_request(req)
         validated_game_modes = await validate_game_modes(redis_conn, game_modes)
 
         params = {
             "playerTag": player_tag,
-            "startDate": req.start_date,
-            "endDate": req.end_date,
-            "timezone": req.timezone,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
             "gameModes": validated_game_modes,
         }
         key = build_redis_key(
@@ -328,10 +330,9 @@ async def card_percentage_stats(
         cards = await get_cards_win_percentage(
             mongo_conn,
             player_tag,
-            req.start_date,
-            req.end_date,
+            start,
+            end,
             validated_game_modes,
-            req.timezone,
         )
 
         if not cards:
@@ -363,7 +364,8 @@ async def card_percentage_stats(
     "/{player_tag}/stats/daily",
     responses={
         403: {
-            "description": "Invalid or untracked player, or invalid request parameters"
+            "description": "Invalid or untracked player, or invalid request "
+            "parameters (dates or season)"
         },
         404: {"description": "No daily statistics found for the player"},
         500: {"description": "Daily statistics lookup failed"},
@@ -378,13 +380,14 @@ async def daily_player_statistics(
     req: BetweenRequest = Depends(),
 ):
     try:
-        validate_between_request(req)
+        start, end = validate_between_request(req)
         validated_game_modes = await validate_game_modes(redis_conn, game_modes)
 
+        # The timezone groups the days, so it stays part of the key
         params = {
             "playerTag": player_tag,
-            "startDate": req.start_date,
-            "endDate": req.end_date,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
             "timezone": req.timezone,
             "gameModes": validated_game_modes,
         }
@@ -406,8 +409,8 @@ async def daily_player_statistics(
         stats = await get_daily_stats(
             mongo_conn,
             player_tag,
-            req.start_date,
-            req.end_date,
+            start,
+            end,
             validated_game_modes,
             req.timezone,
         )

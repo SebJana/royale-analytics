@@ -7,10 +7,23 @@ from core.settings import settings
 
 # --- Request model ---
 class BetweenRequest(BaseModel):
-    start_date: date = Field(..., description="Start date (inclusive, YYYY-MM-DD)")
-    end_date: date = Field(..., description="End date (inclusive, YYYY-MM-DD)")
+    # Either a season or both dates, see validate_between_request
+    start_date: Optional[date] = Field(
+        None, description="Start date (inclusive, YYYY-MM-DD)"
+    )
+    end_date: Optional[date] = Field(
+        None, description="End date (inclusive, YYYY-MM-DD)"
+    )
+    season: Optional[str] = Field(
+        None,
+        description="Season id (YYYY-MM) instead of start_date and end_date",
+    )
     timezone: str = Field(
-        ..., description=("Timezone of the given start and end dates")
+        ...,
+        description=(
+            "Timezone of the given start and end dates, and of the days the "
+            "daily statistics are grouped into"
+        ),
     )
 
 
@@ -37,6 +50,16 @@ class DeckCardFilterRequest:
         self.exclude_cards = exclude_cards
         self.support_ids = support_ids
         self.exclude_support_ids = exclude_support_ids
+
+
+# --- Response model ---
+class SeasonResponse(BaseModel):
+    id: str = Field(..., description="Season id, YYYY-MM")
+    start: datetime = Field(..., description="Start of the season (inclusive), UTC")
+    end: datetime = Field(..., description="End of the season (exclusive), UTC")
+    is_current: bool = Field(
+        ..., alias="isCurrent", description="Whether the season is running"
+    )
 
 
 class BattlesRequest(BaseModel):

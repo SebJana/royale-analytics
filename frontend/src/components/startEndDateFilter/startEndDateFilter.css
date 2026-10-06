@@ -132,6 +132,22 @@
   color: var(--color-primary);
 }
 
+/* NOTE Spaced like the card filter's switch row (.card-filter-controls in
+   cardFilter.css), so both filters' switches sit alike. */
+.start-end-date-filter-component-controls {
+  display: flex;
+  padding: var(--spacing-sm) 0;
+  margin-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--border-light);
+  text-align: left;
+}
+
+.start-end-date-filter-component-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
 .start-end-date-filter-component-tag-text {
   display: block;
   flex: 1;

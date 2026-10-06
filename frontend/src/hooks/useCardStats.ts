@@ -1,30 +1,29 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchCardStats } from "../services/api/cardStats";
 import type { CardStats } from "../types/cardStats";
+import type { TimeRange } from "../types/seasons";
 
 const min = 60_000;
 
 export function useCardStats(
   playerTag: string,
-  startDate: string,
-  endDate: string,
+  range: TimeRange,
   gameModes?: string[] | null, // Can be null to disable query until game modes are initialized
 ) {
   const modesKey = (gameModes ?? []).join("|"); // Make game modes a stable key
 
   return useQuery<CardStats, Error>({
-    queryKey: ["cardStats", playerTag, startDate, endDate, modesKey],
+    queryKey: ["cardStats", playerTag, range, modesKey],
     // Pass the playerTag to the query function from the query key
     queryFn: ({ queryKey }) => {
-      const [, tag, start, end, modesString] = queryKey as [
+      const [, tag, timeRange, modesString] = queryKey as [
         string,
         string,
-        string,
-        string,
+        TimeRange,
         string,
       ];
       const modes = modesString ? modesString.split("|") : undefined; // back to array from joined string
-      return fetchCardStats(tag, start, end, modes);
+      return fetchCardStats(tag, timeRange, modes);
     },
     staleTime: 10 * min, // Cache duration, how long cards are considered fresh and aren't re-fetched from the backend
     gcTime: 15 * min,

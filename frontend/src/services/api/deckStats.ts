@@ -1,17 +1,18 @@
 import api from "./axios";
 import { validatePlayerTagSyntax } from "../../utils/playerTag";
+import { setTimeRangeParams } from "./seasons";
 import type {
   DeckCardFilter,
   DeckSort,
   DeckStats,
 } from "../../types/deckStats";
+import type { TimeRange } from "../../types/seasons";
 
 /**
- * Fetches the player's decks of a date range, filtered on the backend.
+ * Fetches the player's decks of a timespan, filtered on the backend.
  *
  * @param playerTag - Tag of a tracked player
- * @param startDate - First day, YYYY-MM-DD in the browser's timezone
- * @param endDate - Last day (inclusive), YYYY-MM-DD
+ * @param range - Season, or first and last day in the browser's timezone
  * @param gameModes - Internal mode names, omitted for all modes
  * @param cardFilter - Card and tower troop filter, omitted for all decks
  * @param sort - Order the backend sorts by before it caps the list
@@ -20,8 +21,7 @@ import type {
  */
 export async function fetchDeckStats(
   playerTag: string,
-  startDate: string,
-  endDate: string,
+  range: TimeRange,
   gameModes?: string[],
   cardFilter?: DeckCardFilter,
   sort?: DeckSort,
@@ -33,11 +33,7 @@ export async function fetchDeckStats(
 
   const tag = encodeURIComponent(playerTag);
   const params = new URLSearchParams();
-  params.set("start_date", startDate);
-  params.set("end_date", endDate);
-
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  params.set("timezone", timeZone);
+  setTimeRangeParams(params, range);
 
   // Append game modes if they exist as param
   if (gameModes?.length) {

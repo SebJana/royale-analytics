@@ -1,5 +1,5 @@
 import re
-from datetime import date, datetime, timedelta, time
+from datetime import date, datetime, timedelta, time, timezone as tz_utc
 from zoneinfo import ZoneInfo
 from models.schema import BetweenRequest, BattlesRequest, DeckCardFilterRequest
 from core.deps import DbConn, RedConn
@@ -7,6 +7,7 @@ from redis_service import CARDS_CACHE_KEY, GAME_MODES_CACHE_KEY, get_redis_json
 from mongo import get_cards as get_stored_cards
 from typing import Optional, List
 from core.settings import settings
+from helpers.seasons import parse_season_id, season_bounds, season_id_at
 
 # A filtered card is "<cardId>-<evolutionLevel>": 0 regular, 1 evolution,
 # 2 hero. Any level parses, so a variant added to the game later needs no
@@ -21,11 +22,11 @@ NO_SUPPORT_ID = 0
 
 
 class ParamsRequestError(Exception):
-    """Raised when a BetweenRequest contains invalid date ranges."""
+    """Raised when a request contains invalid parameters."""
 
     def __init__(
         self,
-        detail: str,
+        detail: str | dict,
         code: int = 403,
     ):
         super().__init__(detail)
@@ -78,18 +79,60 @@ def valid_timezone(timezone: str):
         return False
 
 
-def validate_between_request(request: BetweenRequest):
-    """Validate a BetweenRequest for date range and timezone constraints.
+def _validate_season(season: str) -> tuple[datetime, datetime]:
+    """Resolve a season id to its UTC window.
 
-    Performs comprehensive validation of a date range request including:
+    Args:
+        season (str): Season id as "YYYY-MM".
+
+    Returns:
+        tuple[datetime, datetime]: Start (inclusive) and end (exclusive) in UTC.
+
+    Raises:
+        ParamsRequestError: For a malformed id, or a season before
+            SEASON_FIRST_ID or after the current one.
+    """
+    try:
+        parse_season_id(season)
+    except ValueError as e:
+        raise ParamsRequestError({"code": "INVALID_SEASON", "message": str(e)})
+    if season < settings.SEASON_FIRST_ID:
+        raise ParamsRequestError(
+            {
+                "code": "INVALID_SEASON",
+                "message": f"Seasons start at {settings.SEASON_FIRST_ID}",
+            }
+        )
+    # Zero-padded ids compare like the seasons themselves
+    if season > season_id_at(datetime.now(tz_utc.utc)):
+        raise ParamsRequestError(
+            {"code": "INVALID_SEASON", "message": f"Season {season} has not started"}
+        )
+    return season_bounds(season)
+
+
+def validate_between_request(request: BetweenRequest) -> tuple[datetime, datetime]:
+    """Validate a BetweenRequest and resolve it to a UTC time window.
+
+    The request names either a season or a range of calendar days, never
+    both, so the window it asks for is unambiguous. A season is a timed
+    window: its reset does not fall on midnight, which calendar days cannot
+    express. Calendar days are validated against:
     - Start date is not before Clash Royale's release date
     - End date is not before start date
     - End date is not in the future
     - Date range does not exceed maximum allowed days
-    - Timezone is valid and exists
+
+    The timezone is validated in both cases. It places the calendar days and
+    groups the daily statistics.
 
     Args:
-        request (BetweenRequest): The request object containing start_date, end_date, and timezone.
+        request (BetweenRequest): Either season, or start_date and end_date,
+            plus the timezone.
+
+    Returns:
+        tuple[datetime, datetime]: Start (inclusive) and end (exclusive) as
+            timezone-aware UTC datetimes, for a range match on battleTime.
 
     Raises:
         ParamsRequestError: If any validation constraint is violated, with specific error details.
@@ -102,7 +145,27 @@ def validate_between_request(request: BetweenRequest):
     # timezone before using it to decide which calendar day is "today".
     if not valid_timezone(request.timezone):
         raise ParamsRequestError(f"Timezone {request.timezone} does not exist")
-    today = datetime.now(ZoneInfo(request.timezone)).date()
+    tz = ZoneInfo(request.timezone)
+
+    if request.season is not None:
+        if start is not None or end is not None:
+            raise ParamsRequestError(
+                {
+                    "code": "SEASON_WITH_DATES",
+                    "message": "Request either a season or a date range, not both",
+                }
+            )
+        return _validate_season(request.season)
+
+    if start is None or end is None:
+        raise ParamsRequestError(
+            {
+                "code": "MISSING_TIMESPAN",
+                "message": "Request a season or both start_date and end_date",
+            }
+        )
+
+    today = datetime.now(tz).date()
 
     # Check if start is after release
     if start < release:
@@ -122,6 +185,12 @@ def validate_between_request(request: BetweenRequest):
         raise ParamsRequestError(
             f"Request can only span {settings.MAX_TIME_RANGE_DAYS} days"
         )
+
+    # From the first day's local midnight to the midnight after the last day.
+    # Converted per instant, so a DST change inside the range shifts nothing.
+    start_local = datetime.combine(start, time(0, 0), tzinfo=tz)
+    end_local = datetime.combine(end + timedelta(days=1), time(0, 0), tzinfo=tz)
+    return start_local.astimezone(tz_utc.utc), end_local.astimezone(tz_utc.utc)
 
 
 def validate_battles_request(request: BattlesRequest):

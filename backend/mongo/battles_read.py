@@ -1,12 +1,12 @@
 from .connection import MongoConn
-from .validation_utils import ensure_connected, check_valid_date_range
+from .validation_utils import ensure_connected, check_valid_time_range
 from .query_utils import (
     match_tag_before_datetime_stage,
-    match_tag_date_mode_range_stage,
+    match_tag_time_mode_range_stage,
     extract_deck_stage,
     deck_card_filter_stages,
 )
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional, Iterable
 
 
@@ -140,10 +140,9 @@ async def get_last_battles(
 async def get_decks_win_percentage(
     conn: MongoConn,
     player_tag: str,
-    start_date: date,
-    end_date: date,
+    start: datetime,
+    end: datetime,
     game_modes: Optional[Iterable[str]] = None,
-    timezone: str = "UTC",
     card_filter: Optional[dict] = None,
     sort_by: str = "battleCount",
     sort_ascending: bool = False,
@@ -160,10 +159,9 @@ async def get_decks_win_percentage(
     Args:
         conn (MongoConn): Active connection to the MongoDB database.
         player_tag (str): The tag of the player whose unique decks are to be fetched.
-        start_date (date): Date after which the game happened.
-        end_date (date): Date before which the game happened.
+        start (datetime): Start of the UTC window (inclusive), timezone-aware.
+        end (datetime): End of the UTC window (exclusive), timezone-aware.
         game_modes (Optional[Iterable[str]]): If provided/non-empty, filter to these game modes in which the game happened.
-        timezone: Timezone into which the battle datetimes will be converted (default: UTC)
         card_filter (Optional[dict]): Normalized card filter (see
             deck_card_filter_stages), None for all decks.
         sort_by (str): Deck field to sort by: "battleCount", "wins",
@@ -187,7 +185,7 @@ async def get_decks_win_percentage(
 
     try:
         await ensure_connected(conn)
-        check_valid_date_range(start_date, end_date)
+        check_valid_time_range(start, end)
 
         filter_stages = deck_card_filter_stages(card_filter) if card_filter else []
         if min_battles > 1:
@@ -203,9 +201,7 @@ async def get_decks_win_percentage(
 
         pipeline = [
             # Match the relevant files for the player and the time frame
-            match_tag_date_mode_range_stage(
-                player_tag, start_date, end_date, game_modes, timezone
-            ),
+            match_tag_time_mode_range_stage(player_tag, start, end, game_modes),
             # TODO The query scales with battles, not decks: every matched
             # battle document is loaded for the grouping, even when only the
             # sort or min_battles changed.
@@ -336,21 +332,19 @@ async def get_decks_win_percentage(
 async def get_cards_win_percentage(
     conn: MongoConn,
     player_tag: str,
-    start_date: date,
-    end_date: date,
+    start: datetime,
+    end: datetime,
     game_modes: Optional[Iterable[str]] = None,
-    timezone: str = "UTC",
 ):
     """
     Fetches a usage and win percentage for every used card for the player in the specified time range.
 
     Args:
         conn (MongoConn): Active connection to the MongoDB database.
-        player_tag (date): The tag of the player whose unique decks are to be fetched.
-        start_date (date): Date after which the game happened.
-        end_date (date): Date before which the game happened.
+        player_tag (str): The tag of the player whose card statistics are fetched.
+        start (datetime): Start of the UTC window (inclusive), timezone-aware.
+        end (datetime): End of the UTC window (exclusive), timezone-aware.
         game_modes (Optional[Iterable[str]]): If provided/non-empty, filter to these game modes in which the game happened.
-        timezone: Timezone into which the battle datetimes will be converted (default: UTC)
 
     Returns:
         list: A list of dictionaries containing the card win-rate and usages
@@ -360,12 +354,10 @@ async def get_cards_win_percentage(
 
     try:
         await ensure_connected(conn)
-        check_valid_date_range(start_date, end_date)
+        check_valid_time_range(start, end)
 
         pipeline = [
-            match_tag_date_mode_range_stage(
-                player_tag, start_date, end_date, game_modes, timezone
-            ),
+            match_tag_time_mode_range_stage(player_tag, start, end, game_modes),
             extract_deck_stage(player_tag),
             {
                 "$facet": {
@@ -500,13 +492,13 @@ async def get_cards_win_percentage(
 async def get_daily_stats(
     conn: MongoConn,
     player_tag: str,
-    start_date: date,
-    end_date: date,
+    start: datetime,
+    end: datetime,
     game_modes: Optional[Iterable[str]] = None,
     timezone: str = "UTC",
 ):
     """
-    Fetches combined daily battle statistics for a player within the specified date range.
+    Fetches combined daily battle statistics for a player within the specified time window.
 
     Aggregates per calendar day and (optionally) filters battles by given game modes.
     Returned metrics per day include counts for battles, wins, losses, draws,
@@ -515,8 +507,10 @@ async def get_daily_stats(
     Args:
         conn (MongoConn): Active connection to the MongoDB database.
         player_tag (str): The tag of the player whose battles are analyzed (e.g., "#YYRJQY28").
-        start_date (date): Start of the date range (inclusive).
-        end_date (date): End of the date range (inclusive).
+        start (datetime): Start of the UTC window (inclusive), timezone-aware.
+        end (datetime): End of the UTC window (exclusive), timezone-aware. A
+            window that does not start at a local midnight, like a season,
+            makes its first and last day partial.
         game_modes (Optional[Iterable[str]]): If provided and non-empty, only battles
             in these modes are included.
         timezone: Timezone into which the battle days will be grouped (default: UTC)
@@ -528,13 +522,11 @@ async def get_daily_stats(
 
     try:
         await ensure_connected(conn)
-        check_valid_date_range(start_date, end_date)
+        check_valid_time_range(start, end)
 
         pipeline = [
-            # Convert local [start,end] to UTC bounds & apply mode filter
-            match_tag_date_mode_range_stage(
-                player_tag, start_date, end_date, game_modes, timezone=timezone
-            ),
+            # The UTC window & mode filter
+            match_tag_time_mode_range_stage(player_tag, start, end, game_modes),
             #  derive local day, normalize tags, crowns, flags
             {
                 "$addFields": {

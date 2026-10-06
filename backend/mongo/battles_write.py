@@ -12,7 +12,7 @@ from .validation_utils import ensure_connected
 # battles over arbitrary date ranges, and the battle list shows single games,
 # so compacted periods must still answer those queries or be marked as
 # summary only. Raw battles cannot be recovered from the API after the battle
-# log rotates, so compaction is irreversible; keep backups from before it.
+# log rotates, so compaction is irreversible.
 
 
 async def insert_battles(conn: MongoConn, battle_logs) -> int:

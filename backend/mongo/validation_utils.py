@@ -1,5 +1,5 @@
 from .connection import MongoConn
-from datetime import date
+from datetime import datetime
 
 
 async def ensure_connected(conn: MongoConn):
@@ -15,24 +15,28 @@ async def ensure_connected(conn: MongoConn):
     await conn.ensure_connection()
 
 
-def check_valid_date_range(start_date, end_date):
+def check_valid_time_range(start, end):
     """
-    Checks if the given dates are valid and build a valid time range
+    Checks if the given datetimes build a valid time window
+
+    Naive datetimes are rejected: Mongo would read them as UTC, which shifts
+    a window meant in another timezone without any error. A tzinfo that
+    returns no offset counts as naive too.
 
     Args:
-        conn (MongoConn): Active connection to the mongo database
+        start (datetime): Start of the window (inclusive)
+        end (datetime): End of the window (exclusive)
 
     Raises:
-        TypeError: If input isn't proper datetime.date
-        ValueError: If end_date isn't after start_date
+        TypeError: If an input isn't a timezone-aware datetime.datetime
+        ValueError: If end isn't after start
     """
 
-    # Check that both are instances of datetime.date
-    if not isinstance(start_date, date) or not isinstance(end_date, date):
-        raise TypeError("start_date and end_date must be datetime.date instances")
+    for value in (start, end):
+        if not isinstance(value, datetime) or value.utcoffset() is None:
+            raise TypeError("start and end must be timezone-aware datetimes")
 
-    # Ensure start_date is not after end_date
-    if start_date > end_date:
-        raise ValueError("start_date cannot be after end_date")
+    if start >= end:
+        raise ValueError("start has to be before end")
 
     return True

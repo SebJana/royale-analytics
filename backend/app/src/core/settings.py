@@ -174,6 +174,22 @@ class Settings:
     # Maximum time interval that can be requested using a BetweenRequest for decks, cards, stats
     # NOTE: If none is wanted, just set the limit to an arbitrarily big number
     MAX_TIME_RANGE_DAYS: int = 10 * 365
+
+    # Seasons start on the first Monday of a month at this UTC hour. Supercell
+    # publishes the day but not the hour. Ranked battles around the October
+    # 2026 reset point to 09:00 UTC, the logs bracket it between 08:25 and
+    # 21:19 UTC (docs/battle-log-field-findings.md). Kept until a source or
+    # more resets say otherwise.
+    SEASON_RESET_HOUR_UTC: int = 9
+    # Oldest season id a request may name. The first-Monday rule holds since
+    # the first themed season, which started on Monday, July 1, 2019.
+    SEASON_FIRST_ID: str = "2019-07"
+    # Seasons /seasons returns by default, newest first. The frontend offers
+    # exactly these in its timespan filter.
+    SEASON_CATALOGUE_LIMIT: int = 4
+    # Upper bound of the /seasons limit, more than every season since
+    # SEASON_FIRST_ID for years to come
+    SEASON_CATALOGUE_MAX_LIMIT: int = 240
     # Amount of battles that can be retrieved in one request
     MIN_BATTLES: int = 1
     MAX_BATTLES: int = 100

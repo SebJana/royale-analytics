@@ -7,6 +7,7 @@ import { useGameModes } from "../../hooks/useGameModes";
 import { formatNumber, round } from "../../utils/number";
 import { pluralize } from "../../utils/plural";
 import { getCurrentFilterState } from "../../utils/filter";
+import { getTimeRange } from "../../utils/seasons";
 import { gameModesForQuery } from "../../utils/gameModes";
 import { useEffect, useState } from "react";
 import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
@@ -241,12 +242,7 @@ export default function PlayerCards() {
     isLoading: cardStatsLoading,
     isError: isCardStatsError,
     refetch: refetchCardStats,
-  } = useCardStats(
-    playerTag,
-    appliedFilters.startDate,
-    appliedFilters.endDate,
-    queryGameModes,
-  );
+  } = useCardStats(playerTag, getTimeRange(appliedFilters), queryGameModes);
 
   // Use the modes actually sent to the API for the loading state dependency.
   const modesKey = queryGameModes?.join("|") ?? "";
@@ -264,7 +260,7 @@ export default function PlayerCards() {
           cardStats.card_statistics.supportCards.length > 0),
       ),
     // Reset dependency ensures loading state recalculates when any backend filter changes
-    resetDependency: `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${modesKey}`,
+    resetDependency: `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${appliedFilters.season}-${modesKey}`,
   });
 
   const totalBattles = cardStats?.card_statistics.totalBattles ?? 0;

@@ -10,6 +10,7 @@ import { useGameModes } from "../../hooks/useGameModes";
 import { formatNumber, round } from "../../utils/number";
 import { pluralize } from "../../utils/plural";
 import { getCurrentFilterState } from "../../utils/filter";
+import { getTimeRange } from "../../utils/seasons";
 import {
   gameModesForQuery,
   mapInternalNameToDisplayName,
@@ -474,8 +475,7 @@ export default function PlayerDecks() {
   // and the minimum battles run in the browser without another request.
   const base = useDeckStats(
     playerTag,
-    appliedFilters.startDate,
-    appliedFilters.endDate,
+    getTimeRange(appliedFilters),
     queryGameModes,
     cardFilter,
     DEFAULT_SORT,
@@ -491,8 +491,7 @@ export default function PlayerDecks() {
     JSON.stringify(deckSort) !== JSON.stringify(DEFAULT_SORT);
   const sorted = useDeckStats(
     playerTag,
-    appliedFilters.startDate,
-    appliedFilters.endDate,
+    getTimeRange(appliedFilters),
     queryGameModes,
     cardFilter,
     deckSort,
@@ -548,7 +547,7 @@ export default function PlayerDecks() {
   // Use the modes actually sent to the API for the loading state dependency.
   const modesKey = queryGameModes?.join("|") ?? "";
   // Every backend filter of the deck request
-  const decksContextKey = `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${modesKey}-${JSON.stringify(cardFilter ?? {})}`;
+  const decksContextKey = `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${appliedFilters.season}-${modesKey}-${JSON.stringify(cardFilter ?? {})}`;
 
   // Loading state management
   // Determines when to show loading spinner vs content
