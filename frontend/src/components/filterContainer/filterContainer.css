@@ -48,6 +48,12 @@
   .filter-component-button-container {
     padding-bottom: calc(var(--spacing-lg) + env(safe-area-inset-bottom, 0px));
   }
+
+  /* Scrolling up returns the row to the panel's end instead of pinning it
+     over the content the reader is heading back to */
+  .filter-component-button-container.is-scrolling-up {
+    position: static;
+  }
 }
 
 .filter-component-apply-button {

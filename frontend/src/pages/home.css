@@ -54,12 +54,32 @@
   line-height: 1.2;
 }
 
+/* NOTE Width matches .search-section and friends at every breakpoint, so the
+   stat row lines up with the panels below it. */
 .home-stat-cards-container {
   display: flex;
   gap: var(--spacing-lg);
   justify-content: center;
-  align-items: center;
-  flex-wrap: wrap;
+  align-items: stretch;
+  width: 90%;
+  max-width: 400px;
+}
+
+/* The shared stat card shrinks with the viewport so dense rows fit on the
+   player pages. Home only shows two cards, so they keep their full size. The
+   container prefix outranks statCard.css regardless of stylesheet order. */
+.home-stat-cards-container .stat-card {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: var(--spacing-xl) var(--spacing-lg);
+}
+
+.home-stat-cards-container .stat-card-number {
+  font-size: var(--font-3xl);
+}
+
+.home-stat-cards-container .stat-card-label {
+  font-size: var(--font-sm);
 }
 
 .player-selection {
@@ -359,6 +379,10 @@
     width: 95%;
   }
 
+  .home-stat-cards-container {
+    width: 95%;
+  }
+
   .adding-section,
   .untrack-section {
     margin-top: var(--spacing-xl);
@@ -399,6 +423,15 @@
     width: 100%;
     max-width: 320px;
     margin-inline: auto;
+  }
+
+  .home-stat-cards-container {
+    width: 98%;
+    gap: var(--spacing-md);
+  }
+
+  .home-stat-cards-container .stat-card {
+    padding: var(--spacing-lg) var(--spacing-sm);
   }
 
   .section-header {
