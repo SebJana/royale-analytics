@@ -7,12 +7,10 @@ import {
 import type { LastBattles } from "../types/lastBattles";
 import { validatePlayerTagSyntax } from "../utils/playerTag";
 import { fetchLastBattles } from "../services/api/lastBattles";
+import { firstSyncPollInterval } from "../utils/polling";
 
 const min = 60_000; // 1 minute in milliseconds
 const cacheDuration = 5 * min;
-// Poll interval while a just-tracked player's first battle sync is running.
-// The backend syncs new players within seconds.
-const firstSyncPollInterval = 3_000;
 
 /**
  * Hook for fetching player battles with infinite scroll pagination
@@ -57,10 +55,11 @@ export function usePlayerBattlesInfinite(
     staleTime: cacheDuration,
     // Keep data in memory - after that it gets garbage collected
     gcTime: cacheDuration,
-    // Poll only until the first battle sync of a just-tracked player finished
+    // Poll only until the first battle sync of a just-tracked player finished,
+    // backing off while it takes long
     refetchInterval: (query) =>
       query.state.data?.pages[0]?.first_sync_pending
-        ? firstSyncPollInterval
+        ? firstSyncPollInterval(query.state.dataUpdateCount)
         : false,
     // Disable automatic refetching to reduce unnecessary API calls
     refetchOnWindowFocus: false,

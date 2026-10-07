@@ -1,12 +1,13 @@
 import { useEffect, useId, useLayoutEffect, useState } from "react";
 import {
   AlertCircle,
+  ArrowRight,
   CircleCheck,
   Clock,
   LockKeyhole,
   LockKeyholeOpen,
 } from "lucide-react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { trackPlayer, untrackPlayer } from "../services/api/trackedPlayers";
 import { pluralize } from "../utils/plural";
@@ -81,6 +82,8 @@ type HomeStatus = {
   tone: "success" | "error" | "wait";
   title: string;
   message: string;
+  /** Follow-up action, shown as a button under the message. */
+  link?: { to: string; label: string };
 };
 
 const STATUS_ICONS = {
@@ -154,6 +157,12 @@ function HomeStatusMessage({
             <div className="home-status-text">
               <strong>{shown.title}</strong>
               <span>{shown.message}</span>
+              {shown.link && (
+                <Link to={shown.link.to} className="home-status-link">
+                  {shown.link.label}
+                  <ArrowRight size={18} aria-hidden="true" />
+                </Link>
+              )}
             </div>
           </div>
         )}
@@ -271,10 +280,19 @@ function HomePage() {
 
     try {
       const result = await trackPlayer(addedPlayerTag);
+      // The API stores the profile and puts the player first in the battle
+      // schedule, so the page is usually useful right away. Until the first
+      // battle sync lands, the battles page polls for it. Under heavy load or
+      // after a restart following long downtime, the schedule is crowded and
+      // that first sync can take a while.
       setTrackingStatus({
         tone: "success",
         title: result.status,
         message: result.tag,
+        link: {
+          to: `/player/${encodeURIComponent(result.tag)}/battles`,
+          label: "View Player",
+        },
       });
       refreshTrackedPlayers();
 
@@ -390,9 +408,6 @@ function HomePage() {
               View Player
             </button>
           </div>
-          {/* TODO add jump to player button popup after adding one so one
-          can instantly view the newly tracked player (has to be some delay tho
-          to give the queue a chance to ingest that player) */}
           <div className="adding-section">
             <h2 className="section-header">Add New Player</h2>
             <p className="section-description">

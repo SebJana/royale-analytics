@@ -3,11 +3,9 @@ import axios from "axios";
 import { fetchPlayerProfile } from "../services/api/player";
 import type { Player } from "../types/player";
 import { PREFERENCE_QUERY_META } from "../utils/storage";
+import { firstSyncPollInterval } from "../utils/polling";
 
 const min = 60_000;
-// Poll interval while a just-tracked player's first battle sync is running,
-// so the "Battles updated" hint does not stay at "not synced yet".
-const firstSyncPollInterval = 3_000;
 // Poll interval while a player has no profile snapshot yet. Only players
 // inserted without the API (e.g. in bulk), until the scraper's first refresh.
 const notSyncedPollInterval = 30_000;
@@ -45,7 +43,10 @@ export function usePlayerProfile(playerTag: string) {
     gcTime: 30 * min,
     refetchInterval: (query) => {
       const syncInfo = query.state.data?.syncInfo;
-      if (syncInfo && !syncInfo.battlesSyncedAt) return firstSyncPollInterval;
+      // Until the first battle sync lands, so the "Battles updated" hint does
+      // not stay at "not synced yet". Backs off while it takes long.
+      if (syncInfo && !syncInfo.battlesSyncedAt)
+        return firstSyncPollInterval(query.state.dataUpdateCount);
       if (getProfileErrorCode(query.state.error) === "PROFILE_NOT_SYNCED")
         return notSyncedPollInterval;
       return false;

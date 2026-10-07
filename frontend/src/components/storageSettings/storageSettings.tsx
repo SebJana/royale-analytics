@@ -171,7 +171,8 @@ export function StorageSettings({
             <h3>Delete all data</h3>
             <p>
               Removes everything this site saved in this browser, including your
-              verification and these settings. The page reloads.
+              verification and these settings. Tracked players you added stay
+              tracked, as they aren't tied to you. The page reloads.
             </p>
           </div>
           <button
