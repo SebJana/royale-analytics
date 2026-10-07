@@ -12,9 +12,9 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?set MONGO_ROOT_USER in .env}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PWD:?set MONGO_ROOT_PWD in .env}
     volumes:
-      # TODO: Change to named volume for better performance and portability
-      # - mongo_data:/data/db
-      - ./db/data:/data/db
+      # Init scripts run only while this volume is empty, so they never
+      # recreate users over existing data.
+      - mongo_data:/data/db
       - ./db/mongo-init/:/docker-entrypoint-initdb.d:ro
     networks:
       - cr-analytics
@@ -159,8 +159,12 @@ services:
       - api
 
 volumes:
-  # TODO: Uncomment when switching from bind mount to named volume
-  # mongo_data:
+  # Not reconstructible, so Compose never creates or deletes it, not even with
+  # `down -v`. The fixed name keeps a renamed project from starting on a fresh,
+  # empty volume. Create it once per machine (see README).
+  mongo_data:
+    external: true
+    name: clash-royale-analytics_mongo_data
   redis-data:
   redis-key-store-data:
   # Reconstructible: the next card refresh rebuilds a lost set from the CDN.

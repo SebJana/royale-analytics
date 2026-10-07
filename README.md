@@ -100,11 +100,17 @@ The pools share a dedicated `redis-key-store` with `noeviction`. On startup, key
 
 ### 2. Docker Setup (Production)
 
-Start all services by running:
+Create the MongoDB data volume once per machine, then start all services:
 
 ```bash
+docker volume create clash-royale-analytics_mongo_data
 docker compose up -d
 ```
+
+The volume is marked `external` in `docker-compose.yml`, so Compose never
+creates or deletes it. `docker compose down -v` resets the Redis and card image
+volumes but keeps the database. Only `docker volume rm` removes it; restore from
+`db/backups` afterwards (see [Restoring Data](#3-restoring-data)).
 
 The API is available through nginx at `http://localhost/api` or
 `http://localhost:8000/api`. Swagger UI is at `http://localhost:8000/docs`.
