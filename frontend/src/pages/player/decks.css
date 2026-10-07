@@ -111,6 +111,11 @@
   margin-right: auto;
 }
 
+/* The footer's divider follows, a second line right above it would double up. */
+.decks-deck-row.is-last {
+  border-bottom: none;
+}
+
 .deck-section {
   flex: 0 1 700px;
   width: 100%;
@@ -285,13 +290,6 @@
   color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-}
-
-.no-decks-message {
-  text-align: center;
-  color: var(--text-secondary);
-  font-style: italic;
-  margin: var(--spacing-xl) 0;
 }
 
 /* Narrower than the sort select: its options are short */

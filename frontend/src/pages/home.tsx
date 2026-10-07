@@ -1,20 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { LockKeyhole, LockKeyholeOpen, CircleCheck } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  fetchAllTrackedPlayersCount,
-  trackPlayer,
-  untrackPlayer,
-} from "../services/api/trackedPlayers";
-import { fetchTotalBattleCount } from "../services/api/battles";
+import { trackPlayer, untrackPlayer } from "../services/api/trackedPlayers";
 import { pluralize } from "../utils/plural";
 import { formatNumberWithSuffix } from "../utils/number";
 import { validatePlayerTagSyntax } from "../utils/playerTag";
-import { useFetch } from "../hooks/useFetch";
+import {
+  TRACKED_PLAYER_COUNT_QUERY_KEY,
+  useTrackedPlayerCount,
+} from "../hooks/useTrackedPlayerCount";
+import { useTotalBattleCount } from "../hooks/useTotalBattleCount";
 import { useAuth } from "../hooks/useAuthHook";
-import type { PlayerCount } from "../types/players";
-import type { TotalBattleCount } from "../types/battles";
 import { PlayerSearch } from "../components/playerSearch/playerSearch";
 import { PLAYER_SEARCH_QUERY_KEY } from "../hooks/usePlayerSearch";
 import { AuthModal } from "../components/auth/authModal";
@@ -75,31 +72,35 @@ function getErrorMessage(error: unknown): string {
 }
 
 function HomePage() {
-  // Incremented after a player is added or removed, so the tracked player
-  // count is fetched again instead of staying stale.
-  const [trackedPlayersVersion, setTrackedPlayersVersion] = useState(0);
   const queryClient = useQueryClient();
 
-  // The API indexes adds and removes instantly; cached search results would
-  // still show the old state, so they are dropped too.
+  // The window keeps its scroll position across routes, so coming from far
+  // down a player page would open home at its bottom, footer first. Before
+  // paint, so that position never shows.
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  // The API indexes adds and removes instantly; the cached count and search
+  // results would still show the old state.
   const refreshTrackedPlayers = () => {
-    setTrackedPlayersVersion((version) => version + 1);
+    void queryClient.invalidateQueries({
+      queryKey: [TRACKED_PLAYER_COUNT_QUERY_KEY],
+    });
     void queryClient.invalidateQueries({ queryKey: [PLAYER_SEARCH_QUERY_KEY] });
   };
 
   const {
     data: playerCount,
-    loading: playerCountLoading,
-    error: playerCountError,
-  } = useFetch<PlayerCount>(fetchAllTrackedPlayersCount, [
-    trackedPlayersVersion,
-  ]);
+    isPending: playerCountPending,
+    isError: playerCountError,
+  } = useTrackedPlayerCount();
 
   const {
     data: battleCount,
-    loading: battleCountLoading,
-    error: battleCountError,
-  } = useFetch<TotalBattleCount>(fetchTotalBattleCount, []);
+    isPending: battleCountPending,
+    isError: battleCountError,
+  } = useTotalBattleCount();
 
   const [selectedPlayerTag, setSelectedPlayerTag] = useState("");
   const [addedPlayerTag, setAddedPlayerTag] = useState("");
@@ -123,14 +124,13 @@ function HomePage() {
     return () => window.clearTimeout(timer);
   }, [showAuthSuccess]);
 
-  // Only the first load replaces the page with a spinner. A refetch after
-  // adding or removing a player keeps the page and its status messages.
-  if (
-    (playerCountLoading && !playerCount) ||
-    (battleCountLoading && !battleCount)
-  )
+  // A visit without cached counts loads them behind this spinner; the count
+  // hooks keep them for a short while. A refetch keeps the page and its
+  // status messages.
+  if (playerCountPending || battleCountPending)
     return <CircularProgress className="home-loading-spinner" />;
-  if (playerCountError || battleCountError)
+  // A failed refetch keeps the previous counts on screen
+  if ((playerCountError && !playerCount) || (battleCountError && !battleCount))
     return (
       <>
         <Lottie

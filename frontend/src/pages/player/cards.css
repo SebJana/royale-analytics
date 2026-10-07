@@ -166,13 +166,6 @@
   display: block;
 }
 
-.no-cards-message {
-  text-align: center;
-  color: var(--text-secondary);
-  font-style: italic;
-  margin: var(--spacing-xl) 0;
-}
-
 @media (max-width: 1024px) {
   .cards-grid {
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));

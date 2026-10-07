@@ -1,10 +1,19 @@
 import { StrictMode } from "react";
 import { BrowserRouter } from "react-router-dom";
 import { createRoot } from "react-dom/client";
-import { QueryClient } from "@tanstack/react-query";
-import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { QueryClient, type Query } from "@tanstack/react-query";
+import {
+  PersistQueryClientProvider,
+  persistQueryClientSave,
+} from "@tanstack/react-query-persist-client";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { AuthProvider } from "./hooks/useAuth";
+import {
+  NECESSARY_QUERY_META,
+  PREFERENCE_QUERY_META,
+  hasPreferenceConsent,
+  subscribeConsent,
+} from "./utils/storage";
 import "./index.css";
 import App from "./App.tsx";
 
@@ -33,6 +42,32 @@ const persister = createAsyncStoragePersister({
   throttleTime: 2000, // throttle time to reduce frequent saves
 });
 
+// Change whenever a cached API response changes shape, so browsers drop the
+// saved cache instead of rendering the old shape for up to maxAge.
+// Also changed to drop caches saved before the allowlist below, which could
+// hold player data without consent.
+const buster = "2026-10-07";
+
+const dehydrateOptions = {
+  // Allowlist: shared catalogues always, player data only with preference
+  // consent (utils/storage.ts). Unmarked queries are never saved.
+  shouldDehydrateQuery: (q: Query) =>
+    q.meta?.storage === NECESSARY_QUERY_META.storage ||
+    (q.meta?.storage === PREFERENCE_QUERY_META.storage &&
+      hasPreferenceConsent()),
+};
+
+// The cache is otherwise only saved after a query changes, so revoking consent
+// would leave player data on the device until then.
+subscribeConsent(() => {
+  void persistQueryClientSave({
+    queryClient,
+    persister,
+    buster,
+    dehydrateOptions,
+  });
+});
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
@@ -44,14 +79,8 @@ createRoot(document.getElementById("root")!).render(
           // CARD_IMAGE_SET_RETENTION (7 days) as a grace period for saved card
           // lists. Keep this well below it.
           maxAge: day,
-          // Change whenever a cached API response changes shape, so browsers
-          // drop the saved cache instead of rendering the old shape for up
-          // to maxAge.
-          buster: "2026-10-05b",
-          // Decide wether or not to keep the query progress
-          dehydrateOptions: {
-            shouldDehydrateQuery: (q) => q.meta?.persist !== false, // skip those with persist:false
-          },
+          buster,
+          dehydrateOptions,
         }}
       >
         <AuthProvider>

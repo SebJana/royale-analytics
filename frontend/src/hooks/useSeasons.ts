@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchSeasons } from "../services/api/seasons";
 import type { Season } from "../types/seasons";
+import { NECESSARY_QUERY_META } from "../utils/storage";
 
 const min = 60_000;
 
@@ -22,6 +23,7 @@ export function useSeasons() {
     queryKey: ["seasons"],
     queryFn: fetchSeasons,
     staleTime: 60 * min,
+    meta: NECESSARY_QUERY_META,
     gcTime: 120 * min,
     refetchOnWindowFocus: false,
     refetchInterval: (query) => {

@@ -9,6 +9,12 @@ import { PlayerInfoPlaceholder } from "../../components/playerInfo/playerInfoPla
 import { PlayerErrorBoundary } from "../../components/playerError/playerErrorBoundary";
 import { useEffect, useLayoutEffect, useState } from "react";
 import axios from "axios";
+import {
+  recordRecentPlayer,
+  removeRecentPlayer,
+} from "../../hooks/useRecentPlayers";
+import { normalizePlayerTag } from "../../utils/playerTag";
+import { clearBattlesView } from "../../utils/battlesView";
 import Lottie from "lottie-react";
 import emptyBox from "../../assets/animations/emptyBox.json";
 import genericError from "../../assets/animations/404.json";
@@ -35,7 +41,10 @@ export default function PlayerLayout() {
 
   const {
     data: player,
-    isLoading: playerLoading,
+    // Not isLoading: while the persisted cache restores, the query is paused,
+    // which isLoading reports as not loading. The layout then rendered empty
+    // for a frame, footer included, before the spinner.
+    isPending: playerLoading,
     isError: isPlayerError,
     error: playerError,
   } = usePlayerProfile(playerTag ?? "");
@@ -55,6 +64,25 @@ export default function PlayerLayout() {
   )
     ? playerError.response?.data?.detail?.name
     : undefined;
+
+  // Recorded when the page loads, not when picked in the search, so links and
+  // typed tags count too.
+  const viewedTag =
+    player?.tag ?? (profileNotSynced ? normalizePlayerTag(playerTag) : null);
+  const viewedName = player?.name ?? notSyncedName ?? "";
+  useEffect(() => {
+    if (viewedTag) recordRecentPlayer({ tag: viewedTag, name: viewedName });
+  }, [viewedTag, viewedName]);
+
+  // The battles position only serves switching between this player's pages.
+  // Leaving the player (home, another player) drops it.
+  useEffect(() => () => clearBattlesView(playerTag), [playerTag]);
+
+  // A tag that stopped resolving would only lead back to this error page.
+  useEffect(() => {
+    const tag = normalizePlayerTag(playerTag);
+    if (isNotFound && tag) removeRecentPlayer(tag);
+  }, [isNotFound, playerTag]);
 
   if (playerLoading)
     return <CircularProgress className="layout-loading-spinner" />;

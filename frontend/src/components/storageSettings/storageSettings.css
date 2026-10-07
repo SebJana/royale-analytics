@@ -1,0 +1,289 @@
+/* NOTE The cards, the delete row and the title share the same horizontal inset
+   (--storage-inset), so their contents line up on one edge. */
+.storage-settings {
+  --storage-inset: var(--spacing-lg);
+  --storage-retention-width: 8.5rem;
+}
+
+.storage-settings .MuiDialog-paper {
+  background-color: var(--bg-darker);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  text-align: left;
+}
+
+/* MUI's Typography font would differ from the rest of the site. */
+.storage-settings .MuiDialogTitle-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-lg) var(--spacing-2xl) var(--spacing-md);
+  font-family: inherit;
+  font-size: var(--font-xl);
+  font-weight: var(--font-weight-semibold);
+}
+
+.storage-settings-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+}
+
+.storage-settings-close {
+  display: flex;
+  flex: none;
+  margin-right: calc(-1 * var(--spacing-sm));
+  padding: var(--spacing-sm);
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-secondary);
+}
+
+.storage-settings-close:hover {
+  border: none;
+  background-color: var(--bg-overlay-strong);
+  color: var(--text-primary);
+}
+
+.storage-settings-close svg {
+  width: 20px;
+  height: 20px;
+}
+
+.storage-settings-intro {
+  color: var(--text-secondary);
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-normal);
+}
+
+.storage-settings .MuiDialogContent-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-2xl);
+}
+
+/* Flex items shrink by default, so on a short screen the cards squeezed to fit
+   and their overflow:hidden cut the tables off. The content scrolls instead. */
+.storage-settings .MuiDialogContent-root > * {
+  flex-shrink: 0;
+}
+
+.storage-settings h3 {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.storage-settings p {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+}
+
+/* One card per category: the header says what it is and whether it is on,
+   the table below lists what belongs to it. */
+.storage-settings-category {
+  overflow: hidden;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast);
+}
+
+.storage-settings-category.is-on {
+  border-color: var(--color-primary);
+}
+
+.storage-settings-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-md) var(--storage-inset);
+  background-color: var(--bg-overlay-medium);
+}
+
+/* State label and switch. Both cards end in a switch, so the switches line up
+   on the right edge. */
+.storage-settings-state {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-right: calc(-1 * var(--spacing-sm));
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.storage-settings-state.is-on {
+  color: var(--color-accent);
+}
+
+.storage-settings-state.is-locked {
+  color: var(--color-success);
+  cursor: default;
+}
+
+/* The default off state is a white thumb on a near-black track, which the
+   dark background swallows. */
+.storage-settings .MuiSwitch-track {
+  background-color: var(--border-hover);
+  opacity: 1;
+}
+
+.storage-settings .MuiSwitch-switchBase.Mui-checked .MuiSwitch-thumb {
+  color: white;
+}
+
+.storage-settings .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track {
+  background-color: var(--color-primary);
+  opacity: 1;
+}
+
+/* Locked on: green like its label, not greyed out like a broken control. */
+.storage-settings
+  .is-locked
+  .MuiSwitch-switchBase.Mui-checked.Mui-disabled
+  + .MuiSwitch-track {
+  background-color: var(--color-success);
+  opacity: 0.6;
+}
+
+.storage-settings
+  .is-locked
+  .MuiSwitch-switchBase.Mui-disabled
+  .MuiSwitch-thumb {
+  color: var(--text-muted);
+}
+
+.storage-settings-summary {
+  padding: var(--spacing-md) var(--storage-inset);
+  border-top: 1px solid var(--border-light);
+}
+
+/* Overrides the card's small grey description style for the body text. */
+.storage-settings p.storage-settings-summary {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-base);
+}
+
+.storage-settings-items {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-base);
+}
+
+.storage-settings-items th,
+.storage-settings-items td {
+  padding: var(--spacing-sm) var(--storage-inset);
+  border-top: 1px solid var(--border-light);
+  text-align: left;
+  vertical-align: top;
+}
+
+.storage-settings-items th {
+  padding-top: var(--spacing-md);
+  padding-bottom: var(--spacing-xs);
+  color: var(--text-secondary);
+  font-size: var(--font-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Fixed width, so the "Kept for" column lines up across both cards. */
+.storage-settings-items th:last-child,
+.storage-settings-items td:last-child {
+  width: var(--storage-retention-width);
+  padding-left: 0;
+}
+
+.storage-settings-items td:last-child {
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+}
+
+.storage-settings-delete-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-md) var(--storage-inset);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius-md);
+}
+
+/* Outlined, so the destructive action does not outshine Done. The second
+   click fills it as the last warning. */
+.storage-settings-delete {
+  display: grid;
+  flex: none;
+  background-color: transparent;
+  border: 1px solid var(--color-error);
+  color: var(--color-error-alt);
+  font-size: var(--font-base);
+}
+
+.storage-settings-delete > span {
+  grid-area: 1 / 1;
+}
+
+.storage-settings-delete > .is-hidden {
+  visibility: hidden;
+}
+
+.storage-settings-delete:hover,
+.storage-settings-delete.is-confirming {
+  background-color: var(--color-error);
+  border-color: var(--color-error);
+  color: white;
+}
+
+.storage-settings .MuiDialogActions-root {
+  padding: var(--spacing-lg) var(--spacing-2xl) var(--spacing-xl);
+}
+
+.storage-settings-done {
+  min-width: 120px;
+  padding: var(--spacing-md) var(--spacing-2xl);
+  font-weight: var(--font-weight-semibold);
+}
+
+@media (max-width: 600px) {
+  .storage-settings {
+    --storage-inset: var(--spacing-md);
+    --storage-retention-width: 6.5rem;
+  }
+
+  .storage-settings .MuiDialog-paper {
+    margin: var(--spacing-sm);
+    width: calc(100% - 2 * var(--spacing-sm));
+    max-height: calc(100dvh - 2 * var(--spacing-sm));
+  }
+
+  .storage-settings .MuiDialogTitle-root,
+  .storage-settings .MuiDialogContent-root,
+  .storage-settings .MuiDialogActions-root {
+    padding-left: var(--spacing-lg);
+    padding-right: var(--spacing-lg);
+  }
+
+  .storage-settings-category-header {
+    align-items: flex-start;
+  }
+
+  .storage-settings-delete-section {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .storage-settings-done {
+    width: 100%;
+  }
+}

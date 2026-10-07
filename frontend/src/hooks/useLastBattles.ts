@@ -69,9 +69,8 @@ export function usePlayerBattlesInfinite(
     retry: 2,
     retryDelay: (i) => Math.min(1000 * 2 ** i, 30_000),
 
-    // Disable persistence to prevent restoring many pages at once
-    // When user hits reload they're back to seeing only the last X default loaded battles
-    meta: { persist: false },
+    // No storage meta, so never persisted (main.tsx): a reload starts with
+    // the default pages again instead of restoring many at once.
   });
 
   // The battles page polls faster than the profile while a just-tracked

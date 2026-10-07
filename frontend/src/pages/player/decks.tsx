@@ -245,7 +245,9 @@ function VirtualDeckList({
             key={virtualRow.key}
             data-index={virtualRow.index}
             ref={measureRow}
-            className="decks-deck-row"
+            // By index: the virtualizer renders rows out of order, so
+            // :last-child is not the last deck.
+            className={`decks-deck-row${virtualRow.index === decks.length - 1 ? " is-last" : ""}`}
             style={{
               position: "absolute",
               top: 0,
@@ -736,7 +738,7 @@ export default function PlayerDecks() {
               !decksLoading &&
               !gameModesLoading &&
               !cardsLoading && (
-                <div className="no-decks-message">
+                <div className="player-status-message">
                   <p>No decks found with the current filters applied</p>
                 </div>
               )}

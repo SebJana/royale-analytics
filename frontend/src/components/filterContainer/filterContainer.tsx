@@ -6,7 +6,7 @@ import type { Card, CardMeta } from "../../types/cards";
 import {
   getDateRange,
   getDefaultFilterState,
-  setFilterStateToLocalStorage,
+  saveFilterState,
 } from "../../utils/filter";
 import { isValidDateRange } from "../../utils/datetime";
 import "./filterContainer.css";
@@ -316,8 +316,8 @@ export function FilterContainer({
       setAppliedExcludedSupportIds(selectedExcludedSupportIds);
     }
 
-    // Save the current state of the filter to the local Storage
-    setFilterStateToLocalStorage(newFilters);
+    // Save the current state of the filter for the other pages and visits
+    saveFilterState(newFilters);
 
     onFiltersApply(newFilters);
   };

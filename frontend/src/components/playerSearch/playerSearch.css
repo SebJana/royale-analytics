@@ -122,3 +122,80 @@
 .player-search-paper .player-search-typed-tag .MuiListItemText-secondary {
   font-style: italic;
 }
+
+/* Recently viewed players, shown while the input is empty. */
+.player-search-recent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  cursor: default;
+}
+
+/* On the label only: Clear inherits the header's size, also on hover. */
+.player-search-recent-title {
+  font-size: var(--font-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The header and hint sit outside MUI's listbox, so its vertical padding
+   would open a gap between them and the rows they belong to. */
+.player-search-paper:has(.player-search-recent-header)
+  .MuiAutocomplete-listbox {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Inline actions in the dropdown read as links, not as the global buttons. */
+.player-search-text-button,
+.player-search-text-button:hover {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: inherit;
+}
+
+/* Underlined only inside a sentence, where color alone would not set the link
+   apart from the text around it. */
+.player-search-text-button:hover {
+  text-decoration: underline;
+}
+
+/* Clear stands alone, so it hovers like the remove buttons beside it. The
+   negative margin keeps its text on the header's padding edge. */
+.player-search-recent-header .player-search-text-button {
+  margin: calc(-1 * var(--spacing-xs)) calc(-1 * var(--spacing-sm));
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+}
+
+.player-search-recent-header .player-search-text-button:hover {
+  background-color: var(--bg-overlay-strong);
+  text-decoration: none;
+}
+
+.player-search-recent-remove,
+.player-search-recent-remove:hover {
+  display: flex;
+  flex: none;
+  padding: var(--spacing-xs);
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+}
+
+.player-search-recent-remove:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-overlay-strong);
+}
+
+.player-search-recent-remove svg {
+  width: 18px;
+  height: 18px;
+}

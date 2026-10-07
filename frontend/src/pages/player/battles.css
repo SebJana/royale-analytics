@@ -134,13 +134,6 @@
   font-size: var(--font-base);
 }
 
-.battles-end-user-message {
-  text-align: center;
-  color: var(--text-secondary);
-  font-style: italic;
-  margin: var(--spacing-xl) 0;
-}
-
 .battles-load-more-trigger {
   min-height: 20px;
   height: 20px;

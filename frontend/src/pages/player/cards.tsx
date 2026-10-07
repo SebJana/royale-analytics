@@ -367,7 +367,7 @@ export default function PlayerCards() {
               !cardsLoading &&
               !gameModesLoading &&
               !cardsLoading && (
-                <div className="no-cards-message">
+                <div className="player-status-message">
                   <p>No cards found with the current filters applied</p>
                 </div>
               )}

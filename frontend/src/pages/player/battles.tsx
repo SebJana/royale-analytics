@@ -19,46 +19,11 @@ import {
   getTodayDateTime,
   getClashRoyaleReleaseDate,
 } from "../../utils/datetime";
-import {
-  getBattleDeckFilterState,
-  setFilterStateToLocalStorage,
-} from "../../utils/filter";
+import { getBattleDeckFilterState, saveFilterState } from "../../utils/filter";
+import { readBattlesView, writeBattlesView } from "../../utils/battlesView";
 import type { Battle, Player } from "../../types/lastBattles";
 import CircularProgress from "@mui/material/CircularProgress";
 import "./battles.css";
-
-// Where the user left a player's battles, so returning to the page continues
-// there instead of at the newest battle
-type BattlesView = {
-  beforeDate: string;
-  appliedBeforeDate?: string;
-  scrollY: number;
-  // Loaded pages when the position was saved. The position only fits while
-  // the query cache still holds at least that many.
-  pageCount: number;
-};
-
-// Per tab, so another tab or a later visit starts at the newest battle again
-function battlesViewKey(playerTag: string) {
-  return `battlesView:${playerTag}`;
-}
-
-function readBattlesView(playerTag: string): BattlesView | null {
-  try {
-    const raw = sessionStorage.getItem(battlesViewKey(playerTag));
-    return raw ? (JSON.parse(raw) as BattlesView) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeBattlesView(playerTag: string, view: BattlesView) {
-  try {
-    sessionStorage.setItem(battlesViewKey(playerTag), JSON.stringify(view));
-  } catch {
-    // Blocked storage only costs the restored position
-  }
-}
 
 /**
  * PlayerBattles Component
@@ -121,7 +86,7 @@ export default function PlayerBattles() {
   // over between the player pages
   const handleOwnDeckOpen = useCallback(
     (battle: Battle, player: Player) => {
-      setFilterStateToLocalStorage(
+      saveFilterState(
         getBattleDeckFilterState(battle, player, gameModes, cards ?? []),
       );
     },
@@ -419,8 +384,10 @@ export default function PlayerBattles() {
                   />
                 ))}
 
-                {/* Infinite Scroll Trigger - Hidden element that triggers loading when visible */}
-                {hasNextPage && (
+                {/* Infinite Scroll Trigger - Hidden element that triggers loading when visible.
+                    Gone at the loading cap too: nothing loads there anymore, and the
+                    footer stays hidden while this element exists (siteFooter.css). */}
+                {hasNextPage && !loadingCapReached && (
                   <div ref={loadMoreRef} className="battles-load-more-trigger">
                     {isFetchingNextPage && (
                       <div className="battles-loading-more">
@@ -433,7 +400,7 @@ export default function PlayerBattles() {
 
                 {/* End of List Message - Show when all battles have been loaded */}
                 {!hasNextPage && (
-                  <div className="battles-end-user-message">
+                  <div className="player-status-message">
                     <p>No more battles to load</p>
                   </div>
                 )}
@@ -443,7 +410,7 @@ export default function PlayerBattles() {
 
             {/* Show message when loading cap is reached */}
             {battlesList.length !== 0 && loadingCapReached && (
-              <div className="battles-end-user-message">
+              <div className="player-status-message">
                 <p>
                   You’ve reached the maximum number of battles shown. Adjust the
                   filter to view earlier ones.
@@ -456,13 +423,13 @@ export default function PlayerBattles() {
               !battlesLoading &&
               !cardsLoading &&
               (firstSyncPending ? (
-                <div className="battles-end-user-message">
+                <div className="player-status-message">
                   <CircularProgress className="battles-loading-spinner" />
                   <p>Fetching this player's battles for the first time...</p>
                 </div>
               ) : (
-                <div className="battles-end-user-message">
-                  <p>No battles found</p>
+                <div className="player-status-message">
+                  <p>No battles found with the current filter applied</p>
                 </div>
               ))}
           </>

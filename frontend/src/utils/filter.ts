@@ -1,4 +1,5 @@
 import { formatDateForInput } from "./datetime";
+import { readPreference, writePreference } from "./storage";
 import { mapInternalNameToDisplayName } from "./gameModes";
 import {
   getCardVariantName,
@@ -23,35 +24,36 @@ const BATTLE_DECK_DAY_MARGIN = 3;
 const MAX_INCLUDE_CARDS = 8;
 
 /**
- * Saves filter state to localStorage.
+ * Saves filter state as a preference (utils/storage.ts): across visits with
+ * consent, until the tab closes without it.
  * Serializes the FilterState object to JSON and stores it under the "filterState" key.
- * Also saves the current timestamp of the last filter save to local storage under the "filterStateLastUpdated" key.
+ * Also saves the current timestamp of the last filter save under the "filterStateLastUpdated" key.
  *
  * @param filters - The filter state object to persist
  */
-export function setFilterStateToLocalStorage(filters: FilterState) {
-  localStorage.setItem("filterState", JSON.stringify(filters));
-  localStorage.setItem("filterStateLastUpdated", JSON.stringify(Date.now()));
+export function saveFilterState(filters: FilterState) {
+  writePreference("filterState", JSON.stringify(filters));
+  writePreference("filterStateLastUpdated", JSON.stringify(Date.now()));
 }
 
 /**
- * Retrieves and parses filter state from localStorage.
+ * Retrieves and parses the saved filter state.
  * Attempts to parse the stored JSON data back into a FilterState object.
+ * Logs an error to the console and returns null if parsing fails.
  *
  * @returns The parsed FilterState object if found and valid and not older than the defined TTL, null otherwise
- * @throws Logs an error to console if JSON parsing fails, but returns null instead of throwing
  */
-export function getFilterStateFromLocalStorage(): FilterState | null {
+export function getSavedFilterState(): FilterState | null {
   // TTL of the filter state in seconds (7 days)
   const FILTER_TTL_SECONDS = 7 * 24 * 60 * 60;
 
   try {
-    // Read raw filter state from localStorage
-    const rawFilters = localStorage.getItem("filterState");
+    // Read raw filter state
+    const rawFilters = readPreference("filterState");
     if (!rawFilters) return null;
 
     // Read last updated timestamp
-    const lastUpdated = Number(localStorage.getItem("filterStateLastUpdated"));
+    const lastUpdated = Number(readPreference("filterStateLastUpdated"));
     if (!lastUpdated) return null;
 
     // Compute how many seconds have passed since last update
@@ -66,7 +68,7 @@ export function getFilterStateFromLocalStorage(): FilterState | null {
     // Otherwise treat as expired
     return null;
   } catch (error) {
-    console.error("Failed to parse filter state from localStorage:", error);
+    console.error("Failed to parse saved filter state:", error);
     return null;
   }
 }
@@ -139,11 +141,11 @@ export function getDefaultFilterState(): FilterState {
 }
 
 /**
- * Creates an initial filter state, prioritizing saved state from localStorage with smart date handling.
+ * Creates an initial filter state, prioritizing the saved state with smart date handling.
  * This function is used to persist filter states over different pages and page visits.
  *
  * Behavior:
- * 1. If filters exist in localStorage:
+ * 1. If filters are saved:
  *    - For a season: Keeps that season, not whichever one is current now
  *    - For non-"Custom" timespan options: Recalculates dates based on the saved timespan
  *    - For "Custom" timespan: Uses the exact saved dates
@@ -153,7 +155,7 @@ export function getDefaultFilterState(): FilterState {
  * @returns FilterState object with either restored or default filter values
  */
 export function getCurrentFilterState(): FilterState {
-  const filters = getFilterStateFromLocalStorage();
+  const filters = getSavedFilterState();
   // Check if there are filters saved
   if (filters) {
     // State saved before seasons existed has no season field

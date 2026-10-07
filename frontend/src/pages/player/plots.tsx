@@ -250,7 +250,7 @@ export default function PlayerPlots() {
               !statsLoading &&
               !gameModesLoading &&
               !statsLoading && (
-                <div className="no-plots-message">
+                <div className="player-status-message">
                   <p>No statistics found with the current filters applied</p>
                 </div>
               )}

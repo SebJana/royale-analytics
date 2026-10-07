@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import { fetchPlayerProfile } from "../services/api/player";
 import type { Player } from "../types/player";
+import { PREFERENCE_QUERY_META } from "../utils/storage";
 
 const min = 60_000;
 // Poll interval while a just-tracked player's first battle sync is running,
@@ -53,5 +54,6 @@ export function usePlayerProfile(playerTag: string) {
       failureCount < 3 &&
       !PERMANENT_ERROR_CODES.has(getProfileErrorCode(error) ?? ""),
     refetchOnWindowFocus: false,
+    meta: PREFERENCE_QUERY_META,
   });
 }

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchCardStats } from "../services/api/cardStats";
 import type { CardStats } from "../types/cardStats";
 import type { TimeRange } from "../types/seasons";
+import { PREFERENCE_QUERY_META } from "../utils/storage";
 
 const min = 60_000;
 
@@ -30,5 +31,6 @@ export function useCardStats(
     refetchOnWindowFocus: false,
     retry: false, // Don't retry to avoid long waits when no data is found
     enabled: gameModes !== null, // Only run query when gameModes are initialized (prevents double loading)
+    meta: PREFERENCE_QUERY_META,
   });
 }

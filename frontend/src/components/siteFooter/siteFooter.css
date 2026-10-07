@@ -1,0 +1,78 @@
+.site-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-md);
+  /* NOTE A page that ends in a row divider drops it for its last row (e.g.
+     decks.css), so this line does not double up. */
+  margin-top: var(--spacing-3xl);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--border-light);
+}
+
+/* Under battles that keep loading as the user scrolls, the footer would jump
+   down with every page. Hidden, not removed, so its height does not shift the
+   page either. */
+.main-container:has(.battles-load-more-trigger) ~ .site-footer {
+  visibility: hidden;
+}
+
+/* A full-page loading screen (a spinner directly in main: home, or a player
+   before the profile arrives) shows only the spinner, also without the storage
+   banner. */
+.main-container:has(> .MuiCircularProgress-root)
+  ~ :is(.site-footer, .storage-banner) {
+  visibility: hidden;
+}
+
+/* On a player page the footer waits for the page's own data (battles, decks,
+   cards, plots), not just the profile and filters above it.
+   NOTE Those pages only use a spinner while their data loads. A spinner for
+   anything else inside .player-content would hide the footer too. */
+.main-container:has(.player-content .MuiCircularProgress-root) ~ .site-footer {
+  visibility: hidden;
+}
+
+.site-footer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  background-color: var(--bg-overlay-light);
+  color: var(--text-primary);
+  font-size: var(--font-base);
+  /* The global button transition covers "all", visibility included, which
+     kept the button on screen for its duration after the footer hid. */
+  transition-property: background-color, border-color, color;
+}
+
+.site-footer-link:hover {
+  border-color: var(--color-primary);
+  background-color: var(--bg-overlay-medium);
+  color: var(--color-accent);
+}
+
+.site-footer-link svg {
+  width: 16px;
+  height: 16px;
+}
+
+.site-footer-disclaimer {
+  max-width: 800px;
+  margin: 0;
+  color: var(--text-secondary);
+  /* The Fan Content Policy asks for a size legible to users. */
+  font-size: var(--font-base);
+  line-height: var(--line-height-normal);
+}
+
+.site-footer-disclaimer a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.site-footer-disclaimer a:hover {
+  color: var(--text-primary);
+}

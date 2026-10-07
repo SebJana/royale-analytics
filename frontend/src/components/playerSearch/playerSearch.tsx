@@ -7,8 +7,15 @@ import {
   Paper,
   type PaperProps,
 } from "@mui/material";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, X } from "lucide-react";
 import { usePlayerSearch } from "../../hooks/usePlayerSearch";
+import {
+  clearRecentPlayers,
+  removeRecentPlayer,
+  useRecentPlayers,
+} from "../../hooks/useRecentPlayers";
+import { useStorageConsent } from "../../hooks/useStorageConsent";
+import { StorageSettingsContext } from "../../contexts/StorageSettingsContext";
 import type { PlayerSearchResult } from "../../types/players";
 import { normalizePlayerTag } from "../../utils/playerTag";
 import "./playerSearch.css";
@@ -17,11 +24,23 @@ type Player = { tag: string; name: string };
 // A typed tag the search did not return. Offered as an option, so a player
 // can be opened by tag even when search misses them or is unavailable.
 type TypedTagOption = { tag: string; name: ""; match: "typedTag" };
-type SearchOption = PlayerSearchResult | TypedTagOption;
+// Offered while the input is empty, so users can jump back without searching.
+type RecentOption = { tag: string; name: string; match: "recent" };
+type SearchOption = PlayerSearchResult | TypedTagOption | RecentOption;
 
-// The dropdown paper reads this instead of taking a prop, so it can stay a
+type RecentHeader = {
+  // False without preference consent: the list ends with the tab.
+  persistent: boolean;
+  onOpenSettings: () => void;
+  onClear: () => void;
+};
+
+// The dropdown paper reads this instead of taking props, so it can stay a
 // stable component and MUI does not remount the list on every render.
-const ShownCountContext = createContext<number | null>(null);
+const DropdownContext = createContext<{
+  shownCount: number | null;
+  recent: RecentHeader | null;
+}>({ shownCount: null, recent: null });
 
 function playerLabel(player: Player): string {
   return player.name ? `${player.name} (${player.tag})` : player.tag;
@@ -33,7 +52,7 @@ function ResultsPaper({
   onMouseDown,
   ...props
 }: PaperProps) {
-  const shownCount = useContext(ShownCountContext);
+  const { shownCount, recent } = useContext(DropdownContext);
   return (
     <Paper
       {...props}
@@ -46,7 +65,31 @@ function ResultsPaper({
         onMouseDown?.(event);
       }}
     >
+      {recent && (
+        <div className="player-search-recent-header">
+          <span className="player-search-recent-title">Recently viewed</span>
+          <button
+            type="button"
+            className="player-search-text-button"
+            onClick={recent.onClear}
+          >
+            Clear
+          </button>
+        </div>
+      )}
       {children}
+      {recent && !recent.persistent && (
+        <div className="player-search-more-hint">
+          Kept until this tab closes.{" "}
+          <button
+            type="button"
+            className="player-search-text-button"
+            onClick={recent.onOpenSettings}
+          >
+            Remember across visits?
+          </button>
+        </div>
+      )}
       {shownCount !== null && (
         <div className="player-search-more-hint">
           Showing the first {shownCount} matches. Type more to narrow it down.
@@ -58,19 +101,6 @@ function ResultsPaper({
   );
 }
 
-// TODO Show the last 5-10 viewed players as options while the input is
-// empty, so users can jump back without searching. Record a player when its
-// page opens (pages/player/layout.tsx), newest first, without duplicates,
-// and drop entries that come back PLAYER_NOT_TRACKED.
-// Consent: keeping the list in localStorage on the device is likely exempt
-// from consent under the "strictly necessary for a service the user asked
-// for" rule (Art. 5(3) ePrivacy, § 25(2) Nr. 2 TDDDG), like the React Query
-// cache and auth state already stored there. That holds only while the list
-// never leaves the browser (not sent to the API, not used for analytics) and
-// users can clear it, e.g. with a "Clear" action, plus a line in the privacy
-// notice. A recently viewed list the user never turned on is a grey area, so
-// an opt-in "Remember viewed players" toggle is the safe variant. Sending the
-// list to the server or using it for statistics would need consent.
 export function PlayerSearch({
   onSelectPlayer,
 }: Readonly<{
@@ -81,12 +111,38 @@ export function PlayerSearch({
   // label, which is not a query.
   const [searchText, setSearchText] = useState("");
   const { data, isFetching, isError } = usePlayerSearch(searchText);
+  const recentPlayers = useRecentPlayers();
+  const consent = useStorageConsent();
+  const openStorageSettings = useContext(StorageSettingsContext);
 
-  const results = searchText.trim() ? (data?.players ?? []) : [];
-  const shownCount = searchText.trim() && data?.hasMore ? results.length : null;
+  // Removing the selected player from the history drops the selection too.
+  // Otherwise the selected-value fallback below would put it straight back
+  // into the list.
+  const forgetRecent = (tag?: string) => {
+    if (selected?.match === "recent" && (!tag || selected.tag === tag)) {
+      setSelected(null);
+      onSelectPlayer?.(null);
+    }
+    if (tag) removeRecentPlayer(tag);
+    else clearRecentPlayers();
+  };
+
+  const hasQuery = searchText.trim() !== "";
+  const results = hasQuery ? (data?.players ?? []) : [];
+  const shownCount = hasQuery && data?.hasMore ? results.length : null;
+  const showRecent = !hasQuery && recentPlayers.length > 0;
+  const recent: RecentHeader | null = showRecent
+    ? {
+        persistent: consent?.preferences === true,
+        onOpenSettings: openStorageSettings,
+        onClear: () => forgetRecent(),
+      }
+    : null;
 
   const typedTag = normalizePlayerTag(searchText);
-  let options: SearchOption[] = results;
+  let options: SearchOption[] = showRecent
+    ? recentPlayers.map(({ tag, name }) => ({ tag, name, match: "recent" }))
+    : results;
   // If search returned this tag, the real result is already pinned first.
   if (typedTag && !results.some((p) => p.tag === typedTag)) {
     const typed: TypedTagOption = {
@@ -111,7 +167,7 @@ export function PlayerSearch({
 
   return (
     <div className="player-search">
-      <ShownCountContext.Provider value={shownCount}>
+      <DropdownContext.Provider value={{ shownCount, recent }}>
         <Autocomplete
           options={options}
           value={selected}
@@ -119,6 +175,8 @@ export function PlayerSearch({
           filterOptions={(x) => x}
           // Enter picks the first option, the best match.
           autoHighlight
+          // Shows the recently viewed players before anything is typed.
+          openOnFocus
           getOptionLabel={playerLabel}
           isOptionEqualToValue={(option, value) => option.tag === value.tag}
           loading={isFetching}
@@ -151,6 +209,34 @@ export function PlayerSearch({
                 </ListItem>
               );
             }
+            if (option.match === "recent") {
+              return (
+                <ListItem
+                  key={key}
+                  {...optionProps}
+                  className={`${className ?? ""} player-search-recent`}
+                  disableGutters
+                >
+                  <ListItemText
+                    primary={option.name || option.tag}
+                    secondary={option.tag}
+                  />
+                  <button
+                    type="button"
+                    className="player-search-recent-remove"
+                    aria-label={`Remove ${playerLabel(option)} from recently viewed`}
+                    title="Remove"
+                    onClick={(event) => {
+                      // Removing must not also select the player.
+                      event.stopPropagation();
+                      forgetRecent(option.tag);
+                    }}
+                  >
+                    <X aria-hidden="true" />
+                  </button>
+                </ListItem>
+              );
+            }
             return (
               <ListItem
                 key={key}
@@ -173,7 +259,7 @@ export function PlayerSearch({
             onSelectPlayer?.(player);
           }}
         />
-      </ShownCountContext.Provider>
+      </DropdownContext.Provider>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAllCards } from "../services/api/cards";
 import type { CardMeta } from "../types/cards";
+import { NECESSARY_QUERY_META } from "../utils/storage";
 
 const min = 60_000;
 
@@ -16,6 +17,7 @@ export const cardsQueryOptions = queryOptions<CardMeta[], Error>({
   // reload. One cached request for the whole tab, and only while visible.
   refetchInterval: 15 * min,
   refetchOnWindowFocus: false,
+  meta: NECESSARY_QUERY_META,
 });
 
 // One refetch per minute at most, however many cards on screen are unknown or

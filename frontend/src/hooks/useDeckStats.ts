@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchDeckStats } from "../services/api/deckStats";
 import type { DeckCardFilter, DeckSort, DeckStats } from "../types/deckStats";
 import type { TimeRange } from "../types/seasons";
+import { PREFERENCE_QUERY_META } from "../utils/storage";
 
 const min = 60_000;
 
@@ -53,5 +54,6 @@ export function useDeckStats(
     retry: false, // Don't retry to avoid long waits when no data is found
     // Only run query when gameModes are initialized (prevents double loading)
     enabled: gameModes !== null && enabled,
+    meta: PREFERENCE_QUERY_META,
   });
 }

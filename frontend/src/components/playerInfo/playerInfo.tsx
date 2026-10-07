@@ -3,27 +3,28 @@ import { ChevronUp } from "lucide-react";
 import type { Player } from "../../types/player";
 import { formatNumber, round } from "../../utils/number";
 import { formatDateForInput, formatTimeAgo } from "../../utils/datetime";
+import { readPreference, writePreference } from "../../utils/storage";
 import { StatCard } from "../statCard/statCard";
 import "./playerInfo.css";
 
 /**
- * Saves the expanded/collapsed state of the player info details section to localStorage.
+ * Saves the expanded/collapsed state of the player info details section as a preference.
  * This allows the component to remember the user's preference across page reloads.
  *
  * @param state - The expanded state to save (true = expanded, false = collapsed)
  */
 function saveExpandedInfoState(state: boolean): void {
-  localStorage.setItem("player-info-expanded", String(state));
+  writePreference("player-info-expanded", String(state));
 }
 
 /**
- * Retrieves the saved expanded/collapsed state of the player info details section from localStorage.
+ * Retrieves the saved expanded/collapsed state of the player info details section.
  * Returns the user's previously saved preference, or defaults to expanded (true) if no preference exists.
  *
  * @returns The saved expanded state (true = expanded, false = collapsed)
  */
 function getExpandedInfoState(): boolean {
-  const state = localStorage.getItem("player-info-expanded");
+  const state = readPreference("player-info-expanded");
 
   // Return true (expanded) by default if no state is saved
   if (state === null) {

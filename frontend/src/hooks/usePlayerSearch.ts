@@ -44,7 +44,7 @@ export function usePlayerSearch(query: string) {
     placeholderData: keepPreviousData,
     staleTime: 30_000,
     gcTime: 5 * min,
-    // One-off results; restoring them after a reload would only show stale names.
-    meta: { persist: false },
+    // No storage meta, so never persisted (main.tsx): restoring one-off
+    // results after a reload would only show stale names.
   });
 }
