@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchCardStats } from "../services/api/cardStats";
 import type { CardStats } from "../types/cardStats";
 import type { TimeRange } from "../types/seasons";
+import type { GameModeQuery } from "../types/gameModes";
 import { PREFERENCE_QUERY_META } from "../utils/storage";
 
 const min = 60_000;
@@ -9,21 +10,19 @@ const min = 60_000;
 export function useCardStats(
   playerTag: string,
   range: TimeRange,
-  gameModes?: string[] | null, // Can be null to disable query until game modes are initialized
+  gameModes?: GameModeQuery | null, // Can be null to disable query until game modes are initialized
 ) {
-  const modesKey = (gameModes ?? []).join("|"); // Make game modes a stable key
-
   return useQuery<CardStats, Error>({
-    queryKey: ["cardStats", playerTag, range, modesKey],
+    // Plain objects, which React Query hashes by value
+    queryKey: ["cardStats", playerTag, range, gameModes ?? undefined],
     // Pass the playerTag to the query function from the query key
     queryFn: ({ queryKey }) => {
-      const [, tag, timeRange, modesString] = queryKey as [
+      const [, tag, timeRange, modes] = queryKey as [
         string,
         string,
         TimeRange,
-        string,
+        GameModeQuery | undefined,
       ];
-      const modes = modesString ? modesString.split("|") : undefined; // back to array from joined string
       return fetchCardStats(tag, timeRange, modes);
     },
     staleTime: 10 * min, // Cache duration, how long cards are considered fresh and aren't re-fetched from the backend

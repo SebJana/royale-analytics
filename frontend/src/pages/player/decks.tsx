@@ -12,6 +12,7 @@ import { pluralize } from "../../utils/plural";
 import { getCurrentFilterState } from "../../utils/filter";
 import { getTimeRange } from "../../utils/seasons";
 import {
+  gameModeQueryKey,
   gameModesForQuery,
   mapInternalNameToDisplayName,
 } from "../../utils/gameModes";
@@ -547,7 +548,7 @@ export default function PlayerDecks() {
   })() as (Deck | DeckWithMatchScore)[];
 
   // Use the modes actually sent to the API for the loading state dependency.
-  const modesKey = queryGameModes?.join("|") ?? "";
+  const modesKey = gameModeQueryKey(queryGameModes);
   // Every backend filter of the deck request
   const decksContextKey = `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${appliedFilters.season}-${modesKey}-${JSON.stringify(cardFilter ?? {})}`;
 

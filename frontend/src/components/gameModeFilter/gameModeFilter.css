@@ -67,6 +67,27 @@
   margin-top: var(--spacing-lg);
 }
 
+/* "All game modes" while collapsed: the timespan summary's pill
+   (startEndDateFilter.css), which no click removes */
+.game-mode-filter-summary {
+  display: flex;
+  margin: var(--spacing-sm) 0;
+}
+
+.game-mode-filter-all {
+  /* Buttons default to border-box, the removable bonbons are buttons */
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  max-width: 100%;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  background: rgba(52, 152, 219, 0.15);
+  color: var(--color-primary);
+}
+
 .game-mode-filter-bonbon {
   display: inline-flex;
   align-items: center;
@@ -84,6 +105,13 @@
 .game-mode-filter-bonbon:hover,
 .game-mode-filter-bonbon:focus-visible {
   background: rgba(52, 152, 219, 0.18);
+}
+
+/* Opens the section instead of removing a mode, so it looks unlike one */
+.game-mode-filter-more {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-secondary);
 }
 
 .game-mode-filter-dropdown-trigger {

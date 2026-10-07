@@ -32,9 +32,8 @@ async def get_cards(mongo_conn: DbConn, redis_conn: RedConn):
     except Exception as e:
         # A Mongo error does not fall back to the Clash Royale API, so an outage
         # cannot turn every request into a call that spends key quota.
-        raise HTTPException(
-            status_code=502, detail=f"Error trying to fetch the cards: {e}"
-        )
+        print(f"[DB] [ERROR] Fetching the cards failed: {e}")
+        raise HTTPException(status_code=502, detail="Error trying to fetch the cards")
 
     # The data scraper is the only writer of the cards in Mongo and the cache
     # (see data_scraper/src/jobs/cards.py). Caching this Mongo read could overwrite

@@ -3,6 +3,7 @@ import type { Card } from "./cards";
 export type DeckStats = {
   player_tag: string;
   game_modes: string[] | null; // Applied filters on game mode
+  exclude_game_modes: string[]; // Applied game modes left out instead
   deck_statistics: {
     // Every battle of the time range and game modes, before the card filter
     totalBattles: number;

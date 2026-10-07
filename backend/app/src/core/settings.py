@@ -174,6 +174,35 @@ class Settings:
     # Maximum time interval that can be requested using a BetweenRequest for decks, cards, stats
     # NOTE: If none is wanted, just set the limit to an arbitrarily big number
     MAX_TIME_RANGE_DAYS: int = 10 * 365
+    # Longest accepted timezone name. The longest IANA name,
+    # "America/Argentina/ComodRivadavia", has 32 characters; the bound keeps
+    # arbitrary strings out of the zoneinfo lookup and the error message.
+    TIMEZONE_MAX_LENGTH: int = 64
+
+    # Game mode filter limits. Unknown modes are accepted (see
+    # validate_game_modes), so these bounds are what keeps a request from
+    # naming thousands of them.
+    # Source: RoyaleAPI's list of every mode the game has had,
+    # https://github.com/RoyaleAPI/cr-api-data/blob/master/docs/json/game_modes.json
+    # (last updated 2023-10-18): 380 modes, the longest name
+    # "Event_ValentinesDay_MagicArcher_and_Princess_EventDeck" (54 characters),
+    # all names ASCII [A-Za-z0-9_].
+    # Assumptions: the game adds a few dozen modes per year, so 500 covers the
+    # whole history for years. The stored modes never shrink, so a filter of
+    # nearly every stored mode has to fit. Event names grow with the cards
+    # they combine, so 100 characters leave room for longer ones.
+    # Each limit applies to game_modes and exclude_game_modes alike.
+    # NOTE Uvicorn caps the request line and headers at about 16 KB, which 500
+    # modes of about 20 characters come close to. The frontend's
+    # gameModesForQuery sends the shorter of the two lists, so a request names
+    # at most half of the stored modes; keep it that way.
+    GAME_MODE_FILTER_MAX_MODES: int = 500
+    GAME_MODE_NAME_MAX_LENGTH: int = 100
+
+    # Longest free-text answer of the auth challenges (CAPTCHA text, security
+    # questions, Halli Galli card ids). Real answers are a few words; the
+    # fuzzy comparison of the security answers costs time per character.
+    AUTH_ANSWER_MAX_LENGTH: int = 64
 
     # Seasons start on the first Monday of a month at this UTC hour. Supercell
     # publishes the day but not the hour. Ranked battles around the October

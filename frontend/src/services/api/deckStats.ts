@@ -1,19 +1,21 @@
 import api from "./axios";
 import { validatePlayerTagSyntax } from "../../utils/playerTag";
 import { setTimeRangeParams } from "./seasons";
+import { setGameModeParams } from "./gameModes";
 import type {
   DeckCardFilter,
   DeckSort,
   DeckStats,
 } from "../../types/deckStats";
 import type { TimeRange } from "../../types/seasons";
+import type { GameModeQuery } from "../../types/gameModes";
 
 /**
  * Fetches the player's decks of a timespan, filtered on the backend.
  *
  * @param playerTag - Tag of a tracked player
  * @param range - Season, or first and last day in the browser's timezone
- * @param gameModes - Internal mode names, omitted for all modes
+ * @param gameModes - Modes to keep or to leave out, omitted for all modes
  * @param cardFilter - Card and tower troop filter, omitted for all decks
  * @param sort - Order the backend sorts by before it caps the list
  * @returns The deck statistics
@@ -22,7 +24,7 @@ import type { TimeRange } from "../../types/seasons";
 export async function fetchDeckStats(
   playerTag: string,
   range: TimeRange,
-  gameModes?: string[],
+  gameModes?: GameModeQuery,
   cardFilter?: DeckCardFilter,
   sort?: DeckSort,
 ): Promise<DeckStats> {
@@ -35,10 +37,7 @@ export async function fetchDeckStats(
   const params = new URLSearchParams();
   setTimeRangeParams(params, range);
 
-  // Append game modes if they exist as param
-  if (gameModes?.length) {
-    gameModes.forEach((mode) => params.append("game_modes", mode));
-  }
+  setGameModeParams(params, gameModes);
 
   if (sort) {
     params.set("sort_by", sort.sortBy);

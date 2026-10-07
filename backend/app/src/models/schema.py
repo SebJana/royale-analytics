@@ -20,6 +20,7 @@ class BetweenRequest(BaseModel):
     )
     timezone: str = Field(
         ...,
+        max_length=settings.TIMEZONE_MAX_LENGTH,
         description=(
             "Timezone of the given start and end dates, and of the days the "
             "daily statistics are grouped into"
@@ -74,33 +75,53 @@ class BattlesRequest(BaseModel):
 
 
 class CaptchaAnswerRequest(BaseModel):
-    captcha_id: str = Field(..., description="Id of the captcha session")
-    answer: str = Field(..., description="Visible text from the captcha image")
+    # Ids are UUIDs (36 characters)
+    captcha_id: str = Field(..., max_length=36, description="Id of the captcha session")
+    answer: str = Field(
+        ...,
+        max_length=settings.AUTH_ANSWER_MAX_LENGTH,
+        description="Visible text from the captcha image",
+    )
 
 
 class SecurityQuestionsRequest(BaseModel):
     most_annoying_card: str = Field(
         ...,
+        max_length=settings.AUTH_ANSWER_MAX_LENGTH,
         description="Answer to what is the single most annoying card in Clash Royale?",
     )
     most_skillful_card: str = Field(
         ...,
+        max_length=settings.AUTH_ANSWER_MAX_LENGTH,
         description="Answer to what is the single most skillful card in Clash Royale?",
     )
     most_mousey_card: str = Field(
         ...,
+        max_length=settings.AUTH_ANSWER_MAX_LENGTH,
         description="Answer to what is the most 'mausig (english: sweetie/cutie)' card in Clash Royale?",
     )
 
 
 class WordleAnswerRequest(BaseModel):
-    wordle_id: str = Field(..., description="Id of the Wordle session")
-    wordle_guess: str = Field(..., description="Answer to the Wordle challenge")
+    wordle_id: str = Field(..., max_length=36, description="Id of the Wordle session")
+    wordle_guess: str = Field(
+        ...,
+        max_length=settings.AUTH_ANSWER_MAX_LENGTH,
+        description="Answer to the Wordle challenge",
+    )
 
 
 class NYTWordleAnswerRequest(BaseModel):
     captcha_token: str = Field(
         ..., description="Token received by correctly solving the captcha"
     )
-    wordle_guess: str = Field(..., description="Answer to todays Wordle challenge")
-    timezone: str = Field(..., description="Timezone of the user")
+    wordle_guess: str = Field(
+        ...,
+        max_length=settings.AUTH_ANSWER_MAX_LENGTH,
+        description="Answer to todays Wordle challenge",
+    )
+    timezone: str = Field(
+        ...,
+        max_length=settings.TIMEZONE_MAX_LENGTH,
+        description="Timezone of the user",
+    )

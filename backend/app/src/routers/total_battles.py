@@ -27,6 +27,7 @@ async def fetch_battles_count(mongo_conn: DbConn, redis_conn: RedConn):
 
     except Exception as e:
         # Upon any lookup/redis error
+        print(f"[ERROR] Fetching the total battle count failed: {e}")
         raise HTTPException(
-            status_code=502, detail=f"Error trying to fetch the total battle count: {e}"
+            status_code=502, detail="Error trying to fetch the total battle count"
         )

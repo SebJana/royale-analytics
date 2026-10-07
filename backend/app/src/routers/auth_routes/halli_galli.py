@@ -65,7 +65,9 @@ class HalliGalliActionRequest(BaseModel):
     """One reveal, buzz, or next-card action for the current round."""
 
     action: Literal["reveal", "buzz", "next"]
-    clicked_card_id: str | None = None
+    clicked_card_id: str | None = Field(
+        default=None, max_length=settings.AUTH_ANSWER_MAX_LENGTH
+    )
     click_x: float | None = Field(default=None, ge=0, le=1)
     click_y: float | None = Field(default=None, ge=0, le=1)
 

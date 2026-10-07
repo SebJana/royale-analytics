@@ -134,8 +134,8 @@ export function StartEndDateFilter({
         />
       </button>
       {/* Under the title like the selected game modes and cards, so the
-          active range stays readable while collapsed. Unlike all game modes,
-          every timespan narrows the data, so the default shows too. */}
+          active range stays readable while collapsed. The game mode filter
+          shows "All game modes" in the same pill when it narrows nothing. */}
       <div className="start-end-date-filter-component-summary">
         <span className="start-end-date-filter-component-bonbon">
           {selectedOption === "Custom"

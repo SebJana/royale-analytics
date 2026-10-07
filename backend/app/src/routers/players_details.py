@@ -168,9 +168,11 @@ async def last_battles(
         raise
 
     except Exception as e:
+        # The exception text can name hosts and queries, so it stays in the log
+        print(f"[ERROR] Fetching the battles of {player_tag} failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch battles for player {player_tag} {e}",
+            detail=f"Failed to fetch battles for player {player_tag}",
         )
 
 
@@ -180,7 +182,7 @@ async def last_battles(
         403: {
             "description": "Invalid or untracked player, or invalid request "
             "parameters (dates or season, unknown or conflicting cards, too many "
-            "cards)"
+            "cards, invalid game modes or both game_modes and exclude_game_modes)"
         },
         404: {"description": "No decks found for the player"},
         500: {"description": "Deck statistics lookup failed"},
@@ -192,6 +194,8 @@ async def deck_percentage_stats(
     mongo_conn: DbConn,
     redis_conn: RedConn,
     game_modes: Optional[List[str]] = Query(None),
+    # Modes to leave out instead, for a selection of nearly every mode
+    exclude_game_modes: Optional[List[str]] = Query(None),
     card_query: DeckCardFilterRequest = Depends(),
     # Order of the decks before the cap. Match mode ranks by matched cards
     # first. Usage rate orders like battleCount, so it has no own option.
@@ -203,13 +207,14 @@ async def deck_percentage_stats(
 ):
     try:
         start, end = validate_between_request(req)
-        validated_game_modes = await validate_game_modes(redis_conn, game_modes)
+        validated_game_modes, excluded_game_modes = await validate_game_modes(
+            redis_conn, game_modes, exclude_game_modes
+        )
         card_filter = await validate_deck_card_filter(
             mongo_conn,
             redis_conn,
             card_query,
         )
-        # TODO add input sanitization for all user-provided parameters
         # Keyed by the resolved UTC window, not by how it was requested. The
         # timezone only placed the dates, which the window already holds.
         params = {
@@ -221,6 +226,9 @@ async def deck_percentage_stats(
             "sortOrder": sort_order,
             "minBattles": min_battles,
         }
+        # Without excluded modes the key stays the one of the include filter
+        if excluded_game_modes:
+            params["excludeGameModes"] = excluded_game_modes
         # Without a card filter the key stays the one of all decks
         if card_filter:
             params |= {
@@ -242,6 +250,7 @@ async def deck_percentage_stats(
             return {
                 "player_tag": player_tag,
                 "game_modes": validated_game_modes,
+                "exclude_game_modes": excluded_game_modes,
                 "deck_statistics": cached_decks,
             }
 
@@ -256,6 +265,7 @@ async def deck_percentage_stats(
             sort_order == "asc",
             settings.DECK_STATS_LIMIT,
             min_battles,
+            excluded_game_modes,
         )
 
         if not decks:
@@ -267,6 +277,7 @@ async def deck_percentage_stats(
         return {
             "player_tag": player_tag,
             "game_modes": validated_game_modes,
+            "exclude_game_modes": excluded_game_modes,
             "deck_statistics": decks,
         }
 
@@ -277,9 +288,10 @@ async def deck_percentage_stats(
         raise
 
     except Exception as e:
+        print(f"[ERROR] Fetching the deck statistics of {player_tag} failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch deck statistics for player {player_tag}: {e}",
+            detail=f"Failed to fetch deck statistics for player {player_tag}",
         )
 
 
@@ -288,7 +300,8 @@ async def deck_percentage_stats(
     responses={
         403: {
             "description": "Invalid or untracked player, or invalid request "
-            "parameters (dates or season)"
+            "parameters (dates or season, invalid game modes or both game_modes "
+            "and exclude_game_modes)"
         },
         404: {"description": "No cards found for the player"},
         500: {"description": "Card statistics lookup failed"},
@@ -300,11 +313,15 @@ async def card_percentage_stats(
     mongo_conn: DbConn,
     redis_conn: RedConn,
     game_modes: Optional[List[str]] = Query(None),
+    # Modes to leave out instead, for a selection of nearly every mode
+    exclude_game_modes: Optional[List[str]] = Query(None),
     req: BetweenRequest = Depends(),
 ):
     try:
         start, end = validate_between_request(req)
-        validated_game_modes = await validate_game_modes(redis_conn, game_modes)
+        validated_game_modes, excluded_game_modes = await validate_game_modes(
+            redis_conn, game_modes, exclude_game_modes
+        )
 
         params = {
             "playerTag": player_tag,
@@ -312,6 +329,8 @@ async def card_percentage_stats(
             "end": end.isoformat(),
             "gameModes": validated_game_modes,
         }
+        if excluded_game_modes:
+            params["excludeGameModes"] = excluded_game_modes
         key = build_redis_key(
             service="crApi",
             resource="playerCards",
@@ -324,6 +343,7 @@ async def card_percentage_stats(
             return {
                 "player_tag": player_tag,
                 "game_modes": validated_game_modes,
+                "exclude_game_modes": excluded_game_modes,
                 "card_statistics": cached_cards,
             }
 
@@ -333,6 +353,7 @@ async def card_percentage_stats(
             start,
             end,
             validated_game_modes,
+            excluded_game_modes,
         )
 
         if not cards:
@@ -344,6 +365,7 @@ async def card_percentage_stats(
         return {
             "player_tag": player_tag,
             "game_modes": validated_game_modes,
+            "exclude_game_modes": excluded_game_modes,
             "card_statistics": cards,
         }
 
@@ -354,9 +376,10 @@ async def card_percentage_stats(
         raise
 
     except Exception as e:
+        print(f"[ERROR] Fetching the card statistics of {player_tag} failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch the card statistics for player {player_tag}: {e}",
+            detail=f"Failed to fetch the card statistics for player {player_tag}",
         )
 
 
@@ -365,7 +388,8 @@ async def card_percentage_stats(
     responses={
         403: {
             "description": "Invalid or untracked player, or invalid request "
-            "parameters (dates or season)"
+            "parameters (dates or season, invalid game modes or both game_modes "
+            "and exclude_game_modes)"
         },
         404: {"description": "No daily statistics found for the player"},
         500: {"description": "Daily statistics lookup failed"},
@@ -377,11 +401,15 @@ async def daily_player_statistics(
     mongo_conn: DbConn,
     redis_conn: RedConn,
     game_modes: Optional[List[str]] = Query(None),
+    # Modes to leave out instead, for a selection of nearly every mode
+    exclude_game_modes: Optional[List[str]] = Query(None),
     req: BetweenRequest = Depends(),
 ):
     try:
         start, end = validate_between_request(req)
-        validated_game_modes = await validate_game_modes(redis_conn, game_modes)
+        validated_game_modes, excluded_game_modes = await validate_game_modes(
+            redis_conn, game_modes, exclude_game_modes
+        )
 
         # The timezone groups the days, so it stays part of the key
         params = {
@@ -391,6 +419,8 @@ async def daily_player_statistics(
             "timezone": req.timezone,
             "gameModes": validated_game_modes,
         }
+        if excluded_game_modes:
+            params["excludeGameModes"] = excluded_game_modes
         key = build_redis_key(
             service="crApi",
             resource="dailyStats",
@@ -403,6 +433,7 @@ async def daily_player_statistics(
             return {
                 "player_tag": player_tag,
                 "game_modes": validated_game_modes,
+                "exclude_game_modes": excluded_game_modes,
                 "daily_statistics": cached_stats,
             }
 
@@ -413,6 +444,7 @@ async def daily_player_statistics(
             end,
             validated_game_modes,
             req.timezone,
+            excluded_game_modes,
         )
 
         if not stats:
@@ -426,6 +458,7 @@ async def daily_player_statistics(
         return {
             "player_tag": player_tag,
             "game_modes": validated_game_modes,
+            "exclude_game_modes": excluded_game_modes,
             "daily_statistics": stats,
         }
 
@@ -436,7 +469,8 @@ async def daily_player_statistics(
         raise
 
     except Exception as e:
+        print(f"[ERROR] Fetching the daily statistics of {player_tag} failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch the daily statistics for player {player_tag}: {e}",
+            detail=f"Failed to fetch the daily statistics for player {player_tag}",
         )

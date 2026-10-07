@@ -15,6 +15,11 @@ from helpers.seasons import parse_season_id, season_bounds, season_id_at
 # \d would also accept other scripts' digits.
 CARD_FILTER_KEY_PATTERN = re.compile(r"([0-9]{1,12})-([0-9]{1,2})")
 
+# Clash Royale game mode names, e.g. "CW_Battle_1v1" or "7xElixir_Ladder".
+# ASCII only, so look-alike characters cannot create a second cache entry for
+# the same filter.
+GAME_MODE_PATTERN = re.compile(r"[A-Za-z0-9_]+")
+
 # Tower troop id of decks from battles without tower data. Clash Royale ids
 # are never 0.
 # NOTE Match NO_SUPPORT_ID in the frontend's getCardMetaFields.ts.
@@ -248,43 +253,103 @@ def validate_battles_request(request: BattlesRequest):
         raise ParamsRequestError("End date can not be after today")
 
 
-async def validate_game_modes(redis_conn: RedConn, game_modes: Optional[List[str]]):
-    """Deduplicate the requested game modes and drop a filter that covers every mode.
+def _checked_game_modes(game_modes: List[str], verb: str) -> List[str]:
+    """Deduplicate and sort game mode names and check their count and format.
 
-    Modes missing from the cached list are kept. The cache can lag behind the
-    battles by a flush, so a missing mode may already exist in Mongo. Dropping
-    it would narrow the result, and dropping every requested mode would turn
-    the request into an unfiltered one. An unknown mode that really does not
-    exist simply matches no battle. The values are plain strings in an $in
-    match, so they cannot inject query operators.
+    Sorted, the same set of modes builds the same cache key in any order.
+
+    Args:
+        game_modes (List[str]): Mode names as sent.
+        verb (str): "selected" or "excluded", for the error message.
+
+    Returns:
+        List[str]: The names without duplicates, sorted.
+
+    Raises:
+        ParamsRequestError: For more than GAME_MODE_FILTER_MAX_MODES modes, or
+            a mode name that is too long or not a Clash Royale mode name.
+    """
+    unique_modes = sorted(set(game_modes))
+
+    if len(unique_modes) > settings.GAME_MODE_FILTER_MAX_MODES:
+        raise ParamsRequestError(
+            f"At most {settings.GAME_MODE_FILTER_MAX_MODES} game modes can be {verb}"
+        )
+    for mode in unique_modes:
+        if len(mode) > settings.GAME_MODE_NAME_MAX_LENGTH or (
+            not GAME_MODE_PATTERN.fullmatch(mode)
+        ):
+            # Not echoed: the value is neither short nor printable for sure
+            raise ParamsRequestError("A game mode name is invalid")
+    return unique_modes
+
+
+async def validate_game_modes(
+    redis_conn: RedConn,
+    game_modes: Optional[List[str]],
+    exclude_game_modes: Optional[List[str]] = None,
+) -> tuple[List[str], List[str]]:
+    """Validate the game mode filter and drop one that covers every mode.
+
+    The filter either lists the modes to keep or the modes to leave out,
+    never both. The frontend sends whichever list is shorter, so "all but
+    one" is one name instead of every other mode.
+
+    Selected modes missing from the cached list are kept. The cache can lag
+    behind the battles by a flush, so a missing mode may already exist in
+    Mongo. Dropping it would narrow the result, and dropping every requested
+    mode would turn the request into an unfiltered one. An unknown mode that
+    really does not exist simply matches no battle. Excluded modes are never
+    compared to the cache: leaving out every known mode still keeps the ones
+    the cache does not list yet. The values are plain strings in an $in or
+    $nin match, so they cannot inject query operators.
 
     Args:
         redis_conn (RedConn): Active Redis connection instance for accessing cached data.
-        game_modes (Optional[List[str]]): List of game mode names to validate.
-            Can be None or empty list.
+        game_modes (Optional[List[str]]): Game mode names to keep. Can be
+            None or an empty list.
+        exclude_game_modes (Optional[List[str]]): Game mode names to leave
+            out. Can be None or an empty list.
 
     Returns:
-        Optional[List[str]]: None or an empty list unchanged, an empty list if
-            the request names exactly the cached modes (no filter needed),
-            otherwise the requested modes without duplicates, in request order.
-    """
-    if not game_modes:
-        return game_modes
+        tuple[List[str], List[str]]: The modes to keep and the modes to leave
+            out, at most one of them non-empty, each deduplicated and sorted.
+            Both are empty for no filter, also when the request names exactly
+            the cached modes, so every form of "all modes" shares one cache
+            key.
 
-    unique_modes = list(dict.fromkeys(game_modes))
+    Raises:
+        ParamsRequestError: For both lists at once, more than
+            GAME_MODE_FILTER_MAX_MODES modes in a list, or a mode name that is
+            too long or not a Clash Royale mode name.
+    """
+    if game_modes and exclude_game_modes:
+        raise ParamsRequestError(
+            {
+                "code": "GAME_MODES_WITH_EXCLUDE",
+                "message": "Request either game modes or excluded game modes, "
+                "not both",
+            }
+        )
+    if exclude_game_modes:
+        return [], _checked_game_modes(exclude_game_modes, "excluded")
+    if not game_modes:
+        return [], []
+
+    unique_modes = _checked_game_modes(game_modes, "selected")
 
     all_game_modes = await get_redis_json(redis_conn, GAME_MODES_CACHE_KEY)
     # Without the cached list the request cannot be compared to all modes
     if not all_game_modes:
-        return unique_modes
+        return unique_modes, []
 
     # Mongo applies no game mode filter for an empty list, which saves the $in
     # match. Only an exact match qualifies: a request with an extra, uncached
     # mode is not known to cover every mode.
     if set(unique_modes) == set(all_game_modes.keys()):
-        return []
+        return [], []
 
-    return unique_modes
+    return unique_modes, []
 
 
 async def _get_card_list(mongo_conn: DbConn, redis_conn: RedConn) -> Optional[dict]:

@@ -29,6 +29,7 @@ async def fetch_game_modes(mongo_conn: DbConn, redis_conn: RedConn):
 
     except Exception as e:
         # Upon a Mongo lookup error
+        print(f"[DB] [ERROR] Fetching the game modes failed: {e}")
         raise HTTPException(
-            status_code=502, detail=f"Error trying to fetch the game modes: {e}"
+            status_code=502, detail="Error trying to fetch the game modes"
         )

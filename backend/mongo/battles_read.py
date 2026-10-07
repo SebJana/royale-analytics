@@ -148,6 +148,7 @@ async def get_decks_win_percentage(
     sort_ascending: bool = False,
     limit: int = 250,
     min_battles: int = 1,
+    exclude_game_modes: Optional[Iterable[str]] = None,
 ):
     """
     Fetches the player's top decks of a time frame, with totals over all of them.
@@ -171,6 +172,8 @@ async def get_decks_win_percentage(
         limit (int): Maximum number of decks returned.
         min_battles (int): Decks played fewer times are left out of the list
             and the totals, e.g. so a deck won once does not top the win rate.
+        exclude_game_modes (Optional[Iterable[str]]): If provided/non-empty,
+            leave out battles in these modes. Only used without game_modes.
 
     Returns:
         dict: {"decks": [...], "deckCount": int, "battleCount": int,
@@ -201,7 +204,9 @@ async def get_decks_win_percentage(
 
         pipeline = [
             # Match the relevant files for the player and the time frame
-            match_tag_time_mode_range_stage(player_tag, start, end, game_modes),
+            match_tag_time_mode_range_stage(
+                player_tag, start, end, game_modes, exclude_game_modes
+            ),
             # TODO The query scales with battles, not decks: every matched
             # battle document is loaded for the grouping, even when only the
             # sort or min_battles changed.
@@ -335,6 +340,7 @@ async def get_cards_win_percentage(
     start: datetime,
     end: datetime,
     game_modes: Optional[Iterable[str]] = None,
+    exclude_game_modes: Optional[Iterable[str]] = None,
 ):
     """
     Fetches a usage and win percentage for every used card for the player in the specified time range.
@@ -345,6 +351,8 @@ async def get_cards_win_percentage(
         start (datetime): Start of the UTC window (inclusive), timezone-aware.
         end (datetime): End of the UTC window (exclusive), timezone-aware.
         game_modes (Optional[Iterable[str]]): If provided/non-empty, filter to these game modes in which the game happened.
+        exclude_game_modes (Optional[Iterable[str]]): If provided/non-empty,
+            leave out battles in these modes. Only used without game_modes.
 
     Returns:
         list: A list of dictionaries containing the card win-rate and usages
@@ -357,7 +365,9 @@ async def get_cards_win_percentage(
         check_valid_time_range(start, end)
 
         pipeline = [
-            match_tag_time_mode_range_stage(player_tag, start, end, game_modes),
+            match_tag_time_mode_range_stage(
+                player_tag, start, end, game_modes, exclude_game_modes
+            ),
             extract_deck_stage(player_tag),
             {
                 "$facet": {
@@ -496,6 +506,7 @@ async def get_daily_stats(
     end: datetime,
     game_modes: Optional[Iterable[str]] = None,
     timezone: str = "UTC",
+    exclude_game_modes: Optional[Iterable[str]] = None,
 ):
     """
     Fetches combined daily battle statistics for a player within the specified time window.
@@ -514,6 +525,8 @@ async def get_daily_stats(
         game_modes (Optional[Iterable[str]]): If provided and non-empty, only battles
             in these modes are included.
         timezone: Timezone into which the battle days will be grouped (default: UTC)
+        exclude_game_modes (Optional[Iterable[str]]): If provided/non-empty,
+            leave out battles in these modes. Only used without game_modes.
     Returns:
         list: A list of dictionaries containing the players daily statistics
     Raises:
@@ -526,7 +539,9 @@ async def get_daily_stats(
 
         pipeline = [
             # The UTC window & mode filter
-            match_tag_time_mode_range_stage(player_tag, start, end, game_modes),
+            match_tag_time_mode_range_stage(
+                player_tag, start, end, game_modes, exclude_game_modes
+            ),
             #  derive local day, normalize tags, crowns, flags
             {
                 "$addFields": {

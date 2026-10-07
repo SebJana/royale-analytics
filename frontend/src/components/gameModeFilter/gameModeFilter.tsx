@@ -7,6 +7,10 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { FilterSearch } from "../filterSearch/filterSearch";
 import "./gameModeFilter.css";
 
+// Bonbons shown while the section is collapsed. More would push the stats
+// down on a phone; the rest is counted and shown on expanding.
+const MAX_COLLAPSED_BONBONS = 5;
+
 type GameModeOption = {
   display: string;
   internals: string[];
@@ -24,6 +28,7 @@ type GameModeOption = {
  * - Empty selection intentionally has no bonbons; bonbons represent explicit selections
  * - Multiple internal modes may share one display name, so they are selected and removed together
  * - Clicking a selected bonbon directly removes its display group from the selection
+ * - Collapsed, at most MAX_COLLAPSED_BONBONS bonbons show, followed by "+N more"
  */
 export function GameModeFilter({
   gameModes,
@@ -96,6 +101,12 @@ export function GameModeFilter({
     );
   }, [options, searchTerm]);
 
+  // Expanded, every bonbon stays reachable for removing it
+  const visibleOptions = isFilterVisible
+    ? selectedOptions
+    : selectedOptions.slice(0, MAX_COLLAPSED_BONBONS);
+  const hiddenOptionCount = selectedOptions.length - visibleOptions.length;
+
   // A display group is selected if at least one of its raw modes is selected.
   const isOptionSelected = (option: GameModeOption) =>
     option.internals.some((internal) => selectedSet.has(internal));
@@ -153,7 +164,7 @@ export function GameModeFilter({
           aria-label="Selected game modes"
         >
           {/* Clicking a bonbon removes it immediately; there is no separate delete state. */}
-          {selectedOptions.map((option) => (
+          {visibleOptions.map((option) => (
             <button
               key={option.display}
               type="button"
@@ -165,6 +176,23 @@ export function GameModeFilter({
               {option.display}
             </button>
           ))}
+          {hiddenOptionCount > 0 && (
+            <button
+              type="button"
+              className="game-mode-filter-bonbon game-mode-filter-more"
+              onClick={() => setIsFilterVisible(true)}
+              aria-label={`Show all ${selectedOptions.length} selected game modes`}
+            >
+              +{hiddenOptionCount} more
+            </button>
+          )}
+        </div>
+      )}
+      {/* Collapsed without a narrowing selection, the section still says
+          what it filters, instead of showing nothing or every mode */}
+      {!isFilterVisible && (selected.length === 0 || allModesSelected) && (
+        <div className="game-mode-filter-summary">
+          <span className="game-mode-filter-all">All game modes</span>
         </div>
       )}
       {isFilterVisible && (

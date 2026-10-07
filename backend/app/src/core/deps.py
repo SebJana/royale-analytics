@@ -150,8 +150,10 @@ async def require_tracked_player(
         HTTPException 403 with a specific code if the tag is invalid or untracked.
     """
 
-    # Check the syntax is valid (takes load off of db and ensures tag is mongo query safe)
-    if not cr_api.check_tag_syntax(player_tag):
+    # Check the syntax is valid (takes load off of db and ensures tag is mongo query safe).
+    # The syntax check ignores surrounding whitespace, but the routes query and
+    # build cache keys with the tag as sent, so only the exact form passes.
+    if player_tag != player_tag.strip() or not cr_api.check_tag_syntax(player_tag):
         raise HTTPException(
             status_code=403,
             detail={

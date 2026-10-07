@@ -8,7 +8,7 @@ import { useGameModes } from "../../hooks/useGameModes";
 import { getCurrentFilterState } from "../../utils/filter";
 import { getTimeRange } from "../../utils/seasons";
 import { formatDateForInput } from "../../utils/datetime";
-import { gameModesForQuery } from "../../utils/gameModes";
+import { gameModeQueryKey, gameModesForQuery } from "../../utils/gameModes";
 import { useEffect, useState } from "react";
 import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
 import type { DateLevel } from "../../types/chart";
@@ -174,7 +174,7 @@ export default function PlayerPlots() {
   } = useDailyStats(playerTag, getTimeRange(appliedFilters), queryGameModes);
 
   // Use the modes actually sent to the API for the loading state dependency.
-  const modesKey = queryGameModes?.join("|") ?? "";
+  const modesKey = gameModeQueryKey(queryGameModes);
   // The current season ends in the future, the days after today have no data
   const today = formatDateForInput(new Date());
   const chartEndDate =

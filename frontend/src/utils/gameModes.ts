@@ -1,25 +1,62 @@
+import type { GameModeQuery } from "../types/gameModes";
+
 /**
- * Omit the game mode filter when every available raw mode is selected.
- * The UI keeps the explicit selection so individual modes can still be removed.
- * This keeps the request URL short and lets the server use the same cache entry
- * as an unfiltered request when game modes do not affect the result.
+ * Turns the selected modes into the shorter of the two equivalent filters.
+ *
+ * A selection of more than half of the available modes is sent as the modes
+ * to leave out, so "all but one" is one name instead of every other mode.
+ * That keeps the request URL short however many modes the game adds. An
+ * exclude filter also keeps modes the available list does not hold yet,
+ * which is what a selection of nearly everything means. Selecting every
+ * available mode omits the filter, so the server uses the same cache entry as
+ * an unfiltered request. The UI keeps the explicit selection either way, so
+ * individual modes can still be removed.
+ *
+ * The modes are sorted, so the same selection in any click order is the same
+ * query and the same server cache entry.
+ *
+ * @param selected - Internal names of the selected modes, empty for all
+ * @param available - The mode catalogue, keyed by internal name
+ * @returns The modes to send, sorted, and whether they are excluded
  */
 export function gameModesForQuery(
   selected: string[],
   available: Record<string, string> | undefined,
-): string[] {
+): GameModeQuery {
   const availableNames = Object.keys(available ?? {});
   const selectedNames = new Set(selected);
-  // Only omit the filter when the selected names exactly match the available names.
-  // The size check also prevents extra or stale selected modes from being ignored.
-  if (
-    availableNames.length > 0 &&
-    selectedNames.size === availableNames.length &&
-    availableNames.every((name) => selectedNames.has(name))
-  ) {
-    return [];
+  const sortedSelected = [...selectedNames].sort();
+  // Without the catalogue the unselected modes are unknown, and an empty
+  // exclude list would turn the selection into all modes.
+  if (availableNames.length === 0 || selectedNames.size === 0) {
+    return { modes: sortedSelected, exclude: false };
   }
-  return selected;
+  const unselected = availableNames
+    .filter((name) => !selectedNames.has(name))
+    .sort();
+  // Every available mode: no filter, the same query as an empty selection
+  if (unselected.length === 0) {
+    return { modes: [], exclude: false };
+  }
+  // Selected modes the catalogue does not list are kept by an exclude filter
+  // too, since only the unselected catalogue modes are left out.
+  if (unselected.length < selectedNames.size) {
+    return { modes: unselected, exclude: true };
+  }
+  return { modes: sortedSelected, exclude: false };
+}
+
+/**
+ * Stable string form of a game mode filter, for keys and dependency lists.
+ *
+ * @param query - The filter, null while the modes are not initialized
+ * @returns The same string for the same filter
+ */
+export function gameModeQueryKey(query: GameModeQuery | null): string {
+  if (!query) {
+    return "";
+  }
+  return `${query.exclude ? "exclude" : "include"}:${query.modes.join("|")}`;
 }
 
 /**

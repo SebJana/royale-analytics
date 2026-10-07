@@ -1,13 +1,15 @@
 import api from "./axios";
 import { validatePlayerTagSyntax } from "../../utils/playerTag";
 import { setTimeRangeParams } from "./seasons";
+import { setGameModeParams } from "./gameModes";
 import type { CardStats } from "../../types/cardStats";
 import type { TimeRange } from "../../types/seasons";
+import type { GameModeQuery } from "../../types/gameModes";
 
 export async function fetchCardStats(
   playerTag: string,
   range: TimeRange,
-  gameModes?: string[],
+  gameModes?: GameModeQuery,
 ): Promise<CardStats> {
   // Throw error if an invalid player tag was passed
   if (!validatePlayerTagSyntax(playerTag)) {
@@ -18,10 +20,7 @@ export async function fetchCardStats(
   const params = new URLSearchParams();
   setTimeRangeParams(params, range);
 
-  // Append game modes if they exist as param
-  if (gameModes?.length) {
-    gameModes.forEach((mode) => params.append("game_modes", mode));
-  }
+  setGameModeParams(params, gameModes);
 
   const url = `/players/${tag}/cards/stats?${params.toString()}`;
 

@@ -8,7 +8,7 @@ import { formatNumber, round } from "../../utils/number";
 import { pluralize } from "../../utils/plural";
 import { getCurrentFilterState } from "../../utils/filter";
 import { getTimeRange } from "../../utils/seasons";
-import { gameModesForQuery } from "../../utils/gameModes";
+import { gameModeQueryKey, gameModesForQuery } from "../../utils/gameModes";
 import { useEffect, useState } from "react";
 import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
 import { FilterContainer } from "../../components/filterContainer/filterContainer";
@@ -245,7 +245,7 @@ export default function PlayerCards() {
   } = useCardStats(playerTag, getTimeRange(appliedFilters), queryGameModes);
 
   // Use the modes actually sent to the API for the loading state dependency.
-  const modesKey = queryGameModes?.join("|") ?? "";
+  const modesKey = gameModeQueryKey(queryGameModes);
 
   // Loading state management
   // Determines when to show loading spinner vs content

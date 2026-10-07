@@ -37,10 +37,14 @@ def match_tag_time_mode_range_stage(
     start: datetime,
     end: datetime,
     game_modes: Optional[Iterable[str]] = None,
+    exclude_game_modes: Optional[Iterable[str]] = None,
 ):
     """
     Build a MongoDB $match stage that filters battles for a given player tag
     within a UTC time window based on the given game modes.
+
+    An exclude list keeps every other mode, also ones no catalogue lists yet,
+    so "all but one" stays one name long instead of naming every other mode.
 
     The caller resolves calendar days or a season to the window, so this
     stage stays a plain range on the indexed battleTime.
@@ -51,6 +55,9 @@ def match_tag_time_mode_range_stage(
         end (datetime.datetime): End of the window (exclusive), timezone-aware.
         game_modes: Optional iterable of game mode names; if provided and non-empty,
                     the match includes {"gameMode": {"$in": <game_modes>}}.
+        exclude_game_modes: Optional iterable of game mode names; if provided and
+                    non-empty, the match includes {"gameMode": {"$nin": <names>}}.
+                    The caller sends at most one of the two lists.
 
     Returns:
         dict: An aggregation stage of the form:
@@ -59,6 +66,7 @@ def match_tag_time_mode_range_stage(
                   "referencePlayerTag": <player_tag>,
                   "battleTime": { "$gte": <start>, "$lt": <end> },
                   "gameMode": {"$in": <game_modes>} (if game modes isn't empty)
+                  "gameMode": {"$nin": <exclude_game_modes>} (if those aren't empty)
 
                 }
               }
@@ -74,6 +82,8 @@ def match_tag_time_mode_range_stage(
     # Only add the mode filter if provided and non-empty
     if game_modes:
         match["gameMode"] = {"$in": list(game_modes)}
+    elif exclude_game_modes:
+        match["gameMode"] = {"$nin": list(exclude_game_modes)}
 
     return {"$match": match}
 
