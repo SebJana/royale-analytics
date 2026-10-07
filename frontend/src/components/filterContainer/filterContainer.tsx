@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { GameModeFilter } from "../gameModeFilter/gameModeFilter";
 import { StartEndDateFilter } from "../startEndDateFilter/startEndDateFilter";
 import { CardFilter } from "../cardFilter/cardFilter";
@@ -10,11 +10,6 @@ import {
 } from "../../utils/filter";
 import { isValidDateRange } from "../../utils/datetime";
 import "./filterContainer.css";
-
-// Scroll distance in pixels before the scroll direction counts as changed. A
-// phone's toolbar collapsing and finger jitter move the page a few pixels the
-// other way, which would otherwise flicker the Apply row in and out.
-const SCROLL_DIRECTION_THRESHOLD = 8;
 
 // TODO add visualSelectedGameModes here to selectedGameModes
 export type FilterState = {
@@ -169,28 +164,6 @@ export function FilterContainer({
 
   const [gameModesInitialized, setGameModesInitialized] = useState(false);
   const [applyButtonDisabled, setApplyButtonDisabled] = useState(true);
-
-  // The Apply row only rides the screen's bottom on the way down through the
-  // filters. Scrolling up heads back toward them, where a pinned row would
-  // just cover the content.
-  const [scrollingUp, setScrollingUp] = useState(false);
-  const lastScrollY = useRef(0);
-
-  useEffect(() => {
-    // Overscroll bounce reports a negative offset on iOS
-    lastScrollY.current = Math.max(window.scrollY, 0);
-
-    const updateDirection = () => {
-      const scrollY = Math.max(window.scrollY, 0);
-      const delta = scrollY - lastScrollY.current;
-      if (Math.abs(delta) < SCROLL_DIRECTION_THRESHOLD) return;
-      setScrollingUp(delta < 0);
-      lastScrollY.current = scrollY;
-    };
-
-    window.addEventListener("scroll", updateDirection, { passive: true });
-    return () => window.removeEventListener("scroll", updateDirection);
-  }, []);
 
   // Sync UI state with applied filters when they change from parent
   useEffect(() => {
@@ -380,9 +353,7 @@ export function FilterContainer({
       {/* Sticks to the bottom of the screen while the panel's end is below
           it, e.g. behind an expanded card filter, so Apply stays in reach
           without a second pair of buttons */}
-      <div
-        className={`filter-component-button-container${scrollingUp ? " is-scrolling-up" : ""}`}
-      >
+      <div className="filter-component-button-container">
         <button
           type="button"
           className="filter-component-apply-button"

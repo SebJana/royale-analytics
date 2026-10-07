@@ -41,18 +41,13 @@
 }
 
 /* On phones the stuck bar meets the screen's bottom edge. Extra bottom
-   padding keeps the buttons clear of rounded screen corners and the browser's
-   bottom toolbar while it collapses; the safe-area inset adds the home
-   indicator's height where the browser reports it. */
+   padding keeps the buttons clear of rounded screen corners and the home
+   indicator. It is fixed on purpose: iOS Safari changes
+   env(safe-area-inset-bottom) as its toolbar shows and hides, which made the
+   bar's height jump while scrolling. */
 @media (max-width: 768px) {
   .filter-component-button-container {
-    padding-bottom: calc(var(--spacing-lg) + env(safe-area-inset-bottom, 0px));
-  }
-
-  /* Scrolling up returns the row to the panel's end instead of pinning it
-     over the content the reader is heading back to */
-  .filter-component-button-container.is-scrolling-up {
-    position: static;
+    padding-bottom: var(--spacing-2xl);
   }
 }
 
