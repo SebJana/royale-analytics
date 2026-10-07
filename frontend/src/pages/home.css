@@ -145,23 +145,6 @@
   animation: untrack-unlock-pop 1100ms ease-out;
 }
 
-.untrack-auth-success {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  text-align: left;
-  margin-top: 0;
-  font-size: var(--font-sm);
-}
-
-.untrack-auth-feedback:empty {
-  display: none;
-}
-
-.untrack-auth-success svg {
-  flex-shrink: 0;
-}
-
 @keyframes untrack-unlock-pop {
   0% {
     transform: scale(0.7) rotate(-15deg);
@@ -280,6 +263,12 @@
   background-color: var(--bg-overlay-medium);
 }
 
+/* Marks the tag that caused the error next to the callout under it. */
+.adding-section input[aria-invalid="true"],
+.untrack-section input[aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+
 .adding-section input::placeholder {
   color: var(--text-secondary);
 }
@@ -344,22 +333,90 @@
   align-self: flex-start;
 }
 
-.home-error-message {
-  text-align: center;
-  margin-top: var(--spacing-md);
-  color: var(--color-error);
-  font-size: var(--font-base);
-  max-width: 400px;
+/* Grid rows animate between 0fr and 1fr, so the slot follows the callout's
+   real height. The negative margin cancels the section's flex gap while
+   closed, so an empty slot adds no space. */
+.home-status-slot {
+  display: grid;
+  grid-template-rows: 0fr;
   width: 100%;
+  max-width: 320px;
+  margin-top: calc(-1 * var(--spacing-md));
+  opacity: 0;
+  transition:
+    grid-template-rows 220ms ease,
+    margin-top 220ms ease,
+    opacity 160ms ease;
 }
 
-.home-success-message {
-  text-align: center;
-  margin-top: var(--spacing-md);
-  color: var(--color-success);
-  font-size: var(--font-base);
-  max-width: 400px;
+.home-status-slot.is-open {
+  grid-template-rows: 1fr;
+  margin-top: var(--spacing-xs);
+  opacity: 1;
+}
+
+.home-status-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Same width as the inputs above, so the callout reads as part of the form
+   rather than floating under the button. --status-color drives the tint,
+   border and icon of each tone. */
+.home-status-message {
+  --status-color: var(--color-success);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+  box-sizing: border-box;
   width: 100%;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid color-mix(in srgb, var(--status-color) 45%, transparent);
+  border-radius: var(--radius-md);
+  background-color: color-mix(in srgb, var(--status-color) 12%, transparent);
+  text-align: left;
+  font-size: var(--font-base);
+  line-height: var(--line-height-normal);
+}
+
+.home-status-message.is-error {
+  --status-color: var(--color-error);
+}
+
+.home-status-message.is-wait {
+  --status-color: var(--color-warning);
+}
+
+.home-status-icon {
+  flex-shrink: 0;
+  /* Centres the icon on the title's line. */
+  margin-top: calc((1lh - 20px) / 2);
+  color: var(--status-color);
+}
+
+.home-status-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.home-status-text strong {
+  color: var(--text-primary);
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.home-status-text span {
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-status-slot {
+    transition: none;
+  }
 }
 
 /* Responsive design */

@@ -1,5 +1,11 @@
-import { useEffect, useLayoutEffect, useState } from "react";
-import { LockKeyhole, LockKeyholeOpen, CircleCheck } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useState } from "react";
+import {
+  AlertCircle,
+  CircleCheck,
+  Clock,
+  LockKeyhole,
+  LockKeyholeOpen,
+} from "lucide-react";
 import { useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { trackPlayer, untrackPlayer } from "../services/api/trackedPlayers";
@@ -71,6 +77,91 @@ function getErrorMessage(error: unknown): string {
   );
 }
 
+type HomeStatus = {
+  tone: "success" | "error" | "wait";
+  title: string;
+  message: string;
+};
+
+const STATUS_ICONS = {
+  success: CircleCheck,
+  error: AlertCircle,
+  wait: Clock,
+} as const;
+
+// Module level, so the slot sees the same object while it stays open.
+const AUTH_STATUS: HomeStatus = {
+  tone: "success",
+  title: "Verification complete",
+  message: "Enter a player tag to remove.",
+};
+
+/**
+ * Turns a failed add or remove into a status. Rate limits and outages pass on
+ * their own, so they read as "wait" rather than as a mistake in the tag.
+ */
+function getErrorStatus(error: unknown, title: string): HomeStatus {
+  const response = axios.isAxiosError<{ detail?: { code?: string } | string }>(
+    error,
+  )
+    ? error.response
+    : undefined;
+  const detail = response?.data?.detail;
+  const code = typeof detail === "object" ? detail?.code : undefined;
+  const isTemporary =
+    response?.status === 429 ||
+    code === "CR_API_MAINTENANCE" ||
+    code === "CR_API_UNAVAILABLE";
+  return {
+    tone: isTemporary ? "wait" : "error",
+    title,
+    message: getErrorMessage(error),
+  };
+}
+
+/**
+ * Outcome callout under a home form. Shared by add, remove and verification,
+ * so every status in the panels reads the same way.
+ *
+ * The slot stays mounted and opens or collapses its height, so the panels
+ * below slide instead of jumping when a status comes or goes.
+ */
+function HomeStatusMessage({
+  status,
+  id,
+}: Readonly<{ status: HomeStatus | null; id?: string }>) {
+  // Keeps the last status rendered while the slot collapses; dropping it
+  // right away would empty the box before it finishes closing.
+  const [shown, setShown] = useState(status);
+  if (status && status !== shown) setShown(status);
+  const open = status !== null;
+  const Icon = shown ? STATUS_ICONS[shown.tone] : null;
+
+  return (
+    <div
+      className={`home-status-slot${open ? " is-open" : ""}`}
+      aria-hidden={!open}
+      inert={!open}
+    >
+      <div className="home-status-clip">
+        {shown && Icon && (
+          <div
+            id={id}
+            className={`home-status-message is-${shown.tone}`}
+            role={shown.tone === "success" ? "status" : "alert"}
+          >
+            <Icon className="home-status-icon" size={20} aria-hidden="true" />
+            <div className="home-status-text">
+              <strong>{shown.title}</strong>
+              <span>{shown.message}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HomePage() {
   const queryClient = useQueryClient();
 
@@ -107,14 +198,14 @@ function HomePage() {
   const [untrackedPlayerTag, setUntrackedPlayerTag] = useState("");
   const [trackingPlayer, setTrackingPlayer] = useState(false);
   const [untrackingPlayer, setUntrackingPlayer] = useState(false);
-  const [trackingError, setTrackingError] = useState<string | null>(null);
-  const [untrackingError, setUntrackingError] = useState<string | null>(null);
-  const [trackingSuccess, setTrackingSuccess] = useState<string | null>(null);
-  const [untrackingSuccess, setUntrackingSuccess] = useState<string | null>(
+  const [trackingStatus, setTrackingStatus] = useState<HomeStatus | null>(null);
+  const [untrackingStatus, setUntrackingStatus] = useState<HomeStatus | null>(
     null,
   );
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showAuthSuccess, setShowAuthSuccess] = useState(false);
+  const trackingStatusId = useId();
+  const untrackingStatusId = useId();
   const navigate = useNavigate();
   const { isAuthenticated, checkAuthStatus } = useAuth();
 
@@ -164,22 +255,33 @@ function HomePage() {
     }
   };
 
+  // Any field or button in use makes every shown outcome stale, so starting
+  // something new in one panel also clears the others.
+  const clearStatuses = () => {
+    setTrackingStatus(null);
+    setUntrackingStatus(null);
+    setShowAuthSuccess(false);
+  };
+
   const handleAddPlayerClick = async () => {
     if (!addedPlayerTag) return;
 
     setTrackingPlayer(true);
-    setTrackingError(null);
-    setTrackingSuccess(null);
+    clearStatuses();
 
     try {
       const result = await trackPlayer(addedPlayerTag);
-      setTrackingSuccess(`${result.status}: ${result.tag}`);
+      setTrackingStatus({
+        tone: "success",
+        title: result.status,
+        message: result.tag,
+      });
       refreshTrackedPlayers();
 
       // Clear the input field
       setAddedPlayerTag("");
     } catch (error) {
-      setTrackingError(getErrorMessage(error));
+      setTrackingStatus(getErrorStatus(error, "Couldn't add player"));
     } finally {
       setTrackingPlayer(false);
     }
@@ -187,12 +289,15 @@ function HomePage() {
 
   const handleUntrackPlayerClick = async () => {
     if (!untrackedPlayerTag) return;
+    clearStatuses();
     if (!validatePlayerTagSyntax(untrackedPlayerTag)) {
-      setUntrackingError("Invalid player tag. Enter a tag like #YYRJQY28.");
-      setUntrackingSuccess(null);
+      setUntrackingStatus({
+        tone: "error",
+        title: "Couldn't remove player",
+        message: "Invalid player tag. Enter a tag like #YYRJQY28.",
+      });
       return;
     }
-    setUntrackingError(null);
 
     // Check if user is authenticated
     if (!checkAuthStatus()) {
@@ -201,17 +306,20 @@ function HomePage() {
     }
 
     setUntrackingPlayer(true);
-    setUntrackingSuccess(null);
 
     try {
       const result = await untrackPlayer(untrackedPlayerTag);
-      setUntrackingSuccess(`${result.status}: ${result.tag}`);
+      setUntrackingStatus({
+        tone: "success",
+        title: result.status,
+        message: result.tag,
+      });
       refreshTrackedPlayers();
 
       // Clear the input field
       setUntrackedPlayerTag("");
     } catch (error) {
-      setUntrackingError(getErrorMessage(error));
+      setUntrackingStatus(getErrorStatus(error, "Couldn't remove player"));
     } finally {
       setUntrackingPlayer(false);
     }
@@ -219,9 +327,8 @@ function HomePage() {
 
   const handleAuthSuccess = () => {
     setShowAuthModal(false);
+    clearStatuses();
     setShowAuthSuccess(true);
-    setUntrackingError(null);
-    setUntrackingSuccess(null);
   };
 
   return (
@@ -269,9 +376,11 @@ function HomePage() {
             backend list from the TODO above GET /players/count in
             players_tracked.py. */}
             <PlayerSearch
-              onSelectPlayer={(player) =>
-                setSelectedPlayerTag(player?.tag ?? "")
-              }
+              onSelectPlayer={(player) => {
+                setSelectedPlayerTag(player?.tag ?? "");
+                clearStatuses();
+              }}
+              onInput={clearStatuses}
             />
             <button
               className="view-button"
@@ -294,7 +403,13 @@ function HomePage() {
               type="text"
               placeholder="Enter player tag... (e.g. #YYRJQY28)"
               value={addedPlayerTag}
-              onChange={(e) => setAddedPlayerTag(e.target.value)}
+              aria-invalid={trackingStatus?.tone === "error"}
+              aria-describedby={trackingStatus ? trackingStatusId : undefined}
+              onChange={(e) => {
+                setAddedPlayerTag(e.target.value);
+                // The outcome belongs to the submitted tag, not the new one.
+                clearStatuses();
+              }}
             />
             <button
               className="add-button"
@@ -304,13 +419,7 @@ function HomePage() {
               {trackingPlayer ? "Adding Player..." : "Add Player"}
             </button>
 
-            {trackingError && (
-              <div className="home-error-message">{trackingError}</div>
-            )}
-
-            {trackingSuccess && (
-              <div className="home-success-message">{trackingSuccess}</div>
-            )}
+            <HomeStatusMessage status={trackingStatus} id={trackingStatusId} />
           </div>
           <div
             className={`untrack-section${showAuthSuccess && isAuthenticated ? " untrack-section-unlocked" : ""}`}
@@ -348,10 +457,15 @@ function HomePage() {
                   aria-label="Player tag to remove"
                   placeholder="Enter player tag... (e.g. #YYRJQY28)"
                   value={untrackedPlayerTag}
+                  aria-invalid={untrackingStatus?.tone === "error"}
+                  aria-describedby={
+                    untrackingStatus ? untrackingStatusId : undefined
+                  }
                   onChange={(e) => {
-                    const tag = e.target.value;
-                    setUntrackedPlayerTag(tag);
-                    if (validatePlayerTagSyntax(tag)) setUntrackingError(null);
+                    setUntrackedPlayerTag(e.target.value);
+                    // The outcome belongs to the submitted tag, and the
+                    // verification hint has done its job once typing starts.
+                    clearStatuses();
                   }}
                 />
                 <button
@@ -371,28 +485,13 @@ function HomePage() {
               </button>
             )}
 
-            <div
-              className="untrack-auth-feedback"
-              role="status"
-              aria-atomic="true"
-            >
-              {showAuthSuccess && isAuthenticated && (
-                <div className="home-success-message untrack-auth-success">
-                  <CircleCheck size={20} aria-hidden="true" />
-                  <span>
-                    Verification complete! Enter a player tag to remove.
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {untrackingError && (
-              <div className="home-error-message">{untrackingError}</div>
-            )}
-
-            {untrackingSuccess && (
-              <div className="home-success-message">{untrackingSuccess}</div>
-            )}
+            <HomeStatusMessage
+              status={showAuthSuccess && isAuthenticated ? AUTH_STATUS : null}
+            />
+            <HomeStatusMessage
+              status={untrackingStatus}
+              id={untrackingStatusId}
+            />
           </div>
         </div>
 

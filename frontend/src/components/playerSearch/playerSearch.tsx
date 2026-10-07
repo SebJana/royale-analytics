@@ -103,8 +103,11 @@ function ResultsPaper({
 
 export function PlayerSearch({
   onSelectPlayer,
+  onInput,
 }: Readonly<{
   onSelectPlayer?: (player: Player | null) => void;
+  /** Called when the user types into or clears the search. */
+  onInput?: () => void;
 }>) {
   const [selected, setSelected] = useState<SearchOption | null>(null);
   // Only typed text is searched. Selecting a player fills the input with its
@@ -183,7 +186,10 @@ export function PlayerSearch({
           noOptionsText={noOptionsText}
           slots={{ paper: ResultsPaper }}
           onInputChange={(_, value, reason) => {
-            if (reason === "input" || reason === "clear") setSearchText(value);
+            if (reason === "input" || reason === "clear") {
+              setSearchText(value);
+              onInput?.();
+            }
           }}
           renderOption={(props, option) => {
             const { key, className, ...optionProps } = props;
