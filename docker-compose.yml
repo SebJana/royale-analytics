@@ -136,6 +136,10 @@ services:
       - redis-rate-limit
     env_file:
       - .env
+    volumes:
+      # Saved player search index, loaded on restart instead of rebuilt.
+      # NOTE Matches SNAPSHOT_PATH in player_search/snapshot.py.
+      - search-index:/data/search
     networks:
       - cr-analytics
     restart: unless-stopped
@@ -169,6 +173,8 @@ volumes:
   redis-key-store-data:
   # Reconstructible: the next card refresh rebuilds a lost set from the CDN.
   card-images:
+  # Reconstructible: the API builds the search index from Mongo when it is lost.
+  search-index:
 
 networks:
   cr-analytics:

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from .connection import MongoConn
 from .validation_utils import ensure_connected
 
@@ -104,6 +106,83 @@ async def get_tracked_players(conn: MongoConn):
 
     except Exception as e:
         print(f"[DB] [ERROR] trying to fetch the tracked players: {e}")
+        raise
+
+
+async def get_tracked_players_page(
+    conn: MongoConn, after_tag: str | None, limit: int
+) -> list[tuple[str, str | None]]:
+    """
+    Retrieves one page of tracked players, ordered by tag.
+
+    Pages follow the unique tag index, so each one is a short indexed read.
+    Reading all players page by page keeps every read and its decoding short,
+    where one cursor over all players decodes batches of up to 16 MB at once.
+
+    Args:
+        conn (MongoConn): Active connection to the mongo database
+        after_tag (str | None): Last tag of the previous page, None for the first
+        limit (int): Maximum number of players in the page
+
+    Returns:
+        list: (tag, name) pairs; fewer than limit only on the last page
+
+    Raises:
+        Exception: If fetching the players fails
+    """
+
+    try:
+        await ensure_connected(conn)
+        query = {"active": True}
+        if after_tag is not None:
+            query["playerTag"] = {"$gt": after_tag}
+        cursor = (
+            conn.db.players.find(query, {"_id": 0, "playerTag": 1, "playerName": 1})
+            .sort("playerTag", 1)
+            .limit(limit)
+        )
+        return [(doc["playerTag"], doc.get("playerName")) async for doc in cursor]
+
+    except Exception as e:
+        print(f"[DB] [ERROR] trying to fetch tracked players after {after_tag}: {e}")
+        raise
+
+
+async def get_players_changed_since(
+    conn: MongoConn, since: datetime
+) -> dict[str, tuple[str | None, bool]]:
+    """
+    Retrieves every player whose name or tracking state changed since a time.
+
+    Inactive players are included, so a reader also learns about
+    deactivations. Players without searchChangedAt (last changed before the
+    field existed) never match; a full read covers them.
+
+    Args:
+        conn (MongoConn): Active connection to the mongo database
+        since (datetime): Mongo server time (naive UTC); players whose
+            searchChangedAt is at or after it are returned
+
+    Returns:
+        dict: Player tag mapped to (name, active)
+
+    Raises:
+        Exception: If fetching the players fails
+    """
+
+    try:
+        await ensure_connected(conn)
+        cursor = conn.db.players.find(
+            {"searchChangedAt": {"$gte": since}},
+            {"_id": 0, "playerTag": 1, "playerName": 1, "active": 1},
+        )
+        return {
+            doc["playerTag"]: (doc.get("playerName"), bool(doc.get("active")))
+            async for doc in cursor
+        }
+
+    except Exception as e:
+        print(f"[DB] [ERROR] trying to fetch the players changed since {since}: {e}")
         raise
 
 

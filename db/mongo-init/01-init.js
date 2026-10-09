@@ -14,6 +14,12 @@ db.createUser({
 print(`[init] creating index on 'player' collection for unique 'playerTag'`);
 db.players.createIndex({ playerTag: 1 }, { unique: true, name: "tag_unique" });
 
+// The API's player search reads only the players changed since its last
+// read. NOTE The API also creates this index at startup, for databases that
+// existed before it; keep the name in sync with ensure_search_change_index.
+print(`[init] creating index on 'player' collection for 'searchChangedAt'`);
+db.players.createIndex({ searchChangedAt: 1 }, { name: "searchChangedAt_index" });
+
 print(`[init] creating index on 'game_modes' collection for unique 'name'`);
 db.game_modes.createIndex({ name: 1 }, { unique: true, name: "name_unique" });
 

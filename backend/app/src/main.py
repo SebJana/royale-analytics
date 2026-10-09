@@ -159,12 +159,15 @@ async def lifespan(app: FastAPI):
     await retry_async(mongo_conn.connect, name="MongoDB")
     app.state.mongo = mongo_conn
 
-    # Built before serving, so the first visitors can already search. A failed
-    # build does not stop startup; search answers 503 until a retry succeeds.
+    # Loaded or built before serving, so the first visitors can already
+    # search. A failed build does not stop startup; search answers 503 until
+    # a retry succeeds.
     player_search = PlayerSearchService(
         mongo_conn,
         refresh_interval_s=settings.SEARCH_REFRESH_INTERVAL_S,
+        full_refresh_interval_s=settings.SEARCH_FULL_REFRESH_INTERVAL_S,
         retry_s=settings.SEARCH_BUILD_RETRY_S,
+        snapshot_interval_s=settings.SEARCH_SNAPSHOT_INTERVAL_S,
     )
     await player_search.start()
     app.state.player_search = player_search

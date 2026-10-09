@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from .connection import MongoConn
+from .players_write import name_update_fields
 from .validation_utils import ensure_connected
 
 
@@ -40,8 +41,9 @@ async def save_player_profile(
             update["profileSyncIntervalS"] = interval_s
         # The profile carries the current name as well; keep both in sync
         if profile.get("name"):
-            update["playerName"] = profile["name"]
-        await conn.db.players.update_one({"playerTag": player_tag}, {"$set": update})
+            update.update(name_update_fields(profile["name"]))
+        # A pipeline update, which name_update_fields needs.
+        await conn.db.players.update_one({"playerTag": player_tag}, [{"$set": update}])
 
     except Exception as e:
         print(f"[DB] [ERROR] saving the profile of {player_tag}: {e}")

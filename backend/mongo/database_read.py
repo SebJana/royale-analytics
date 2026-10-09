@@ -1,9 +1,35 @@
 import time
+from datetime import datetime
 
 from pymongo.errors import OperationFailure
 
 from .connection import MongoConn
 from .validation_utils import ensure_connected
+
+
+async def get_server_time(conn: MongoConn) -> datetime:
+    """
+    Returns the Mongo server's current time.
+
+    For comparisons with times the server wrote itself ($$NOW,
+    $currentDate): this process's clock may run ahead or behind.
+
+    Args:
+        conn (MongoConn): Active connection to the mongo database
+
+    Returns:
+        datetime: Server time as naive UTC, like every datetime read back
+
+    Raises:
+        Exception: If Mongo is unreachable
+    """
+
+    try:
+        await ensure_connected(conn)
+        return (await conn.db.command("hello"))["localTime"]
+    except Exception as e:
+        print(f"[DB] [ERROR] reading the server time: {e}")
+        raise
 
 
 async def get_database_health(conn: MongoConn) -> dict:

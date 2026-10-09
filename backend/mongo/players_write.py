@@ -3,6 +3,62 @@ from pymongo import ReturnDocument
 from .connection import MongoConn
 from .validation_utils import ensure_connected
 
+# NOTE searchChangedAt tells the API's player search which players to read
+# again (see app/src/player_search/sync.py). Every write that changes
+# playerName or active HAS to set it to the server time ($$NOW or
+# $currentDate), or the search keeps the old state until its next full
+# refresh. Server time, not this process's clock: the search compares it
+# with Mongo's own clock.
+
+
+def name_update_fields(player_name: str) -> dict:
+    """Return the $set fields of a pipeline update that stores a player name.
+
+    searchChangedAt only moves when the name actually differs. Syncs store
+    the name on every run, and bumping it each time would make the search
+    re-read every synced player.
+
+    Args:
+        player_name (str): The current player name.
+
+    Returns:
+        dict: Fields for a pipeline $set stage, not for a plain $set.
+    """
+
+    # $literal, because a name starting with "$" would otherwise be read
+    # as a field path. Both expressions see the document as it was before
+    # this stage, so the comparison is with the stored name.
+    name = {"$literal": player_name}
+    return {
+        "playerName": name,
+        "searchChangedAt": {
+            "$cond": [{"$ne": ["$playerName", name]}, "$$NOW", "$searchChangedAt"]
+        },
+    }
+
+
+async def ensure_search_change_index(conn: MongoConn) -> None:
+    """Create the index the search's change reads use, if missing.
+
+    Created at startup as well as in the init script: the init script only
+    runs on an empty volume, so existing databases get it here.
+
+    Args:
+        conn (MongoConn): Active MongoDB connection instance.
+
+    Raises:
+        Exception: If the index cannot be created.
+    """
+
+    try:
+        await ensure_connected(conn)
+        await conn.db.players.create_index(
+            "searchChangedAt", name="searchChangedAt_index"
+        )
+    except Exception as e:
+        print(f"[DB] [ERROR] creating the searchChangedAt index: {e}")
+        raise
+
 
 async def insert_tracked_player(
     conn: MongoConn, player_tag: str, player_name: str = "Player"
@@ -36,6 +92,7 @@ async def insert_tracked_player(
                         "active": True,
                         "reactivatedAt": now,
                         "updatedAt": now,
+                        "searchChangedAt": "$$NOW",
                         "consecutiveFailures": 0,
                         "consecutiveNotFound": 0,
                         # Battles played while untracked are only recovered
@@ -78,6 +135,11 @@ async def insert_tracked_player(
                     "playerName": player_name,
                     "syncVersion": 0,
                 },
+                # Also bumped for an already tracked player, which is harmless:
+                # the search re-reads the player and finds nothing changed.
+                # The match may also be a player deactivated between these two
+                # writes, which this reactivates, so it has to be set here.
+                "$currentDate": {"searchChangedAt": True},
             },
             upsert=True,
         )
@@ -120,7 +182,8 @@ async def deactivate_tracked_player(
             fields["deactivatedReason"] = reason
 
         res = await conn.db.players.update_one(
-            {"playerTag": player_tag, "active": True}, {"$set": fields}
+            {"playerTag": player_tag, "active": True},
+            {"$set": fields, "$currentDate": {"searchChangedAt": True}},
         )
 
         # Return the amount of players updated
@@ -166,23 +229,23 @@ async def record_battle_sync(
     try:
         await ensure_connected(conn)
 
-        update = {
-            "$set": {
-                "lastBattlesSyncAt": datetime.now(timezone.utc),
-                "lastSyncNewBattles": new_battle_count,
-                "consecutiveFailures": 0,
-                "consecutiveNotFound": 0,
-            },
-            "$unset": {"firstNotFoundAt": ""},
+        # A pipeline update, so the name can be compared with the stored one
+        # in the same write (see name_update_fields).
+        fields = {
+            "lastBattlesSyncAt": datetime.now(timezone.utc),
+            "lastSyncNewBattles": new_battle_count,
+            "consecutiveFailures": 0,
+            "consecutiveNotFound": 0,
         }
         if player_name:
-            update["$set"]["playerName"] = player_name
+            fields.update(name_update_fields(player_name))
         if interval_s is not None:
-            update["$set"]["syncIntervalS"] = interval_s
+            fields["syncIntervalS"] = interval_s
         if newest_battle_time is not None:
             # $max keeps the watermark from moving backwards if two syncs of
-            # the same player overlap after an expired claim.
-            update["$max"] = {"lastBattleTime": newest_battle_time}
+            # the same player overlap after an expired claim. It skips a
+            # missing field, so the first sync stores the new time.
+            fields["lastBattleTime"] = {"$max": ["$lastBattleTime", newest_battle_time]}
         # TODO Keep a roughly accurate stored battle count per tracked player
         # (e.g. battleCount), so pages and the explore list need no count over
         # the battles collection. Not per insert: either $inc it here by the
@@ -193,10 +256,12 @@ async def record_battle_sync(
         # could be combined with a rare recount. "Somewhat accurate" is
         # enough; store when it was last counted (battleCountAt) next to it.
         if new_battle_count > 0:
-            update["$inc"] = {"syncVersion": 1}
+            fields["syncVersion"] = {"$add": [{"$ifNull": ["$syncVersion", 0]}, 1]}
 
         await conn.db.players.update_one(
-            {"playerTag": player_tag}, update, upsert=False
+            {"playerTag": player_tag},
+            [{"$set": fields}, {"$unset": ["firstNotFoundAt"]}],
+            upsert=False,
         )
 
     except Exception as e:

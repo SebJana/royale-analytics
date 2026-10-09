@@ -271,7 +271,15 @@ class Settings:
     SEARCH_QUERY_MAX_LENGTH: int = 15
     # The API indexes its own adds and removes instantly. The refresh only
     # picks up the data scraper's renames and deactivations, which may lag.
-    SEARCH_REFRESH_INTERVAL_S: int = 15 * 60  # 15 minutes
+    # Cheap at any size: it reads only the players changed since the last one.
+    SEARCH_REFRESH_INTERVAL_S: int = 60  # 1 minute
+    # Every this often a refresh reads all tracked players instead, repairing
+    # changes a writer made without moving searchChangedAt.
+    SEARCH_FULL_REFRESH_INTERVAL_S: int = 6 * 60 * 60  # 6 hours
+    # A changed index is saved at most this often, and always on shutdown.
+    # A save copies the whole index on the event loop (~20 ms at 100k
+    # players, ~450 ms at 1M); a restart catches up on what it missed.
+    SEARCH_SNAPSHOT_INTERVAL_S: int = 30 * 60  # 30 minutes
     # Retry delay while the first index build has not succeeded, also sent
     # as Retry-After with the 503 search responses in the meantime.
     SEARCH_BUILD_RETRY_S: int = 30  # seconds
