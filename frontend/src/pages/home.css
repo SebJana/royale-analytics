@@ -167,9 +167,25 @@
   }
 }
 
+/* Opened from a battle's "add this player" link: shows where the tag landed */
+.adding-section-requested {
+  animation: adding-requested-glow 1600ms ease-out;
+}
+
+@keyframes adding-requested-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  40% {
+    box-shadow: 0 0 0 4px var(--color-info);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .untrack-section-unlocked,
-  .untrack-section-unlocked .untrack-auth-icon {
+  .untrack-section-unlocked .untrack-auth-icon,
+  .adding-section-requested {
     animation: none;
   }
 }

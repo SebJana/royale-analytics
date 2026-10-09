@@ -47,3 +47,20 @@ export function normalizePlayerTag(input: string): string | null {
   const tag = `#${compact.replace(/#/g, "").toUpperCase().replace(/O/g, "0")}`;
   return validatePlayerTagSyntax(tag) ? tag : null;
 }
+
+// Query parameter that opens the home page's add form with a tag filled in,
+// and the id of that form's section.
+export const ADD_PLAYER_PARAM = "add";
+export const ADD_PLAYER_SECTION_ID = "add-player";
+
+/**
+ * Link to the home page's add form with a tag filled in, e.g. for an
+ * opponent who is not tracked yet. Adding still takes a click there.
+ *
+ * @param playerTag - The tag to fill in, e.g. "#YYRJQY28"
+ * @returns The path, e.g. "/?add=%23YYRJQY28#add-player"
+ */
+export function addPlayerPath(playerTag: string): string {
+  const query = new URLSearchParams({ [ADD_PLAYER_PARAM]: playerTag });
+  return `/?${query}#${ADD_PLAYER_SECTION_ID}`;
+}

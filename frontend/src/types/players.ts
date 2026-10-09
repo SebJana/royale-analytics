@@ -18,6 +18,12 @@ export type PlayerSearchResult = {
   match: PlayerSearchMatch;
 };
 
+export type TrackedState = {
+  // The tracked player's tag as stored, else the tag that was looked up
+  tag: string;
+  tracked: boolean;
+};
+
 export type PlayerSearchResponse = {
   // Best match first
   players: PlayerSearchResult[];

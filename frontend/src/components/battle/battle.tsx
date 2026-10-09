@@ -2,6 +2,7 @@ import { memo } from "react";
 import { Link } from "react-router-dom";
 import { DeckComponent } from "../deck/deck";
 import { CopyableTag } from "../copyableTag/copyableTag";
+import { BattlePlayerInfo } from "../battlePlayerInfo/battlePlayerInfo";
 import type { Battle, Player } from "../../types/lastBattles";
 import type { CardMeta } from "../../types/cards";
 import { Crown } from "lucide-react";
@@ -87,17 +88,30 @@ export const BattleComponent = memo(function BattleComponent({
                 key={`${battle.battleTime}-team-${t.tag ?? i}`}
                 className="battle-component-player-block"
               >
-                <div className="battle-component-player-info battle-component-player-info-left">
-                  <h3 className="battle-component-player-name">
-                    {t.name ?? `Player ${i + 1}`}
-                  </h3>
-                  {t.tag && (
-                    <CopyableTag
-                      tag={t.tag}
-                      className="battle-component-player-tag"
-                    />
-                  )}
-                </div>
+                {isOwnPlayer(t) ? (
+                  // The page's own player: a link would lead to this page.
+                  <div className="battle-component-player-info battle-component-player-info-left">
+                    <h3 className="battle-component-player-name">
+                      {t.name ?? `Player ${i + 1}`}
+                    </h3>
+                    {t.tag && (
+                      <CopyableTag
+                        tag={t.tag}
+                        className="battle-component-player-tag"
+                      />
+                    )}
+                  </div>
+                ) : (
+                  // A 2v2 teammate, linked like the opponents.
+                  <BattlePlayerInfo
+                    name={t.name}
+                    tag={t.tag}
+                    fallbackName={`Player ${i + 1}`}
+                    className="battle-component-player-info battle-component-player-info-left"
+                    nameClassName="battle-component-player-name"
+                    tagClassName="battle-component-player-tag"
+                  />
+                )}
                 {playerTag && onOwnDeckOpen && isOwnPlayer(t) ? (
                   <Link
                     to={`/player/${encodeURIComponent(playerTag)}/decks`}
@@ -126,17 +140,14 @@ export const BattleComponent = memo(function BattleComponent({
               key={`${battle.battleTime}-opp-${o.tag ?? i}`}
               className="battle-component-player-block"
             >
-              <div className="battle-component-player-info battle-component-player-info-right">
-                <h3 className="battle-component-player-name">
-                  {o.name ?? `Player ${i + 1}`}
-                </h3>
-                {o.tag && (
-                  <CopyableTag
-                    tag={o.tag}
-                    className="battle-component-player-tag"
-                  />
-                )}
-              </div>
+              <BattlePlayerInfo
+                name={o.name}
+                tag={o.tag}
+                fallbackName={`Player ${i + 1}`}
+                className="battle-component-player-info battle-component-player-info-right"
+                nameClassName="battle-component-player-name"
+                tagClassName="battle-component-player-tag"
+              />
               <DeckComponent
                 deck={o.cards ?? []}
                 support={o.supportCards ?? []}

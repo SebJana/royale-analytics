@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -7,12 +7,16 @@ import {
   LockKeyhole,
   LockKeyholeOpen,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { trackPlayer, untrackPlayer } from "../services/api/trackedPlayers";
 import { pluralize } from "../utils/plural";
 import { formatNumberWithSuffix } from "../utils/number";
-import { validatePlayerTagSyntax } from "../utils/playerTag";
+import {
+  ADD_PLAYER_PARAM,
+  ADD_PLAYER_SECTION_ID,
+  validatePlayerTagSyntax,
+} from "../utils/playerTag";
 import {
   TRACKED_PLAYER_COUNT_QUERY_KEY,
   useTrackedPlayerCount,
@@ -21,6 +25,7 @@ import { useTotalBattleCount } from "../hooks/useTotalBattleCount";
 import { useAuth } from "../hooks/useAuthHook";
 import { PlayerSearch } from "../components/playerSearch/playerSearch";
 import { PLAYER_SEARCH_QUERY_KEY } from "../hooks/usePlayerSearch";
+import { TRACKED_STATE_QUERY_KEY } from "../hooks/useTrackedState";
 import { AuthModal } from "../components/auth/authModal";
 import Lottie from "lottie-react";
 import construction from "../assets/animations/construction.json";
@@ -181,13 +186,14 @@ function HomePage() {
     window.scrollTo(0, 0);
   }, []);
 
-  // The API indexes adds and removes instantly; the cached count and search
-  // results would still show the old state.
+  // The API indexes adds and removes instantly; the cached count, search
+  // results and battle opponents' tracked states would still show the old one.
   const refreshTrackedPlayers = () => {
     void queryClient.invalidateQueries({
       queryKey: [TRACKED_PLAYER_COUNT_QUERY_KEY],
     });
     void queryClient.invalidateQueries({ queryKey: [PLAYER_SEARCH_QUERY_KEY] });
+    void queryClient.invalidateQueries({ queryKey: [TRACKED_STATE_QUERY_KEY] });
   };
 
   const {
@@ -217,6 +223,51 @@ function HomePage() {
   const untrackingStatusId = useId();
   const navigate = useNavigate();
   const { isAuthenticated, checkAuthStatus } = useAuth();
+
+  // A battle's "add this player" link fills in the add form. The parameter
+  // is dropped right away, so a reload or a later visit starts empty.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedAddTag = searchParams.get(ADD_PLAYER_PARAM);
+  const addSectionRef = useRef<HTMLDivElement>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [highlightAdd, setHighlightAdd] = useState(false);
+
+  useEffect(() => {
+    if (!requestedAddTag) return;
+    setAddedPlayerTag(requestedAddTag);
+    setShowAddForm(true);
+    setSearchParams(
+      (params) => {
+        params.delete(ADD_PLAYER_PARAM);
+        return params;
+      },
+      { replace: true },
+    );
+  }, [requestedAddTag, setSearchParams]);
+
+  // The form only exists once the counts have loaded, so scrolling waits.
+  // The layout effect above has scrolled to the top by then.
+  const countsLoaded = !playerCountPending && !battleCountPending;
+  useEffect(() => {
+    if (!showAddForm || !countsLoaded) return;
+    setShowAddForm(false);
+    addSectionRef.current?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "center",
+    });
+    // Focused without a second scroll, so the smooth one is not cut short.
+    addInputRef.current?.focus({ preventScroll: true });
+    setHighlightAdd(true);
+  }, [showAddForm, countsLoaded]);
+
+  useEffect(() => {
+    if (!highlightAdd) return;
+    const timer = window.setTimeout(() => setHighlightAdd(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [highlightAdd]);
 
   useEffect(() => {
     if (!showAuthSuccess) return;
@@ -408,13 +459,18 @@ function HomePage() {
               View Player
             </button>
           </div>
-          <div className="adding-section">
+          <div
+            id={ADD_PLAYER_SECTION_ID}
+            ref={addSectionRef}
+            className={`adding-section${highlightAdd ? " adding-section-requested" : ""}`}
+          >
             <h2 className="section-header">Add New Player</h2>
             <p className="section-description">
               Enter a player tag to start tracking their battles, decks, and
               performance analytics.
             </p>
             <input
+              ref={addInputRef}
               type="text"
               placeholder="Enter player tag... (e.g. #YYRJQY28)"
               value={addedPlayerTag}

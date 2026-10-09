@@ -1,0 +1,109 @@
+/* Clicking the name looks the player up, and opens their page once they are
+   known to be tracked. */
+.battle-player-info-name.is-actionable {
+  cursor: pointer;
+}
+
+/* Keeps the name's look; only the underline on hover and the icon tell that
+   it leads somewhere. The global a rules would turn it blue. */
+.battle-player-info-link,
+.battle-player-info-link:hover {
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+}
+
+.battle-player-info-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.battle-player-info-link:focus-visible {
+  outline: 2px solid var(--border-active);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Inline beside the name. Its center sits three quarters of the way from
+   the center of the lowercase letters (1ex / 2) up to that of the capitals
+   (1cap / 2), measured from the baseline: either one alone looks off next
+   to mixed case names. An inline SVG rests on the baseline with its bottom,
+   so it is raised by that height minus half its own (0.4em). cap and ex come
+   from the font in use, so this holds for any font and size. */
+.battle-player-info-icon {
+  width: 0.8em;
+  height: 0.8em;
+  margin-left: var(--spacing-xs);
+  vertical-align: calc((3cap + 1ex) / 8 - 0.4em);
+  color: var(--color-success);
+  animation: battle-player-info-pop 0.3s ease-out;
+}
+
+/* Muted next to the name, so untracked players do not crowd the list with
+   color; it lights up when pointed at. */
+.battle-player-info-add {
+  color: var(--text-secondary);
+  border-radius: var(--radius-xs);
+}
+
+.battle-player-info-add .battle-player-info-icon {
+  color: inherit;
+  transition:
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.battle-player-info-add:hover .battle-player-info-icon,
+.battle-player-info-add:focus-visible .battle-player-info-icon {
+  color: var(--color-info);
+  transform: scale(1.2);
+}
+
+.battle-player-info-add:focus-visible {
+  outline: 2px solid var(--border-active);
+  outline-offset: 2px;
+}
+
+/* The answer arrives a moment after the hover; the icon grows in instead of
+   popping up, for tracked and untracked players alike. */
+@keyframes battle-player-info-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+/* Without the cap unit (Chrome before 118, Safari before 17.2), "middle"
+   centers on the lowercase letters; the nudge approximates the rule above
+   for this site's font. top, not a transform, which the animation uses. */
+@supports not (vertical-align: 1cap) {
+  .battle-player-info-icon {
+    position: relative;
+    top: -0.08em;
+    vertical-align: middle;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battle-player-info-icon {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Read by screen readers, which do not see the icon */
+.battle-player-info-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
