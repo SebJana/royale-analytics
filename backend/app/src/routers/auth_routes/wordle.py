@@ -26,7 +26,10 @@ router = APIRouter()
 @router.get(
     "/wordle_id",
     dependencies=[Depends(RateLimiter(times=5, seconds=60))],
-    responses={401: {"description": "CAPTCHA token missing or expired"}},
+    responses={
+        401: {"description": "CAPTCHA token missing or expired"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
+    },
 )
 async def get_wordle_id(
     auth_state_conn: AuthStateConn,
@@ -66,7 +69,9 @@ async def get_wordle_id(
         401: {"description": "CAPTCHA token missing or expired"},
         404: {"description": "Wordle challenge expired or not found"},
         422: {"description": "Invalid Wordle guess or request"},
-        429: {"description": "Wordle guesses exhausted"},
+        429: {
+            "description": "Wordle guesses exhausted, or rate limit exceeded (Retry-After)"
+        },
         500: {"description": "Wordle challenge state invalid"},
     },
 )
@@ -140,6 +145,12 @@ async def get_wordle_token(
     is_solution = is_guess_solution(solution, guess)
     wordle_token = ""
 
+    # TODO Lock a solved session. It stays open after the solution, so sending
+    # the solution again mints another Wordle token until the 6 guesses are
+    # used. Delete or mark the session solved when it is solved. The guess
+    # count is also read here and written below, so parallel guesses can all
+    # pass the check; count atomically (a Lua script or WATCH) instead.
+    # See the token budget TODO in helpers/jwt.py.
     # If it is, generate a wordle token
     if is_solution:
         wordle_token = create_access_token(

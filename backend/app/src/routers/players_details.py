@@ -61,6 +61,7 @@ router = APIRouter(
     responses={
         403: {"description": "Invalid or untracked player"},
         404: {"description": "No profile snapshot stored yet"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
         500: {"description": "Player profile lookup failed"},
     },
 )

@@ -152,6 +152,7 @@ async def search_tracked_players(
     dependencies=[Depends(RateLimiter(times=3, seconds=60))],
     responses={
         404: {"description": "Player tag invalid or player not found"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
         500: {"description": "Could not save tracked player"},
         502: {"description": "Clash Royale API request failed"},
         503: {
@@ -277,6 +278,7 @@ async def add_tracked_player(
     responses={
         403: {"description": "Invalid or untracked player, or invalid removal token"},
         404: {"description": "Tracked player not found"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
         500: {"description": "Could not remove tracked player"},
     },
 )

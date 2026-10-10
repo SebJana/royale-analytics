@@ -26,7 +26,10 @@ router = APIRouter()
 @router.post(
     "/verify_security_questions",
     dependencies=[Depends(RateLimiter(times=3, seconds=60))],
-    responses={401: {"description": "Token expired or answers incorrect"}},
+    responses={
+        401: {"description": "Token expired or answers incorrect"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
+    },
 )
 async def get_security_token(
     req: SecurityQuestionsRequest,

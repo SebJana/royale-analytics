@@ -74,6 +74,13 @@ def get_access_token_claims(token: str, token_type: str) -> dict | None:
     return payload
 
 
+# TODO Give every token a redemption budget. Routes only check type and
+# expiry, so one token opens any number of next steps until it expires. Retries
+# are fine, mass use is not; count redemptions per JTI atomically and reject
+# past a budget (settings): ~5 Wordle sessions per CAPTCHA token, ~3 Halli
+# Galli games per Wordle token, ~5 security attempts per Halli Galli token,
+# 1 removal token per security token, a few removals per removal token.
+# Together with locking solved challenges (TODOs in captcha.py and wordle.py).
 def validate_access_token(token: str, type: str) -> bool:
     """Return whether ``token`` is a valid, unexpired token of ``type``.
 

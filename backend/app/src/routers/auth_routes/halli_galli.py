@@ -111,6 +111,7 @@ def _halli_galli_status(game: HalliGalliGame) -> dict:
     dependencies=[Depends(RateLimiter(times=5, seconds=60))],
     responses={
         401: {"description": "Wordle token or calibration invalid"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
         503: {"description": "Cards not ready yet (IMAGES_NOT_READY), see Retry-After"},
     },
 )
@@ -203,6 +204,7 @@ async def get_halli_galli_id(
     responses={
         404: {"description": "Game or prepared card not found"},
         409: {"description": "Card image changed during preload"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
         503: {"description": "No replacement card ready (IMAGES_NOT_READY)"},
     },
 )

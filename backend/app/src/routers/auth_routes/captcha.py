@@ -22,6 +22,7 @@ router = APIRouter()
     "/captcha_id",
     dependencies=[Depends(RateLimiter(times=5, seconds=60))],
     responses={
+        429: {"description": "Rate limit exceeded, see Retry-After"},
         503: {"description": "No CAPTCHA ready (IMAGES_NOT_READY)"},
     },
 )
@@ -62,6 +63,7 @@ async def get_captcha_id(auth_state_conn: AuthStateConn, media_conn: MediaConn):
     dependencies=[Depends(RateLimiter(times=5, seconds=60))],
     responses={
         404: {"description": "CAPTCHA challenge expired or not found"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
     },
 )
 async def get_captcha_image(
@@ -95,6 +97,7 @@ async def get_captcha_image(
     responses={
         401: {"description": "CAPTCHA answer incorrect"},
         404: {"description": "CAPTCHA challenge expired or not found"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
     },
 )
 async def get_captcha_token(auth_state_conn: AuthStateConn, req: CaptchaAnswerRequest):
@@ -110,6 +113,14 @@ async def get_captcha_token(auth_state_conn: AuthStateConn, req: CaptchaAnswerRe
             },
         )
 
+    # TODO Lock the challenge once it is used up. Today the answer stays valid
+    # for the whole CACHE_TTL_CAPTCHA_CHALLENGE: one solved CAPTCHA mints a new
+    # CAPTCHA token (and so a new Wordle) on every call, and one challenge
+    # takes unlimited wrong guesses, bounded only by the per-IP rate limit,
+    # which rotating IPs bypass. Delete the challenge on a correct answer
+    # (atomically, e.g. GETDEL, so two parallel requests cannot both succeed),
+    # and count wrong answers on it, deleting it after a few (3?) so a new
+    # CAPTCHA is needed. The frontend then shows CAPTCHA_EXPIRED and reloads.
     # NOTE: compare with lowercase answer and text, otherwise the captcha is very hard to solve
     # even for a human
     # Check if stored and given answer match
