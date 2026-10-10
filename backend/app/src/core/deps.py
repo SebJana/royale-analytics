@@ -31,7 +31,7 @@ def get_redis(request: Request) -> CacheRedisConn:
 
 
 def get_auth_state_redis(request: Request) -> RedisConn:
-    """Return the isolated store for active CAPTCHA and Wordle challenges."""
+    """Return the isolated store for active CAPTCHA and Word Guess challenges."""
 
     r = getattr(request.app.state, "auth_state_redis", None)
     if r is None:
@@ -42,7 +42,7 @@ def get_auth_state_redis(request: Request) -> RedisConn:
 def get_media_redis(request: Request) -> RedisConn:
     """Return the binary client for the media Redis.
 
-    It holds the pre-rendered Halli Galli cards and CAPTCHAs; the API picks
+    It holds the pre-rendered Fruit Buzz cards and CAPTCHAs; the API picks
     and claims them but never adds any (see helpers/media_pool).
 
     Args:

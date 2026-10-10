@@ -28,10 +28,10 @@ export async function loadValidGuesses(): Promise<string[]> {
 }
 
 /**
- * Checks if a given word is a valid guess for Wordle.
+ * Checks if a given word is a valid guess for Word Guess.
  *
  * This function validates whether the provided guess exists in the official
- * list of valid Wordle guesses. It automatically loads the valid guesses
+ * list of valid guesses. It automatically loads the valid guesses
  * list on first use and caches it for subsequent calls.
  *
  * @param guess - The word to validate (case-insensitive)

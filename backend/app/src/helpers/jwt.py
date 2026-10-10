@@ -8,9 +8,9 @@ from core.settings import settings
 # Types of tokens the api gives out and validates
 class AvailableTokenTypes(StrEnum):
     CAPTCHA = "captcha"
-    HALLI_GALLI = "halli_galli"
+    FRUIT_BUZZ = "fruit_buzz"
     SECURITY = "security"
-    WORDLE = "wordle"
+    WORD_GUESS = "word_guess"
     REMOVE_PLAYER_TOKEN = "remove_player_token"
 
 
@@ -59,7 +59,7 @@ def get_access_token_claims(token: str, token_type: str) -> dict | None:
         requested type, and has a JTI; otherwise ``None``.
     """
 
-    # NOTE: Halli Galli binds a latency calibration to the Wordle token's JTI
+    # NOTE: Fruit Buzz binds a latency calibration to the Word Guess token's JTI
     # for connection-specific fairness, not as a primary anti-cheat boundary.
     # The redemption budget (helpers/token_budget.py) is keyed by the JTI too.
 

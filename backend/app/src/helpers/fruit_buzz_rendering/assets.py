@@ -30,28 +30,28 @@ FRUIT_COLOR_CACHE: dict[str, ColorPalette] = {}
 FRUIT_MAIN_COLOR_CACHE: dict[str, RGBColor] = {}
 
 
-DOCKER_HALLI_GALLI_DIR = Path("/app/shared_resources/halli_galli")
+DOCKER_FRUIT_BUZZ_DIR = Path("/app/shared_resources/fruit_buzz")
 
 
-def find_halli_galli_asset_dir() -> Path:
+def find_fruit_buzz_asset_dir() -> Path:
     """Find assets in Docker first, then locate them from a local checkout.
 
     Returns:
         Path: Directory containing the source fruit SVG folders.
     """
 
-    if DOCKER_HALLI_GALLI_DIR.is_dir():
+    if DOCKER_FRUIT_BUZZ_DIR.is_dir():
         # Docker copies shared resources to this stable runtime location.
-        return DOCKER_HALLI_GALLI_DIR
+        return DOCKER_FRUIT_BUZZ_DIR
 
     # Local paths vary by developer, so discover the repository resource folder
     # from this module rather than relying on a machine-specific absolute path.
     for parent in Path(__file__).resolve().parents:
-        asset_dir = parent / "shared_resources" / "halli_galli"
+        asset_dir = parent / "shared_resources" / "fruit_buzz"
         if asset_dir.is_dir():
             return asset_dir
 
-    raise FileNotFoundError("Could not locate shared_resources/halli_galli")
+    raise FileNotFoundError("Could not locate shared_resources/fruit_buzz")
 
 
 def get_fruit_svgs(fruit: str) -> tuple[str, ...]:
@@ -68,7 +68,7 @@ def get_fruit_svgs(fruit: str) -> tuple[str, ...]:
     if cached_svgs is not None:
         return cached_svgs
 
-    fruit_path = find_halli_galli_asset_dir() / fruit
+    fruit_path = find_fruit_buzz_asset_dir() / fruit
     svg_files = sorted(fruit_path.glob("*.svg"))
 
     if not svg_files:

@@ -149,7 +149,7 @@ class FruitImagePosition(BaseModel):
     height: float = Field(gt=0, le=1)
 
 
-class HalliGalliCard(BaseModel):
+class FruitBuzzCard(BaseModel):
     """A rendered card and the server-side metadata used to produce it."""
 
     # The renderer has finished when this model is created; immutable metadata

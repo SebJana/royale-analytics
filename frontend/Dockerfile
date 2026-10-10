@@ -8,7 +8,7 @@ COPY frontend/package*.json ./
 RUN npm install
 
 # Copy shared resources first
-COPY shared_resources/wordle/valid-guesses.txt ./public/
+COPY shared_resources/word_guess/valid-guesses.txt ./public/
 
 # Copy source code and build
 COPY frontend/ .

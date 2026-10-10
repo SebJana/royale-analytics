@@ -1,4 +1,4 @@
-"""Detailed rendering stages used by :mod:`helpers.halli_galli_card`.
+"""Detailed rendering stages used by :mod:`helpers.fruit_buzz_card`.
 
 ``constants`` holds every tuning constant and shared type; the central API
 orchestrates generation. ``models`` holds immutable metadata; ``assets``,

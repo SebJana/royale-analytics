@@ -21,8 +21,8 @@ router = APIRouter()
 # names, compared case-insensitively and with fuzzy matching, and shared by
 # everyone. For real protection one answer would have to be a long secret
 # (and SECURITY_FUZZY_THRESHOLD 100, without the .lower() comparison).
-# Guessing is slowed by the short Halli Galli token lifetime, the rate limit
-# below and the HALLI_GALLI_TOKEN_BUDGET attempts each won game buys.
+# Guessing is slowed by the short Fruit Buzz token lifetime, the rate limit
+# below and the FRUIT_BUZZ_TOKEN_BUDGET attempts each won game buys.
 # TODO Serve 3 random questions out of a larger set, so the answers cannot be
 # collected once and reused, and rotate a set out for a while once it was
 # answered correctly.
@@ -32,8 +32,8 @@ router = APIRouter()
     responses={
         401: {
             "description": (
-                "Halli Galli token missing or expired (HALLI_GALLI_TOKEN_EXPIRED), "
-                "already used or its attempts used up (HALLI_GALLI_TOKEN_USED_UP), "
+                "Fruit Buzz token missing or expired (FRUIT_BUZZ_TOKEN_EXPIRED), "
+                "already used or its attempts used up (FRUIT_BUZZ_TOKEN_USED_UP), "
                 "or answers incorrect (SECURITY_ANSWERS_INCORRECT)"
             )
         },
@@ -49,26 +49,24 @@ async def get_security_token(
 ):
     """Trade correct answers for the security token.
 
-    Every attempt spends one redemption of the Halli Galli token; correct
+    Every attempt spends one redemption of the Fruit Buzz token; correct
     answers spend all of it and mint one security token, which a repeat of
     the correct answers gets again.
 
     Args:
         req (SecurityQuestionsRequest): The three answers.
         auth_state_conn (AuthStateConn): Auth-state Redis with the budgets.
-        credentials (HTTPAuthorizationCredentials | None): The Halli Galli token.
+        credentials (HTTPAuthorizationCredentials | None): The Fruit Buzz token.
 
     Returns:
         dict: The security token for the removal-token exchange.
 
     Raises:
-        HTTPException: 401 with HALLI_GALLI_TOKEN_EXPIRED,
-            HALLI_GALLI_TOKEN_USED_UP or SECURITY_ANSWERS_INCORRECT.
+        HTTPException: 401 with FRUIT_BUZZ_TOKEN_EXPIRED,
+            FRUIT_BUZZ_TOKEN_USED_UP or SECURITY_ANSWERS_INCORRECT.
     """
     claims = (
-        get_access_token_claims(
-            credentials.credentials, AvailableTokenTypes.HALLI_GALLI
-        )
+        get_access_token_claims(credentials.credentials, AvailableTokenTypes.FRUIT_BUZZ)
         if credentials
         else None
     )
@@ -76,8 +74,8 @@ async def get_security_token(
         raise HTTPException(
             status_code=401,
             detail={
-                "code": "HALLI_GALLI_TOKEN_EXPIRED",
-                "message": "Halli Galli took too long. Restart verification.",
+                "code": "FRUIT_BUZZ_TOKEN_EXPIRED",
+                "message": "Fruit Buzz took too long. Restart verification.",
             },
         )
 
@@ -97,7 +95,7 @@ async def get_security_token(
         raise HTTPException(
             status_code=401,
             detail={
-                "code": "HALLI_GALLI_TOKEN_USED_UP",
+                "code": "FRUIT_BUZZ_TOKEN_USED_UP",
                 "message": "No answer attempts left. Restart verification.",
             },
         )

@@ -528,7 +528,7 @@ API_CHARTED_ROUTES = 4
 # few fixed ranges, and expired entries are dropped on every build.
 _api_history_cache: dict[tuple, tuple[float, dict]] = {}
 
-# Routes of the auth flow (CAPTCHA, Wordle, Halli Galli, security questions,
+# Routes of the auth flow (CAPTCHA, Word Guess, Fruit Buzz, security questions,
 # removal token); every other route is regular traffic. The dashboard can
 # chart either group on its own, so an attack on one shows apart from the other.
 # NOTE Matches the /api prefix and the "/auth" router prefix in the API's

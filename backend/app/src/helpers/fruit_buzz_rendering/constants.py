@@ -1,6 +1,6 @@
-"""Tuning constants and shared types for Halli Galli card generation.
+"""Tuning constants and shared types for Fruit Buzz card generation.
 
-Kept apart from ``helpers.halli_galli_card`` so the stage modules and the
+Kept apart from ``helpers.fruit_buzz_card`` so the stage modules and the
 generation API import each other at the top of the file without a cycle.
 """
 

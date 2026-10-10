@@ -146,7 +146,7 @@ async def lifespan(app: FastAPI):
     await retry_async(redis_conn.connect, name="cache Redis")
     app.state.redis = redis_conn
 
-    # Pre-rendered Halli Galli cards and CAPTCHAs from the media worker. They
+    # Pre-rendered Fruit Buzz cards and CAPTCHAs from the media worker. They
     # are raw PNG bytes, so this client disables UTF-8 response decoding.
     media_redis = RedisConn(
         host=settings.MEDIA_REDIS_HOST,
@@ -158,7 +158,7 @@ async def lifespan(app: FastAPI):
     app.state.media_redis = media_redis
 
     # Challenge state is isolated from evictable response/media cache entries.
-    # A cache memory spike can no longer remove a valid CAPTCHA or Wordle game.
+    # A cache memory spike can no longer remove a valid CAPTCHA or Word Guess game.
     auth_state_redis = RedisConn(
         host=settings.AUTH_STATE_REDIS_HOST,
         port=settings.REDIS_PORT,
@@ -285,7 +285,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Halli-Galli-Image-Version"],
+    expose_headers=["X-Fruit-Buzz-Image-Version"],
 )
 
 # Added last, so it is the outermost middleware: the time covers CORS and the

@@ -75,7 +75,7 @@ async def get_captcha_id(auth_state_conn: AuthStateConn, media_conn: MediaConn):
         dict: Dictionary containing the claimed captcha_id.
     """
     # NOTE CAPTCHAs come from the media pool for surge capacity, not for CPU:
-    # one costs ~8 ms, far less than a Halli Galli card. The stock absorbs
+    # one costs ~8 ms, far less than a Fruit Buzz card. The stock absorbs
     # bursts; a sustained flood empties it, and the auth flow then fails with
     # IMAGES_NOT_READY (503) instead of rendering in the API and dragging the
     # regular routes down with it. Keep rendering out of this route.
@@ -164,7 +164,7 @@ async def _solve(
                 challenge_key, json.dumps({"text": text, "token": token}), keepttl=True
             )
             pipe.delete(attempts_key)
-            # Opening a Wordle with the token closes this challenge.
+            # Opening a Word Guess with the token closes this challenge.
             queue_token_record(pipe, token, origin=challenge_key)
             try:
                 await pipe.execute()
@@ -194,7 +194,7 @@ async def get_captcha_token(auth_state_conn: AuthStateConn, req: CaptchaAnswerRe
 
     A challenge mints one token. The solved challenge keeps it, so a repeated
     correct answer (a client that lost the response) gets the same token
-    again; using the token for a Wordle closes the challenge. Wrong answers are
+    again; using the token for a Word Guess closes the challenge. Wrong answers are
     counted, and after MAX_CAPTCHA_ATTEMPTS the challenge is deleted, so a
     rotating set of IPs cannot guess on one image indefinitely.
 
@@ -203,7 +203,7 @@ async def get_captcha_token(auth_state_conn: AuthStateConn, req: CaptchaAnswerRe
         req (CaptchaAnswerRequest): Challenge ID and the typed text.
 
     Returns:
-        dict: The CAPTCHA token for the Wordle step.
+        dict: The CAPTCHA token for the Word Guess step.
 
     Raises:
         HTTPException: 401 with CAPTCHA_INCORRECT or CAPTCHA_ATTEMPTS_EXHAUSTED,

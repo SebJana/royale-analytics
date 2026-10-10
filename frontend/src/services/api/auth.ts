@@ -3,12 +3,12 @@ import type {
   CaptchaResponse,
   CaptchaVerifyRequest,
   CaptchaTokenResponse,
-  WordleResponse,
-  HalliGalliGameResponse,
-  HalliGalliStatusResponse,
-  HalliGalliRevealResponse,
-  HalliGalliRoundResponse,
-  WordleVerifyRequest,
+  WordGuessResponse,
+  FruitBuzzGameResponse,
+  FruitBuzzStatusResponse,
+  FruitBuzzRevealResponse,
+  FruitBuzzRoundResponse,
+  WordGuessVerifyRequest,
   SecurityQuestionsRequest,
   SecurityTokenResponse,
   RemovePlayerTokenResponse,
@@ -46,7 +46,7 @@ export async function getCaptchaImage(captchaId: string): Promise<Blob> {
  * Step 1.3: checks the CAPTCHA answer.
  *
  * @param request - Challenge ID and the typed text
- * @returns The CAPTCHA token for the Wordle step
+ * @returns The CAPTCHA token for the Word Guess step
  */
 export async function verifyCaptcha(
   request: CaptchaVerifyRequest,
@@ -59,17 +59,17 @@ export async function verifyCaptcha(
 }
 
 /**
- * Step 2.1: opens a Wordle session, spending one of the CAPTCHA token's
+ * Step 2.1: opens a Word Guess session, spending one of the CAPTCHA token's
  * sessions.
  *
  * @param captchaToken - Token from verifyCaptcha
- * @returns The Wordle session ID
+ * @returns The Word Guess session ID
  */
-export async function getWordleId(
+export async function getWordGuessId(
   captchaToken: string,
-): Promise<WordleResponse> {
-  const response = await api.post<WordleResponse>(
-    "/auth/wordle_id",
+): Promise<WordGuessResponse> {
+  const response = await api.post<WordGuessResponse>(
+    "/auth/word_guess_id",
     undefined,
     {
       headers: {
@@ -81,23 +81,23 @@ export async function getWordleId(
 }
 
 /**
- * Step 2.2: submits one Wordle guess.
+ * Step 2.2: submits one Word Guess attempt.
  *
  * @param captchaToken - Token from verifyCaptcha
  * @param request - Session ID and the guess
- * @returns The evaluation, guesses left and, once solved, the Wordle token
+ * @returns The evaluation, guesses left and, once solved, the Word Guess token
  */
-export async function submitWordleGuess(
+export async function submitWordGuess(
   captchaToken: string,
-  request: WordleVerifyRequest,
+  request: WordGuessVerifyRequest,
 ): Promise<{
   evaluation: unknown;
   remaining_guesses: number;
   is_solution: boolean;
-  wordle_token?: string;
+  word_guess_token?: string;
   solution?: string;
 }> {
-  const response = await api.post("/auth/verify_wordle", request, {
+  const response = await api.post("/auth/verify_word_guess", request, {
     headers: {
       Authorization: `Bearer ${captchaToken}`,
     },
@@ -106,26 +106,26 @@ export async function submitWordleGuess(
 }
 
 /**
- * Step 3: starts a Halli Galli game after latency calibration. Instructions
+ * Step 3: starts a Fruit Buzz game after latency calibration. Instructions
  * come from the game's public rules. Keep up to rules.max_preloaded_cards
  * future card images ready from initial_cards, then use
  * next_card_interval_ms after each reveal to schedule the next one. Spends
- * one of the Wordle token's games.
+ * one of the Word Guess token's games.
  *
- * @param wordleToken - Token from submitWordleGuess
+ * @param wordGuessToken - Token from submitWordGuess
  * @param calibrationId - ID of the finished latency calibration
  * @returns The game, its rules and the first card IDs
  */
-export async function getHalliGalliGame(
-  wordleToken: string,
+export async function getFruitBuzzGame(
+  wordGuessToken: string,
   calibrationId: string,
-): Promise<HalliGalliGameResponse> {
-  const response = await api.post<HalliGalliGameResponse>(
-    "/auth/halli_galli_id",
+): Promise<FruitBuzzGameResponse> {
+  const response = await api.post<FruitBuzzGameResponse>(
+    "/auth/fruit_buzz_id",
     { calibration_id: calibrationId },
     {
       headers: {
-        Authorization: `Bearer ${wordleToken}`,
+        Authorization: `Bearer ${wordGuessToken}`,
       },
     },
   );
@@ -137,37 +137,37 @@ export async function getHalliGalliGame(
  * Each fetch rotates that round's key. If requests complete out of order,
  * keep the response with the highest version for the later reveal.
  *
- * @param gameId - Game from getHalliGalliGame
+ * @param gameId - Game from getFruitBuzzGame
  * @param roundIndex - Round of the card
  * @returns The encrypted image and its version
  */
-export async function getHalliGalliCard(
+export async function getFruitBuzzCard(
   gameId: string,
   roundIndex: number,
 ): Promise<{ image: Blob; imageVersion: number }> {
   const response = await api.post<Blob>(
-    `/auth/halli_galli_card/${gameId}/${roundIndex}`,
+    `/auth/fruit_buzz_card/${gameId}/${roundIndex}`,
     undefined,
     { responseType: "blob" },
   );
   return {
     image: response.data,
-    imageVersion: Number(response.headers["x-halli-galli-image-version"]),
+    imageVersion: Number(response.headers["x-fruit-buzz-image-version"]),
   };
 }
 
 /**
  * Reads the saved outcome and lives after a lost action response. A finished
- * player win also returns the same Halli Galli token saved with the game.
+ * player win also returns the same Fruit Buzz token saved with the game.
  *
- * @param gameId - Game from getHalliGalliGame
+ * @param gameId - Game from getFruitBuzzGame
  * @returns The game's status
  */
-export async function getHalliGalliStatus(
+export async function getFruitBuzzStatus(
   gameId: string,
-): Promise<HalliGalliStatusResponse> {
-  const response = await api.get<HalliGalliStatusResponse>(
-    `/auth/halli_galli_status/${gameId}`,
+): Promise<FruitBuzzStatusResponse> {
+  const response = await api.get<FruitBuzzStatusResponse>(
+    `/auth/fruit_buzz_status/${gameId}`,
   );
   return response.data;
 }
@@ -177,16 +177,16 @@ export async function getHalliGalliStatus(
  * Reveal starts the server's round timer once; retrying it returns the same
  * key and version.
  *
- * @param gameId - Game from getHalliGalliGame
+ * @param gameId - Game from getFruitBuzzGame
  * @param roundIndex - Round to reveal
  * @returns The decryption key and its image version
  */
-export async function revealHalliGalliRound(
+export async function revealFruitBuzzRound(
   gameId: string,
   roundIndex: number,
-): Promise<HalliGalliRevealResponse> {
-  const response = await api.post<HalliGalliRevealResponse>(
-    `/auth/halli_galli_action/${gameId}/${roundIndex}`,
+): Promise<FruitBuzzRevealResponse> {
+  const response = await api.post<FruitBuzzRevealResponse>(
+    `/auth/fruit_buzz_action/${gameId}/${roundIndex}`,
     { action: "reveal" },
   );
   return response.data;
@@ -195,22 +195,22 @@ export async function revealHalliGalliRound(
 /**
  * Buzzes on a round.
  *
- * @param gameId - Game from getHalliGalliGame
+ * @param gameId - Game from getFruitBuzzGame
  * @param roundIndex - Current round
  * @param clickedCardId - Card that was clicked
  * @param clickX - Click position, normalized to the card's width
  * @param clickY - Click position, normalized to the card's height
  * @returns The round's outcome
  */
-export async function buzzHalliGalliRound(
+export async function buzzFruitBuzzRound(
   gameId: string,
   roundIndex: number,
   clickedCardId: string,
   clickX: number,
   clickY: number,
-): Promise<HalliGalliRoundResponse> {
-  const response = await api.post<HalliGalliRoundResponse>(
-    `/auth/halli_galli_action/${gameId}/${roundIndex}`,
+): Promise<FruitBuzzRoundResponse> {
+  const response = await api.post<FruitBuzzRoundResponse>(
+    `/auth/fruit_buzz_action/${gameId}/${roundIndex}`,
     {
       action: "buzz",
       clicked_card_id: clickedCardId,
@@ -225,16 +225,16 @@ export async function buzzHalliGalliRound(
  * Moves on to the next round, only after the deadline. A missed winning
  * count loses a life.
  *
- * @param gameId - Game from getHalliGalliGame
+ * @param gameId - Game from getFruitBuzzGame
  * @param roundIndex - Current round
  * @returns Lives, whether cards should clear, and the next IDs
  */
-export async function nextHalliGalliRound(
+export async function nextFruitBuzzRound(
   gameId: string,
   roundIndex: number,
-): Promise<HalliGalliRoundResponse> {
-  const response = await api.post<HalliGalliRoundResponse>(
-    `/auth/halli_galli_action/${gameId}/${roundIndex}`,
+): Promise<FruitBuzzRoundResponse> {
+  const response = await api.post<FruitBuzzRoundResponse>(
+    `/auth/fruit_buzz_action/${gameId}/${roundIndex}`,
     { action: "next" },
   );
   return response.data;
@@ -243,12 +243,12 @@ export async function nextHalliGalliRound(
 /**
  * Step 4: checks the security answers.
  *
- * @param halliGalliToken - Token of a won Halli Galli game
+ * @param fruitBuzzToken - Token of a won Fruit Buzz game
  * @param request - The answers
  * @returns The security token
  */
 export async function verifySecurityQuestions(
-  halliGalliToken: string,
+  fruitBuzzToken: string,
   request: SecurityQuestionsRequest,
 ): Promise<SecurityTokenResponse> {
   const response = await api.post<SecurityTokenResponse>(
@@ -256,7 +256,7 @@ export async function verifySecurityQuestions(
     request,
     {
       headers: {
-        Authorization: `Bearer ${halliGalliToken}`,
+        Authorization: `Bearer ${fruitBuzzToken}`,
       },
     },
   );

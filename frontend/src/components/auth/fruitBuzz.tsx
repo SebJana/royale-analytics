@@ -28,25 +28,25 @@ import {
   type AuthErrorFeedback,
 } from "../../utils/authErrors";
 import {
-  buzzHalliGalliRound,
-  getHalliGalliCard,
-  getHalliGalliGame,
-  getHalliGalliStatus,
-  nextHalliGalliRound,
-  revealHalliGalliRound,
+  buzzFruitBuzzRound,
+  getFruitBuzzCard,
+  getFruitBuzzGame,
+  getFruitBuzzStatus,
+  nextFruitBuzzRound,
+  revealFruitBuzzRound,
 } from "../../services/api/auth";
 import type {
-  HalliGalliGameResponse,
-  HalliGalliPublicRules,
-  HalliGalliRoundReason,
-  HalliGalliRoundResponse,
+  FruitBuzzGameResponse,
+  FruitBuzzPublicRules,
+  FruitBuzzRoundReason,
+  FruitBuzzRoundResponse,
 } from "../../types/auth";
 import {
-  calibrateHalliGalli,
-  decryptHalliGalliCard,
+  calibrateFruitBuzz,
+  decryptFruitBuzzCard,
   matchingCard,
   type EncryptedCard,
-} from "./halliGalliProtocol";
+} from "./fruitBuzzProtocol";
 import {
   addVisibleCard,
   afterRound,
@@ -54,8 +54,8 @@ import {
   recoverSettledRound,
   scheduleNextCard,
   type VisibleCard,
-} from "./halliGalliFlow";
-import "./halliGalli.css";
+} from "./fruitBuzzFlow";
+import "./fruitBuzz.css";
 import { AuthActionButton } from "./authActionButton";
 import { useAuthCooldown } from "../../hooks/useAuthCooldown";
 
@@ -78,7 +78,7 @@ const CARD_ASPECT_RATIO = 5 / 7;
 const DESKTOP_RULES_MIN_CARD_WIDTH = 200;
 // Only used to measure the hidden loading copy before the backend sends rules.
 // Keep these representative values in sync with the current game configuration.
-const LOADING_RULES: HalliGalliPublicRules = {
+const LOADING_RULES: FruitBuzzPublicRules = {
   winning_fruit_count: 5,
   visible_card_count: 4,
   max_preloaded_cards: 3,
@@ -87,20 +87,20 @@ const LOADING_RULES: HalliGalliPublicRules = {
   target_fruit_edge: "right",
 };
 
-const feedbackText: Record<HalliGalliRoundReason, string> = {
-  correct_buzz: "Halli Galli! The bot loses a life.",
+const feedbackText: Record<FruitBuzzRoundReason, string> = {
+  correct_buzz: "Fruit Buzz! The bot loses a life.",
   late_buzz: "Too late!",
   wrong_card: "That was not the right card. You lost a life.",
   wrong_fruit: "That was not the target fruit. You lost a life.",
-  false_buzz: "No Halli Galli yet. You lost a life.",
-  missed_halli_galli: "The bot got there first. You lost a life.",
-  no_halli_galli: "No Halli Galli. Next card!",
+  false_buzz: "No Fruit Buzz yet. You lost a life.",
+  missed_fruit_buzz: "The bot got there first. You lost a life.",
+  no_fruit_buzz: "No Fruit Buzz. Next card!",
 };
 
-interface HalliGalliProps {
-  readonly wordleToken: string;
+interface FruitBuzzProps {
+  readonly wordGuessToken: string;
   readonly onWin: (token: string) => void;
-  readonly onWordleExpired: () => void;
+  readonly onWordGuessExpired: () => void;
 }
 
 /** Avoid opening a new connection for a token whose local expiry has passed. */
@@ -113,18 +113,18 @@ function tokenExpired(token: string): boolean {
   }
 }
 
-/** Run one Halli Galli attempt inside the existing authentication modal. */
-export function HalliGalli({
-  wordleToken,
+/** Run one Fruit Buzz attempt inside the existing authentication modal. */
+export function FruitBuzz({
+  wordGuessToken,
   onWin,
-  onWordleExpired,
-}: HalliGalliProps) {
+  onWordGuessExpired,
+}: FruitBuzzProps) {
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<Phase>("loading");
   const [loadingStage, setLoadingStage] = useState<"calibrating" | "preparing">(
     "calibrating",
   );
-  const [game, setGame] = useState<HalliGalliGameResponse | null>(null);
+  const [game, setGame] = useState<FruitBuzzGameResponse | null>(null);
   const [pile, setPile] = useState<VisibleCard[]>([]);
   const pileRef = useRef<HTMLDivElement>(null);
   const desktopRulesRef = useRef<HTMLDivElement>(null);
@@ -136,7 +136,7 @@ export function HalliGalli({
   const [playerLives, setPlayerLives] = useState(0);
   const [botLives, setBotLives] = useState(0);
   const [progress, setProgress] = useState(0);
-  const [feedback, setFeedback] = useState<HalliGalliRoundReason | null>(null);
+  const [feedback, setFeedback] = useState<FruitBuzzRoundReason | null>(null);
   const [lateByMs, setLateByMs] = useState<number | null>(null);
   const [winningCardIds, setWinningCardIds] = useState<string[]>([]);
   const [clickedCardId, setClickedCardId] = useState<string | null>(null);
@@ -152,10 +152,10 @@ export function HalliGalli({
   const beginRef = useRef<() => void>(() => {});
   // Parent callbacks can change while the game is open. Read their latest
   // values without restarting calibration or discarding preloaded cards.
-  const callbacksRef = useRef({ onWin, onWordleExpired });
+  const callbacksRef = useRef({ onWin, onWordGuessExpired });
   useEffect(() => {
-    callbacksRef.current = { onWin, onWordleExpired };
-  }, [onWin, onWordleExpired]);
+    callbacksRef.current = { onWin, onWordGuessExpired };
+  }, [onWin, onWordGuessExpired]);
 
   // Reserve the full configured window so cards do not resize as it fills.
   // Empty slots stay empty; temporary card placeholders would disappear again
@@ -198,7 +198,7 @@ export function HalliGalli({
     const panel = pileElement?.parentElement;
     const content = panel?.parentElement;
     const heading = panel?.querySelector<HTMLElement>(".auth-stage-heading");
-    const lives = panel?.querySelector<HTMLElement>(".halli-lives");
+    const lives = panel?.querySelector<HTMLElement>(".buzz-lives");
     if (!pileElement || !rules || !panel || !content || !heading || !lives)
       return;
 
@@ -268,7 +268,7 @@ export function HalliGalli({
     let roundDue = 0;
     const settlementGate = createSettlementGate();
     let gameId = "";
-    let gameData: HalliGalliGameResponse;
+    let gameData: FruitBuzzGameResponse;
 
     /** The bar measures the next-card interval, never the hidden buzz deadline. */
     function progressAt(due: number) {
@@ -297,17 +297,17 @@ export function HalliGalli({
         window.setTimeout(() => URL.revokeObjectURL(old.url), 0);
       }
     }
-    /** Separate an expired Wordle token from retryable game or network errors. */
+    /** Separate an expired Word Guess token from retryable game or network errors. */
     function fail(err: unknown) {
       if (!active) return;
       clearTimer();
       setPhase("error");
       setError(
         getAuthErrorFeedback(
-          tokenExpired(wordleToken)
-            ? new AuthChallengeError("WORDLE_TOKEN_EXPIRED")
+          tokenExpired(wordGuessToken)
+            ? new AuthChallengeError("WORD_GUESS_TOKEN_EXPIRED")
             : err,
-          "halli_galli",
+          "fruit_buzz",
         ),
       );
     }
@@ -326,7 +326,7 @@ export function HalliGalli({
       if (pendingPreloads.has(index)) return pendingPreloads.get(index);
       // Concurrent callers share this in-flight request instead of rotating the
       // key twice and leaving an old ciphertext beside a newer reveal key.
-      const request = getHalliGalliCard(gameId, index)
+      const request = getFruitBuzzCard(gameId, index)
         .then((result) => {
           if (active) ciphertext.set(index, { ...result, imageId });
         })
@@ -340,22 +340,22 @@ export function HalliGalli({
       if (!active) return;
       let response;
       try {
-        response = await revealHalliGalliRound(gameId, index);
+        response = await revealFruitBuzzRound(gameId, index);
       } catch (requestError) {
         // Reveal retries return the original key and deadline. Recover a lost
         // reply only while status still points at this same current round.
-        const status = await getHalliGalliStatus(gameId);
+        const status = await getFruitBuzzStatus(gameId);
         if (status.current_round !== index || status.game_status !== "playing")
           throw requestError;
-        response = await revealHalliGalliRound(gameId, index);
+        response = await revealFruitBuzzRound(gameId, index);
       }
       // The server starts its clock on reveal. Start the next-card bar only
       // after decryption, when the card can actually be shown.
       const card = ciphertext.get(index);
       if (!card || !matchingCard(card, response)) {
-        throw new AuthChallengeError("HALLI_CARD_LOAD_FAILED");
+        throw new AuthChallengeError("FRUIT_BUZZ_CARD_LOAD_FAILED");
       }
-      const url = await decryptHalliGalliCard(card, response.encryption_key);
+      const url = await decryptFruitBuzzCard(card, response.encryption_key);
       if (!active) {
         URL.revokeObjectURL(url);
         return;
@@ -415,22 +415,22 @@ export function HalliGalli({
         setProgress(100);
       }
       setPhase(buzz ? "settling" : "advancing");
-      let result: HalliGalliRoundResponse;
+      let result: FruitBuzzRoundResponse;
       try {
         try {
           result = buzz
-            ? await buzzHalliGalliRound(
+            ? await buzzFruitBuzzRound(
                 gameId,
                 index,
                 buzz.imageId,
                 buzz.x,
                 buzz.y,
               )
-            : await nextHalliGalliRound(gameId, index);
+            : await nextFruitBuzzRound(gameId, index);
         } catch (requestError) {
           // The request may have committed even if its response was lost. Read
           // status before considering another action for the same round.
-          const status = await getHalliGalliStatus(gameId);
+          const status = await getFruitBuzzStatus(gameId);
           if (
             status.current_round === index &&
             !buzz &&
@@ -457,7 +457,7 @@ export function HalliGalli({
         setWinningCardIds(result.winning_card_ids);
         setClickedCardId(buzz?.imageId ?? null);
         setGameEnded(result.game_status !== "playing");
-        const scored = result.round_result !== "no_halli_galli";
+        const scored = result.round_result !== "no_fruit_buzz";
         const feedbackDue = performance.now() + ROUND_FEEDBACK_MS;
         if (scored) {
           // Keep the settled cards in place while their answer is highlighted.
@@ -478,12 +478,12 @@ export function HalliGalli({
           }, ROUND_FEEDBACK_MS);
         }
         if (result.game_status === "player_won") {
-          if (result.halli_galli_token) {
+          if (result.fruit_buzz_token) {
             if (scored) await waitUntil(feedbackDue);
             if (!active) return;
-            setWinToken(result.halli_galli_token);
+            setWinToken(result.fruit_buzz_token);
             setPhase("won");
-          } else throw new AuthChallengeError("HALLI_WIN_UNAVAILABLE");
+          } else throw new AuthChallengeError("FRUIT_BUZZ_WIN_UNAVAILABLE");
           return;
         }
         if (result.game_status === "player_lost") {
@@ -493,7 +493,7 @@ export function HalliGalli({
           return;
         }
         const next = result.next_card;
-        if (!next) throw new AuthChallengeError("HALLI_GAME_INCOMPLETE");
+        if (!next) throw new AuthChallengeError("FRUIT_BUZZ_GAME_INCOMPLETE");
         // Status recovery names the far end too, so both paths refill once.
         const future = result.preloaded_card ? [result.preloaded_card] : [];
         if (scored) {
@@ -559,8 +559,8 @@ export function HalliGalli({
       // while calibration and game creation fetch the new rules.
       setGame(null);
       try {
-        if (tokenExpired(wordleToken)) {
-          fail(new AuthChallengeError("WORDLE_TOKEN_EXPIRED"));
+        if (tokenExpired(wordGuessToken)) {
+          fail(new AuthChallengeError("WORD_GUESS_TOKEN_EXPIRED"));
           return;
         }
         setPhase("loading");
@@ -575,15 +575,15 @@ export function HalliGalli({
         setPauseAfterRound(false);
         setGameEnded(false);
         setWinToken(null);
-        const calibrationId = await calibrateHalliGalli(
-          wordleToken,
+        const calibrationId = await calibrateFruitBuzz(
+          wordGuessToken,
           controller.signal,
         );
         if (!active) return;
         setLoadingStage("preparing");
-        gameData = await getHalliGalliGame(wordleToken, calibrationId);
+        gameData = await getFruitBuzzGame(wordGuessToken, calibrationId);
         if (!active) return;
-        gameId = gameData.halli_galli_id;
+        gameId = gameData.fruit_buzz_id;
         setGame(gameData);
         setPlayerLives(gameData.player_lives);
         setBotLives(gameData.bot_lives);
@@ -595,7 +595,7 @@ export function HalliGalli({
         const first = gameData.initial_cards.find(
           (card) => card.round_index === gameData.current_round,
         );
-        if (!first) throw new AuthChallengeError("HALLI_GAME_INCOMPLETE");
+        if (!first) throw new AuthChallengeError("FRUIT_BUZZ_GAME_INCOMPLETE");
         // Hold the first reveal until the player has read this game's rules.
         // The server's reaction clock starts only when reveal is requested.
         let started = false;
@@ -618,7 +618,7 @@ export function HalliGalli({
       clearTimer();
       urls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [attempt, wordleToken]);
+  }, [attempt, wordGuessToken]);
 
   function handleCardClick(
     event: MouseEvent<HTMLButtonElement>,
@@ -645,7 +645,7 @@ export function HalliGalli({
     phase === "won" || (phase === "animating" && feedback === "correct_buzz")
       ? "good"
       : phase === "lost" ||
-          (phase === "animating" && feedback && feedback !== "no_halli_galli")
+          (phase === "animating" && feedback && feedback !== "no_fruit_buzz")
         ? "bad"
         : "neutral";
   const showingResultCards =
@@ -670,7 +670,7 @@ export function HalliGalli({
       : null;
   const lateBuzzIcon =
     feedback === "late_buzz" ? (
-      <Gauge className="halli-late-icon" size={38} aria-hidden="true" />
+      <Gauge className="buzz-late-icon" size={38} aria-hidden="true" />
     ) : null;
   const ruleText = (
     <>
@@ -684,7 +684,7 @@ export function HalliGalli({
         Count only the <strong>actual fruit emojis</strong>. Ignore colored
         blobs, noise, and all other distractions.
       </p>
-      <p className="halli-click-rule">
+      <p className="buzz-click-rule">
         Click the <strong>{rules.winning_card_age}</strong> card of the{" "}
         <strong>winning fruit</strong>.{" "}
         {rules.require_target_fruit ? (
@@ -708,31 +708,31 @@ export function HalliGalli({
   );
 
   const loadingIndicator = (
-    <div className={`halli-loading is-${loadingStage}`} role="status">
-      <div className={`halli-loading-visual is-${loadingStage}`}>
+    <div className={`buzz-loading is-${loadingStage}`} role="status">
+      <div className={`buzz-loading-visual is-${loadingStage}`}>
         {loadingStage === "calibrating" && (
-          <div className="halli-loading-fruits" aria-hidden="true">
+          <div className="buzz-loading-fruits" aria-hidden="true">
             <Cherry size={30} />
             <Citrus size={30} />
             <Grape size={30} />
           </div>
         )}
-        <span className="halli-loading-core">
+        <span className="buzz-loading-core">
           <CircularProgress
-            className="halli-loading-spinner"
+            className="buzz-loading-spinner"
             size={40}
-            aria-label="Loading Halli Galli"
+            aria-label="Loading Fruit Buzz"
           />
         </span>
       </div>
-      <div className="halli-loading-copy">
+      <div className="buzz-loading-copy">
         <strong>
           {loadingStage === "calibrating"
             ? "Checking connectivity…"
             : "Preparing cards…"}
         </strong>
       </div>
-      <div className="halli-loading-dots" aria-hidden="true">
+      <div className="buzz-loading-dots" aria-hidden="true">
         <span />
         <span />
         <span />
@@ -742,26 +742,26 @@ export function HalliGalli({
 
   return (
     <div
-      className={`halli-galli auth-step phase-${phase}`}
+      className={`fruit-buzz auth-step phase-${phase}`}
       aria-busy={phase === "loading"}
     >
       <h3 className="auth-stage-heading">
-        Play Halli Galli to prove your reaction speed
+        Play Fruit Buzz to prove your reaction speed
       </h3>
       <div
-        className={`halli-desktop-rules${showDesktopRules ? " is-visible" : ""}`}
+        className={`buzz-desktop-rules${showDesktopRules ? " is-visible" : ""}`}
         aria-hidden={!game || !showDesktopRules}
       >
         <div
-          className={`halli-rules${!game ? " is-loading" : ""}`}
+          className={`buzz-rules${!game ? " is-loading" : ""}`}
           ref={desktopRulesRef}
         >
           {game ? (
             ruleText
           ) : (
             <>
-              <div className="halli-rules-measure">{ruleText}</div>
-              <div className="halli-rules-blocks">
+              <div className="buzz-rules-measure">{ruleText}</div>
+              <div className="buzz-rules-blocks">
                 <span className="auth-skeleton" />
                 <span className="auth-skeleton is-highlighted" />
                 <span className="auth-skeleton" />
@@ -773,29 +773,29 @@ export function HalliGalli({
       {!game && (
         <>
           {!showDesktopRules && (
-            <div className="halli-rules-placeholder" aria-hidden="true">
+            <div className="buzz-rules-placeholder" aria-hidden="true">
               <span className="auth-skeleton" />
               <span className="auth-skeleton" />
             </div>
           )}
-          <div className="halli-lives" aria-hidden="true">
+          <div className="buzz-lives" aria-hidden="true">
             <div>
-              <span className="halli-life-label">
+              <span className="buzz-life-label">
                 <UserRound size={21} /> You
               </span>
-              <span className="auth-skeleton halli-lives-placeholder" />
+              <span className="auth-skeleton buzz-lives-placeholder" />
             </div>
             <div>
-              <span className="auth-skeleton halli-lives-placeholder" />
-              <span className="halli-life-label">
+              <span className="auth-skeleton buzz-lives-placeholder" />
+              <span className="buzz-life-label">
                 Bot <Bot size={21} />
               </span>
             </div>
           </div>
-          <div className="halli-timer-row" aria-hidden="true">
-            <div className="halli-pause-slot" />
+          <div className="buzz-timer-row" aria-hidden="true">
+            <div className="buzz-pause-slot" />
           </div>
-          <div className="halli-pile halli-placeholder-pile" ref={pileRef}>
+          <div className="buzz-pile buzz-placeholder-pile" ref={pileRef}>
             {phase === "loading" && loadingIndicator}
           </div>
         </>
@@ -803,7 +803,7 @@ export function HalliGalli({
       {game && (
         <>
           {!showDesktopRules && (
-            <details className="halli-mobile-rules">
+            <details className="buzz-mobile-rules">
               <summary>
                 <span>
                   Rules: Buzz at {game.rules.winning_fruit_count} ·{" "}
@@ -813,17 +813,17 @@ export function HalliGalli({
                     : "anywhere"}
                 </span>
                 <ChevronUp
-                  className="halli-rules-toggle"
+                  className="buzz-rules-toggle"
                   size={18}
                   aria-hidden="true"
                 />
               </summary>
-              <div className="halli-rules">{ruleText}</div>
+              <div className="buzz-rules">{ruleText}</div>
             </details>
           )}
-          <div className="halli-lives" aria-label="Remaining lives">
+          <div className="buzz-lives" aria-label="Remaining lives">
             <div>
-              <span className="halli-life-label">
+              <span className="buzz-life-label">
                 <UserRound size={21} aria-hidden="true" /> <span>You</span>
               </span>
               <span aria-label={`${playerLives} lives left`}>
@@ -848,31 +848,31 @@ export function HalliGalli({
                   />
                 ))}
               </span>
-              <span className="halli-life-label">
+              <span className="buzz-life-label">
                 <span>Bot</span> <Bot size={21} aria-hidden="true" />
               </span>
             </div>
           </div>
-          <div className="halli-timer-row">
+          <div className="buzz-timer-row">
             <span
-              className={`halli-timer-label ${timerIdle ? "is-idle" : ""}`}
+              className={`buzz-timer-label ${timerIdle ? "is-idle" : ""}`}
               aria-hidden={timerIdle}
             >
               Next card
             </span>
             <progress
-              className={`halli-progress ${timerIdle ? "is-idle" : ""}`}
+              className={`buzz-progress ${timerIdle ? "is-idle" : ""}`}
               aria-label="Next card interval"
               value={Math.round(progress)}
               max={100}
             />
-            <div className="halli-pause-slot">
+            <div className="buzz-pause-slot">
               {(phase === "playing" ||
                 phase === "settling" ||
                 phase === "advancing" ||
                 (phase === "animating" && !gameEnded)) && (
                 <Button
-                  className="halli-pause-button"
+                  className="buzz-pause-button"
                   variant={pauseAfterRound ? "contained" : "outlined"}
                   aria-label={pauseLabel}
                   title={pauseLabel}
@@ -892,7 +892,7 @@ export function HalliGalli({
             </div>
           </div>
           <div
-            className="halli-pile"
+            className="buzz-pile"
             ref={pileRef}
             style={
               {
@@ -906,14 +906,14 @@ export function HalliGalli({
             {phase === "loading" && loadingIndicator}
             {phase === "animating" && (
               <div
-                className={`halli-result-message ${messageTone} ${feedback === "correct_buzz" ? "is-correct" : ""} ${feedback === "missed_halli_galli" ? "is-missed" : ""}`}
+                className={`buzz-result-message ${messageTone} ${feedback === "correct_buzz" ? "is-correct" : ""} ${feedback === "missed_fruit_buzz" ? "is-missed" : ""}`}
                 role="status"
               >
                 {(feedback === "correct_buzz" ||
-                  feedback === "missed_halli_galli") && (
-                  <span className="halli-result-impact" aria-hidden="true">
-                    <span className="halli-impact-ring" />
-                    <span className="halli-impact-rays" />
+                  feedback === "missed_fruit_buzz") && (
+                  <span className="buzz-result-impact" aria-hidden="true">
+                    <span className="buzz-impact-ring" />
+                    <span className="buzz-impact-rays" />
                     {feedback === "correct_buzz" ? (
                       <Zap size={24} fill="currentColor" />
                     ) : (
@@ -931,11 +931,11 @@ export function HalliGalli({
                 type="button"
                 key={card.roundIndex}
                 className={[
-                  "halli-card",
+                  "buzz-card",
                   showingResultCards && winningCardIds.includes(card.imageId)
                     ? feedback === "correct_buzz"
                       ? "is-winning player-win"
-                      : feedback === "missed_halli_galli"
+                      : feedback === "missed_fruit_buzz"
                         ? "is-winning bot-win bot-steal"
                         : "is-winning bot-win"
                     : "",
@@ -962,7 +962,7 @@ export function HalliGalli({
               phase === "settling" ||
               phase === "advancing") && (
               <div
-                className="halli-checking-status"
+                className="buzz-checking-status"
                 role="status"
                 aria-label={
                   phase === "settling"
@@ -972,7 +972,7 @@ export function HalliGalli({
               >
                 <CircularProgress
                   size={22}
-                  className="halli-spinner"
+                  className="buzz-spinner"
                   aria-hidden="true"
                 />
               </div>
@@ -982,7 +982,7 @@ export function HalliGalli({
               phase === "won" ||
               phase === "lost") && (
               <div
-                className={`halli-center-message phase-${phase} ${messageTone}${phase === "won" || phase === "lost" ? ` auth-outcome-panel ${phase === "won" ? "is-success" : "is-retry"}` : ""}`}
+                className={`buzz-center-message phase-${phase} ${messageTone}${phase === "won" || phase === "lost" ? ` auth-outcome-panel ${phase === "won" ? "is-success" : "is-retry"}` : ""}`}
                 role="status"
               >
                 {phase === "ready" && (
@@ -1047,7 +1047,7 @@ export function HalliGalli({
       )}
       {phase === "error" && (
         <div
-          className="halli-finale bad is-error-overlay auth-outcome-panel is-retry"
+          className="buzz-finale bad is-error-overlay auth-outcome-panel is-retry"
           role="alert"
         >
           <h4>Try again</h4>
@@ -1057,12 +1057,12 @@ export function HalliGalli({
             disabled={cooldown.remainingSeconds > 0}
             onClick={() => {
               if (error?.recovery === "restart") {
-                callbacksRef.current.onWordleExpired();
-              } else if (tokenExpired(wordleToken)) {
+                callbacksRef.current.onWordGuessExpired();
+              } else if (tokenExpired(wordGuessToken)) {
                 setError(
                   getAuthErrorFeedback(
-                    new AuthChallengeError("WORDLE_TOKEN_EXPIRED"),
-                    "halli_galli",
+                    new AuthChallengeError("WORD_GUESS_TOKEN_EXPIRED"),
+                    "fruit_buzz",
                   ),
                 );
               } else {

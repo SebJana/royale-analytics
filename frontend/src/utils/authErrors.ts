@@ -3,15 +3,15 @@ import axios from "axios";
 export type AuthErrorContext =
   | "captcha_load"
   | "captcha"
-  | "wordle_load"
-  | "wordle_guess"
-  | "halli_galli"
+  | "word_guess_load"
+  | "word_guess_submit"
+  | "fruit_buzz"
   | "security"
   | "finish";
 
 export type AuthErrorFeedback = {
   message: string;
-  recovery?: "restart" | "wordle";
+  recovery?: "restart" | "word_guess";
   retryAt?: number;
 };
 
@@ -25,9 +25,9 @@ export class AuthChallengeError extends Error {
   }
 }
 
-// TODO [BUG] wrong message, if for example, halli galli token expires upon trying to submit security
+// TODO [BUG] wrong message, if for example, Fruit Buzz token expires upon trying to submit security
 // question answers, then it should say "took to long to answer questions/prove knowledge" and not
-// "Halli Galli took too long. Restart verification."
+// "Fruit Buzz took too long. Restart verification."
 
 const messages: Record<string, AuthErrorFeedback> = {
   CAPTCHA_INCORRECT: {
@@ -42,34 +42,34 @@ const messages: Record<string, AuthErrorFeedback> = {
     recovery: "restart",
   },
   CAPTCHA_TOKEN_USED_UP: {
-    message: "This CAPTCHA can't start another Wordle. Restart verification.",
+    message: "This CAPTCHA can't start another Word Guess. Restart verification.",
     recovery: "restart",
   },
-  WORDLE_EXPIRED: {
-    message: "Wordle took too long. Restart Wordle.",
-    recovery: "wordle",
+  WORD_GUESS_EXPIRED: {
+    message: "Word Guess took too long. Restart Word Guess.",
+    recovery: "word_guess",
   },
-  WORDLE_GUESSES_EXHAUSTED: {
-    message: "You've used all your guesses. Start a new Wordle.",
-    recovery: "wordle",
+  WORD_GUESS_ATTEMPTS_EXHAUSTED: {
+    message: "You've used all your guesses. Start a new Word Guess.",
+    recovery: "word_guess",
   },
-  WORDLE_INVALID_GUESS: {
+  WORD_GUESS_INVALID_WORD: {
     message: "That word isn't in the word list. Try another five-letter word.",
   },
-  WORDLE_TOKEN_EXPIRED: {
-    message: "Halli Galli took too long. Restart verification from CAPTCHA.",
+  WORD_GUESS_TOKEN_EXPIRED: {
+    message: "Fruit Buzz took too long. Restart verification from CAPTCHA.",
     recovery: "restart",
   },
-  WORDLE_TOKEN_USED_UP: {
+  WORD_GUESS_TOKEN_USED_UP: {
     message:
-      "This Wordle can't start another Halli Galli game. Restart verification.",
+      "This Word Guess can't start another Fruit Buzz game. Restart verification.",
     recovery: "restart",
   },
-  HALLI_GALLI_TOKEN_EXPIRED: {
-    message: "Halli Galli took too long. Restart verification.",
+  FRUIT_BUZZ_TOKEN_EXPIRED: {
+    message: "Fruit Buzz took too long. Restart verification.",
     recovery: "restart",
   },
-  HALLI_GALLI_TOKEN_USED_UP: {
+  FRUIT_BUZZ_TOKEN_USED_UP: {
     message: "No answer attempts left. Restart verification.",
     recovery: "restart",
   },
@@ -100,17 +100,17 @@ const messages: Record<string, AuthErrorFeedback> = {
   CALIBRATION_INVALID: {
     message: "The connection check didn't complete correctly. Try again.",
   },
-  HALLI_CARD_LOAD_FAILED: {
+  FRUIT_BUZZ_CARD_LOAD_FAILED: {
     message:
-      "A game card couldn't load correctly. Start a new Halli Galli game.",
+      "A game card couldn't load correctly. Start a new Fruit Buzz game.",
   },
-  HALLI_GAME_INCOMPLETE: {
+  FRUIT_BUZZ_GAME_INCOMPLETE: {
     message:
-      "The server couldn't prepare the next game card. Start a new Halli Galli game.",
+      "The server couldn't prepare the next game card. Start a new Fruit Buzz game.",
   },
-  HALLI_WIN_UNAVAILABLE: {
+  FRUIT_BUZZ_WIN_UNAVAILABLE: {
     message:
-      "Your win couldn't be verified. Please try a new Halli Galli game.",
+      "Your win couldn't be verified. Please try a new Fruit Buzz game.",
   },
   // NOTE: Matches MediaPoolEmpty in backend/app/src/helpers/media_pool: the
   // server's CAPTCHA or card stock is empty until the media worker refills it.
@@ -122,9 +122,9 @@ const messages: Record<string, AuthErrorFeedback> = {
 const fallbackMessages: Record<AuthErrorContext, string> = {
   captcha_load: "Couldn't load the CAPTCHA. Try loading it again.",
   captcha: "Couldn't verify the CAPTCHA. Please try again.",
-  wordle_load: "Couldn't load Wordle. Try loading it again.",
-  wordle_guess: "Couldn't submit your guess. Please try again.",
-  halli_galli: "Halli Galli couldn't continue. Start a new game.",
+  word_guess_load: "Couldn't load Word Guess. Try loading it again.",
+  word_guess_submit: "Couldn't submit your guess. Please try again.",
+  fruit_buzz: "Fruit Buzz couldn't continue. Start a new game.",
   security: "Couldn't check your answers. Please try again.",
   finish:
     "Your answers were accepted, but verification couldn't finish. Please try again.",
@@ -175,14 +175,14 @@ export function getAuthErrorFeedback(
       retryAt: retryDeadline(headers?.["retry-after"]),
     };
   }
-  // A used-up Wordle is also HTTP 429, but it needs a new game, not a cooldown.
+  // A used-up Word Guess is also HTTP 429, but it needs a new game, not a cooldown.
   if (typeof code === "string" && messages[code]) return messages[code];
   if (status === 429) {
     if (
       typeof detail === "string" &&
       detail.startsWith("Maximum amount of guesses reached")
     ) {
-      return messages.WORDLE_GUESSES_EXHAUSTED;
+      return messages.WORD_GUESS_ATTEMPTS_EXHAUSTED;
     }
     const attempts =
       context === "security" ? "Too many attempts" : "Too many requests";
@@ -204,13 +204,13 @@ export function getAuthErrorFeedback(
     if (context === "security") {
       return typeof detail === "string" && detail.includes("incorrect answers")
         ? messages.SECURITY_ANSWERS_INCORRECT
-        : messages.HALLI_GALLI_TOKEN_EXPIRED;
+        : messages.FRUIT_BUZZ_TOKEN_EXPIRED;
     }
-    if (context === "halli_galli") {
+    if (context === "fruit_buzz") {
       return typeof detail === "string" &&
         detail.toLowerCase().includes("calibration")
         ? messages.CALIBRATION_INVALID
-        : messages.WORDLE_TOKEN_EXPIRED;
+        : messages.WORD_GUESS_TOKEN_EXPIRED;
     }
     if (context === "finish") return messages.SECURITY_TOKEN_EXPIRED;
     return messages.CAPTCHA_TOKEN_EXPIRED;
@@ -218,13 +218,13 @@ export function getAuthErrorFeedback(
   if (status === 404) {
     if (context === "captcha" || context === "captcha_load")
       return messages.CAPTCHA_EXPIRED;
-    if (context === "wordle_guess") return messages.WORDLE_EXPIRED;
-    if (context === "halli_galli")
-      return { message: "Halli Galli took too long. Restart Halli Galli." };
+    if (context === "word_guess_submit") return messages.WORD_GUESS_EXPIRED;
+    if (context === "fruit_buzz")
+      return { message: "Fruit Buzz took too long. Restart Fruit Buzz." };
   }
   if (status === 422) {
-    if (context === "wordle_guess" && typeof detail === "string")
-      return messages.WORDLE_INVALID_GUESS;
+    if (context === "word_guess_submit" && typeof detail === "string")
+      return messages.WORD_GUESS_INVALID_WORD;
     return {
       message:
         context === "security"
@@ -232,9 +232,9 @@ export function getAuthErrorFeedback(
           : "The challenge request wasn't accepted. Check your entry and try again.",
     };
   }
-  if (status === 409 && context === "halli_galli") {
+  if (status === 409 && context === "fruit_buzz") {
     return {
-      message: "The game got out of sync. Start a new Halli Galli game.",
+      message: "The game got out of sync. Start a new Fruit Buzz game.",
     };
   }
   return { message: fallbackMessages[context] };

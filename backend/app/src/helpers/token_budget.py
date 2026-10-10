@@ -4,7 +4,7 @@ A JWT alone stays valid until it expires, so one solved step could open any
 number of next steps. Every token therefore gets a record in the auth-state
 Redis when it is minted. Three rules keep one solved step from multiplying:
 
-- One live session: opening a session (a Wordle, a Halli Galli game) closes
+- One live session: opening a session (a Word Guess, a Fruit Buzz game) closes
   the one the token opened before (if there are any), so two never run side by side.
 - One output token: the step's success spends the token. Its result, and the
   token it minted, are kept so a client that lost the response gets the same
@@ -41,13 +41,13 @@ TOKEN_BUDGETS: dict[str, tuple[int, int]] = {
         settings.CAPTCHA_TOKEN_EXPIRES_IN,
         settings.CAPTCHA_TOKEN_BUDGET,
     ),
-    AvailableTokenTypes.WORDLE: (
-        settings.WORDLE_TOKEN_EXPIRES_IN,
-        settings.WORDLE_TOKEN_BUDGET,
+    AvailableTokenTypes.WORD_GUESS: (
+        settings.WORD_GUESS_TOKEN_EXPIRES_IN,
+        settings.WORD_GUESS_TOKEN_BUDGET,
     ),
-    AvailableTokenTypes.HALLI_GALLI: (
-        settings.HALLI_GALLI_TOKEN_EXPIRES_IN,
-        settings.HALLI_GALLI_TOKEN_BUDGET,
+    AvailableTokenTypes.FRUIT_BUZZ: (
+        settings.FRUIT_BUZZ_TOKEN_EXPIRES_IN,
+        settings.FRUIT_BUZZ_TOKEN_BUDGET,
     ),
     AvailableTokenTypes.SECURITY: (
         settings.SECURITY_TOKEN_EXPIRES_IN,

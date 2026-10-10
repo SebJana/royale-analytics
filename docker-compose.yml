@@ -129,7 +129,7 @@ services:
     networks:
       - cr-analytics
 
-  # Pre-rendered Halli Galli cards and CAPTCHAs, written only by media-worker.
+  # Pre-rendered Fruit Buzz cards and CAPTCHAs, written only by media-worker.
   # Reconstructible, so nothing is persisted. noeviction: an evicted card
   # could break a running game; the pool sizes and render caps bound memory
   # instead: 500 pooled cards plus at most ~300 in their grace, 200 ready
@@ -149,7 +149,7 @@ services:
     networks:
       - cr-analytics
 
-  # Renders Halli Galli cards and CAPTCHAs ahead of demand, so no API request
+  # Renders Fruit Buzz cards and CAPTCHAs ahead of demand, so no API request
   # ever draws an image (see backend/app/src/media_worker.py). One instance:
   # it is the pools' only writer. Same image as the API, other entrypoint.
   media-worker:

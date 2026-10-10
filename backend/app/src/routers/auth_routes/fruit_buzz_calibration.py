@@ -1,4 +1,4 @@
-"""WebSocket protocol for server-verified Halli Galli latency calibration."""
+"""WebSocket protocol for server-verified Fruit Buzz latency calibration."""
 
 import asyncio
 import ipaddress
@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from core.settings import settings
-from helpers.halli_galli_calibration import (
+from helpers.fruit_buzz_calibration import (
     CalibrationError,
     calculate_calibration_rtt_ms,
 )
@@ -31,7 +31,7 @@ def _is_allowed_calibration_origin(websocket: WebSocket) -> bool:
         bool: Whether its Origin header is allowed for this game.
     """
     origin = websocket.headers.get("origin")
-    if origin in settings.HALLI_GALLI_WS_ALLOWED_ORIGINS:
+    if origin in settings.FRUIT_BUZZ_WS_ALLOWED_ORIGINS:
         return True
     if not origin:
         return False
@@ -103,7 +103,7 @@ async def _fail_calibration(websocket: WebSocket, reason: str) -> None:
 
 
 async def _authenticate_calibration(websocket: WebSocket) -> dict | None:
-    """Read the Wordle token from the first frame and check that it can play.
+    """Read the Word Guess token from the first frame and check that it can play.
 
     Args:
         websocket (WebSocket): Accepted connection whose first frame is awaited.
@@ -116,7 +116,7 @@ async def _authenticate_calibration(websocket: WebSocket) -> dict | None:
     try:
         authentication = await asyncio.wait_for(
             websocket.receive_json(),
-            timeout=settings.HALLI_GALLI_CALIBRATION_PROBE_TIMEOUT_SECONDS,
+            timeout=settings.FRUIT_BUZZ_CALIBRATION_PROBE_TIMEOUT_SECONDS,
         )
     except WebSocketDisconnect:
         return None
@@ -131,35 +131,35 @@ async def _authenticate_calibration(websocket: WebSocket) -> dict | None:
         await _fail_calibration(websocket, "authentication_required")
         return None
 
-    wordle_token = authentication.get("wordle_token")
+    word_guess_token = authentication.get("word_guess_token")
     claims = (
-        get_access_token_claims(wordle_token, AvailableTokenTypes.WORDLE)
-        if isinstance(wordle_token, str)
+        get_access_token_claims(word_guess_token, AvailableTokenTypes.WORD_GUESS)
+        if isinstance(word_guess_token, str)
         else None
     )
     if claims is None:
-        await _fail_calibration(websocket, "invalid_wordle_token")
+        await _fail_calibration(websocket, "invalid_word_guess_token")
         return None
     # A won or used-up token could not start the game, so its probes would be
     # wasted. Game start still charges atomically; this only skips the work.
     if not await token_has_budget(websocket.app.state.auth_state_redis, claims):
-        await _fail_calibration(websocket, "wordle_token_used_up")
+        await _fail_calibration(websocket, "word_guess_token_used_up")
         return None
     return claims
 
 
-@router.websocket("/halli-galli/calibration")
-async def calibrate_halli_galli_latency(websocket: WebSocket):
+@router.websocket("/fruit-buzz/calibration")
+async def calibrate_fruit_buzz_latency(websocket: WebSocket):
     """Measure browser round-trip time with server-timed, nonce-bound probes.
 
     Args:
-        websocket (WebSocket): Browser connection carrying the Wordle token.
+        websocket (WebSocket): Browser connection carrying the Word Guess token.
 
     Returns:
         None: Sends a short-lived calibration ID or a failure frame, then closes.
     """
 
-    # The browser sends its Wordle token in the first frame because browser
+    # The browser sends its Word Guess token in the first frame because browser
     # WebSocket APIs cannot attach the normal Authorization header.
     if not _is_allowed_calibration_origin(websocket):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -171,11 +171,11 @@ async def calibrate_halli_galli_latency(websocket: WebSocket):
         return
 
     # Do not send any probes until the token has been checked. Their timings
-    # belong to this one connection and this exact Wordle token's JTI.
+    # belong to this one connection and this exact Word Guess token's JTI.
     await websocket.send_json({"type": "authenticated"})
     rtts_ms: list[float] = []
 
-    for sequence in range(settings.HALLI_GALLI_CALIBRATION_PROBE_COUNT):
+    for sequence in range(settings.FRUIT_BUZZ_CALIBRATION_PROBE_COUNT):
         # Start timing on the server before sending. The browser only echoes
         # the probe; it never supplies a claimed RTT or timestamp.
         nonce = secrets.token_urlsafe(24)
@@ -187,7 +187,7 @@ async def calibrate_halli_galli_latency(websocket: WebSocket):
         try:
             pong = await asyncio.wait_for(
                 websocket.receive_json(),
-                timeout=settings.HALLI_GALLI_CALIBRATION_PROBE_TIMEOUT_SECONDS,
+                timeout=settings.FRUIT_BUZZ_CALIBRATION_PROBE_TIMEOUT_SECONDS,
             )
         except TimeoutError:
             # A missed probe is tolerated only while enough later replies pass
@@ -208,22 +208,20 @@ async def calibrate_halli_galli_latency(websocket: WebSocket):
         await _fail_calibration(websocket, str(error))
         return
 
-    # Store the measured RTT under a short-lived ID bound to the Wordle token.
+    # Store the measured RTT under a short-lived ID bound to the Word Guess token.
     # Game start consumes the ID so a calibration cannot create two games.
     calibration_id = str(uuid.uuid4())
-    calibration_key = build_auth_state_key("halli_galli_calibration", calibration_id)
+    calibration_key = build_auth_state_key("fruit_buzz_calibration", calibration_id)
     await set_auth_state_json(
         websocket.app.state.auth_state_redis,
         calibration_key,
         value={
-            "wordle_jti": claims["jti"],
+            "word_guess_jti": claims["jti"],
             "network_delay_rtt_ms": network_delay_rtt_ms,
         },
-        ttl=settings.HALLI_GALLI_CALIBRATION_TTL_SECONDS,
+        ttl=settings.FRUIT_BUZZ_CALIBRATION_TTL_SECONDS,
     )
-    print(
-        "Temporary Halli Galli calibration measurement: " f"{network_delay_rtt_ms} ms"
-    )
+    print("Temporary Fruit Buzz calibration measurement: " f"{network_delay_rtt_ms} ms")
     await websocket.send_json(
         {
             "type": "calibration_complete",

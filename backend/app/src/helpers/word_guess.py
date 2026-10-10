@@ -1,55 +1,52 @@
-import httpx
-from datetime import datetime
-from zoneinfo import ZoneInfo
 import random
 from pathlib import Path
 from collections import Counter
 
 
-def load_wordle_guesses():
-    """Load the list of possible Wordle guesses from the text file.
+def load_valid_guesses():
+    """Load the list of valid guesses from the text file.
 
     Returns:
-        list[str]: List of all valid Wordle guesses.
+        list[str]: List of all valid guesses.
     """
     # Path works ONLY in docker
-    file_path = Path("/app/shared_resources/wordle/valid-guesses.txt")
+    file_path = Path("/app/shared_resources/word_guess/valid-guesses.txt")
 
     with open(file_path, "r", encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip()]
 
 
-def load_wordle_solutions():
-    """Load the list of possible Wordle solutions from the text file.
+def load_solution_words():
+    """Load the list of possible Word Guess solutions from the text file.
 
     Returns:
-        list[str]: List of all possible Wordle answer words.
+        list[str]: List of all possible Word Guess answer words.
     """
     # Path works ONLY in Docker
-    file_path = Path("/app/shared_resources/wordle/possible-solutions.txt")
+    file_path = Path("/app/shared_resources/word_guess/possible-solutions.txt")
 
     with open(file_path, "r", encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip()]
 
 
 # Load all possible guesses and solutions once
-SOLUTION_WORDS = load_wordle_solutions()
-ALLOWED_GUESSES = set(load_wordle_guesses())  # Set for faster look-ups
+SOLUTION_WORDS = load_solution_words()
+ALLOWED_GUESSES = set(load_valid_guesses())  # Set for faster look-ups
 
 
-def pick_random_wordle_solution():
-    """Generate a random wordle solution.
+def pick_random_solution():
+    """Generate a random Word Guess solution.
 
     Returns:
-        str: A random wordle solution.
+        str: A random Word Guess solution.
     """
-    wordle = random.choice(SOLUTION_WORDS)
+    solution = random.choice(SOLUTION_WORDS)
 
-    return wordle
+    return solution
 
 
 def is_valid_guess(guess: str):
-    """Test if a given string is a valid guess for wordle.
+    """Test if a given string is a valid guess.
 
     Args:
         guess (str): Word that is being validated
@@ -78,10 +75,10 @@ def is_guess_solution(solution: str, guess: str):
 
 
 def evaluate_guess(solution: str, guess: str):
-    """Evaluate a Wordle guess against the solution word.
+    """Evaluate a guess against the solution word.
 
     Compares each letter in the guess against the solution word and returns
-    the result using Wordle's color-coding logic:
+    the result using green/yellow/grey style feedback:
     - "correct" (green): Letter is in the correct position
     - "in word" (yellow): Letter is in the word but wrong position
     - "wrong" (gray): Letter is not in the word at all
@@ -131,32 +128,3 @@ def evaluate_guess(solution: str, guess: str):
             result[i] = "wrong"
 
     return result
-
-
-async def get_todays_nyt_wordle(timezone: str):
-    """
-    Fetch today's Wordle game data from the New York Times API.
-
-    Makes an asynchronous HTTP GET request to the NYT Wordle API endpoint
-    to retrieve the current day's puzzle information.
-
-    Note: No error handling upon request issue is handled here.
-
-    Args:
-        timezone (str): Timezone for the definition of 'today'
-
-    Returns:
-        dict: A dictionary containing Wordle game data with the following keys:
-            - id (int): Unique puzzle identifier (e.g., 2323)
-            - solution (str): The solution word for today's puzzle (e.g., 'stare')
-            - print_date (str): Publication date in YYYY-MM-DD format (e.g., '2025-11-30')
-            - days_since_launch (int): Number of days since Wordle launched (e.g., 1625)
-            - editor (str): Name of the puzzle editor (e.g., 'Tracy Bennett')
-    """
-    today = datetime.now(ZoneInfo(timezone)).date().isoformat()
-    url = f"https://www.nytimes.com/svc/wordle/v2/{today}.json"
-
-    async with httpx.AsyncClient() as client:
-        r = await client.get(url)
-        r.raise_for_status()
-        return r.json()

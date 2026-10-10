@@ -26,7 +26,7 @@ COPY backend/scrape_schedule/ /app/scrape_schedule/
 COPY backend/redis_service/ /app/redis_service/
 COPY backend/app/src/ /app/src/
 
-# Copy shared resources for wordle
+# Copy shared resources for Word Guess
 COPY shared_resources/ /app/shared_resources/
 
 # Make the package importable

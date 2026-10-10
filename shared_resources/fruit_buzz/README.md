@@ -1,11 +1,11 @@
-# Halli Galli fruit SVGs
+# Fruit Buzz fruit SVGs
 
-This directory contains the third-party fruit illustrations used by the Halli Galli helper. The files are grouped by fruit and numbered so the application can choose among several visual variants.
+This directory contains the third-party fruit illustrations used by the Fruit Buzz helper. The files are grouped by fruit and numbered so the application can choose among several visual variants.
 
 ## Asset layout
 
 ```text
-halli_galli/
+fruit_buzz/
 ├── banana/       # banana1.svg ... banana5.svg
 ├── grapes/       # grapes1.svg ... grapes5.svg
 ├── orange/       # orange1.svg ... orange5.svg

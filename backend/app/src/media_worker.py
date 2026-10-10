@@ -1,4 +1,4 @@
-"""Keeps the media Redis stocked with pre-rendered Halli Galli cards and CAPTCHAs.
+"""Keeps the media Redis stocked with pre-rendered Fruit Buzz cards and CAPTCHAs.
 
 Runs as its own service (media-worker in docker-compose.yml), one instance,
 from the API image. It is the only producer of the media pools
@@ -122,7 +122,7 @@ def log_status(conn: redis.Redis, counts: dict[str, int]) -> None:
         counts["captchas"],
         min(sizes),
         max(sizes),
-        settings.HALLI_GALLI_CARD_VARIATIONS_PER_COMBINATION,
+        settings.FRUIT_BUZZ_CARD_VARIATIONS_PER_COMBINATION,
         delivered_cards(conn),
         captcha_stock(conn),
         settings.CAPTCHA_POOL_SIZE,

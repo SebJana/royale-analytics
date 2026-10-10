@@ -1,4 +1,4 @@
-"""Pre-rendered Halli Galli cards and CAPTCHAs in the media Redis.
+"""Pre-rendered Fruit Buzz cards and CAPTCHAs in the media Redis.
 
 Two sides share the keys below:
 - ``producer`` (media-worker only, the single writer): renders cards and
@@ -15,9 +15,9 @@ Guarantees:
   lifetime starts when a game first picks it, a CAPTCHA's image TTL when it
   is claimed. Without visitors nothing is used up, so the worker sits idle.
 - Every fruit/amount combination keeps
-  HALLI_GALLI_CARD_VARIATIONS_PER_COMBINATION cards. A card whose jittered
+  FRUIT_BUZZ_CARD_VARIATIONS_PER_COMBINATION cards. A card whose jittered
   lifetime ended stays pickable until its replacement is rendered, then both
-  swap in one step. Its image stays HALLI_GALLI_CARD_GRACE_SECONDS longer for
+  swap in one step. Its image stays FRUIT_BUZZ_CARD_GRACE_SECONDS longer for
   games that picked it just before.
 - Rendering follows traffic up to a cap. Replacements and CAPTCHAs draw from
   per-minute budgets (MEDIA_WORKER_MAX_*_PER_MINUTE). Past them, cards stay in
@@ -27,11 +27,11 @@ Guarantees:
   starts its image TTL in one atomic step.
 
 Keys (all in redis-media):
-- ``halli_galli:pool:<fruit>:<amount>``: set of template IDs games pick from.
-- ``halli_galli:template:<id>``: hash with ``image`` (PNG) and ``positions``
-  (hit-box JSON); no TTL while pooled, HALLI_GALLI_CARD_GRACE_SECONDS once
+- ``fruit_buzz:pool:<fruit>:<amount>``: set of template IDs games pick from.
+- ``fruit_buzz:template:<id>``: hash with ``image`` (PNG) and ``positions``
+  (hit-box JSON); no TTL while pooled, FRUIT_BUZZ_CARD_GRACE_SECONDS once
   replaced.
-- ``halli_galli:retire``: sorted set ``<fruit>:<amount>:<id>`` of delivered
+- ``fruit_buzz:retire``: sorted set ``<fruit>:<amount>:<id>`` of delivered
   cards by the time their lifetime ends.
 - ``captcha:pool``: list of ready CAPTCHA IDs, oldest first.
 - ``captcha:<id>``: hash with ``text`` and ``image``; no TTL while in stock,
@@ -48,7 +48,7 @@ from core.settings import settings
 # Key layout: see the module docstring. The Lua scripts in consumer.py take
 # the prefixes as arguments, so these are the only spelling of each key.
 # Delivered cards by the time their replacement is due.
-CARD_RETIRE_KEY = "halli_galli:retire"
+CARD_RETIRE_KEY = "fruit_buzz:retire"
 
 # Ready CAPTCHA IDs, oldest first.
 CAPTCHA_POOL_KEY = "captcha:pool"
@@ -57,7 +57,7 @@ CAPTCHA_POOL_KEY = "captcha:pool"
 CAPTCHA_KEY_PREFIX = "captcha:"
 
 # Prefix of the hash holding one card's image and hit boxes.
-CARD_TEMPLATE_KEY_PREFIX = "halli_galli:template:"
+CARD_TEMPLATE_KEY_PREFIX = "fruit_buzz:template:"
 
 
 class MediaPoolEmpty(Exception):
@@ -82,7 +82,7 @@ def card_pool_key(fruit: str, amount: int) -> str:
     Returns:
         str: The pool set's key.
     """
-    return f"halli_galli:pool:{fruit}:{amount}"
+    return f"fruit_buzz:pool:{fruit}:{amount}"
 
 
 def card_template_key(template_id: str) -> str:
@@ -120,8 +120,8 @@ def card_lifetime_seconds() -> float:
     Returns:
         float: The mean lifetime in seconds, jittered.
     """
-    jitter = settings.HALLI_GALLI_CARD_TTL_JITTER
-    mean = settings.HALLI_GALLI_CARD_TTL_MINUTES * 60
+    jitter = settings.FRUIT_BUZZ_CARD_TTL_JITTER
+    mean = settings.FRUIT_BUZZ_CARD_TTL_MINUTES * 60
     return mean * random.uniform(1 - jitter, 1 + jitter)
 
 

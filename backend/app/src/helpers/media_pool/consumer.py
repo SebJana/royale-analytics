@@ -10,8 +10,8 @@ import json
 import time
 
 from core.settings import settings
-from helpers.halli_galli_card import AVAILABLE_FRUITS, FRUIT_POSITIONS
-from helpers.halli_galli_rendering.models import HalliGalliCard
+from helpers.fruit_buzz_card import AVAILABLE_FRUITS, FRUIT_POSITIONS
+from helpers.fruit_buzz_rendering.models import FruitBuzzCard
 from redis_service import RedisConn
 
 from . import (
@@ -67,7 +67,7 @@ return {id, fields[1], fields[2]}
 
 async def get_card_template(
     conn: RedisConn, template_id: str, fruit: str, amount: int
-) -> HalliGalliCard | None:
+) -> FruitBuzzCard | None:
     """Load the raw PNG and hit boxes saved for one game round.
 
     Args:
@@ -77,12 +77,12 @@ async def get_card_template(
         amount (int): Fruit count of that round.
 
     Returns:
-        HalliGalliCard | None: The card, or None once its grace has ended.
+        FruitBuzzCard | None: The card, or None once its grace has ended.
     """
     fields = await conn.client.hgetall(card_template_key(template_id))
     if b"image" not in fields or b"positions" not in fields:
         return None
-    return HalliGalliCard(
+    return FruitBuzzCard(
         image=fields[b"image"],
         fruit=fruit,
         amount=amount,
@@ -92,7 +92,7 @@ async def get_card_template(
 
 async def pick_pool_card(
     conn: RedisConn, fruit: str, amount: int
-) -> tuple[str, HalliGalliCard]:
+) -> tuple[str, FruitBuzzCard]:
     """Pick a random ready card of one fruit/amount combination.
 
     The first pick of a card starts its lifetime, see PICK_CARD_SCRIPT.
@@ -103,14 +103,14 @@ async def pick_pool_card(
         amount (int): Fruit count selected for the round.
 
     Returns:
-        tuple[str, HalliGalliCard]: Private template ID and its card.
+        tuple[str, FruitBuzzCard]: Private template ID and its card.
 
     Raises:
         ValueError: For an unsupported combination.
         MediaPoolEmpty: If the combination has no ready card.
     """
     if fruit not in AVAILABLE_FRUITS or amount not in FRUIT_POSITIONS:
-        raise ValueError("Unsupported Halli Galli card combination.")
+        raise ValueError("Unsupported Fruit Buzz card combination.")
     # A pooled ID outlives its image only if the media Redis lost data (a
     # restart). The script drops such IDs; a few tries find a live one.
     for _ in range(3):
@@ -127,7 +127,7 @@ async def pick_pool_card(
             break
         if len(picked) == 3:
             template_id, image, positions = picked
-            return template_id.decode("ascii"), HalliGalliCard(
+            return template_id.decode("ascii"), FruitBuzzCard(
                 image=image,
                 fruit=fruit,
                 amount=amount,

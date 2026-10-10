@@ -42,10 +42,10 @@
   --shadow-light: rgba(0, 0, 0, 0.2);
   --shadow-medium: rgba(0, 0, 0, 0.3);
 
-  /* Wordle colors */
-  --wordle-correct: #538d4e;
-  --wordle-present: #b59f3b;
-  --wordle-absent: #3a3a3c;
+  /* Word Guess colors */
+  --word-guess-correct: #538d4e;
+  --word-guess-present: #b59f3b;
+  --word-guess-absent: #3a3a3c;
 
   /* === TYPOGRAPHY === */
   /* Font sizes */

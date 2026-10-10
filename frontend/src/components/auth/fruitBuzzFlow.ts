@@ -1,6 +1,6 @@
 import type {
-  HalliGalliRoundResponse,
-  HalliGalliStatusResponse,
+  FruitBuzzRoundResponse,
+  FruitBuzzStatusResponse,
 } from "../../types/auth";
 
 export type VisibleCard = { roundIndex: number; imageId: string; url: string };
@@ -10,9 +10,9 @@ export type VisibleCard = { roundIndex: number; imageId: string; url: string };
  * round was the last one committed. Older results must never score twice.
  */
 export function recoverSettledRound(
-  status: HalliGalliStatusResponse,
+  status: FruitBuzzStatusResponse,
   requestedRound: number,
-): HalliGalliRoundResponse | null {
+): FruitBuzzRoundResponse | null {
   if (
     status.current_round <= requestedRound ||
     status.last_round_index !== requestedRound ||

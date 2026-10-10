@@ -1,4 +1,4 @@
-import type { HalliGalliRevealResponse } from "../../types/auth";
+import type { FruitBuzzRevealResponse } from "../../types/auth";
 import { gcm } from "@noble/ciphers/aes.js";
 import { AuthChallengeError } from "../../utils/authErrors";
 
@@ -9,11 +9,11 @@ export type EncryptedCard = {
 };
 
 // NOTE: Match the failure reasons sent by the backend's calibration route
-// (routers/auth_routes/halli_galli_calibration.py and its CalibrationError
+// (routers/auth_routes/fruit_buzz_calibration.py and its CalibrationError
 // messages). Any other reason is shown as CALIBRATION_INVALID.
 const CALIBRATION_FAILURES: Partial<Record<string, string>> = {
-  invalid_wordle_token: "WORDLE_TOKEN_EXPIRED",
-  wordle_token_used_up: "WORDLE_TOKEN_USED_UP",
+  invalid_word_guess_token: "WORD_GUESS_TOKEN_EXPIRED",
+  word_guess_token_used_up: "WORD_GUESS_TOKEN_USED_UP",
   "connection latency is too unstable": "CALIBRATION_UNSTABLE",
   "not enough valid probe replies": "CALIBRATION_TIMEOUT",
   authentication_timeout_or_invalid: "CALIBRATION_TIMEOUT",
@@ -21,17 +21,17 @@ const CALIBRATION_FAILURES: Partial<Record<string, string>> = {
 
 /**
  * Run the server's connection test and return the short-lived ID for game start.
- * Browser WebSockets cannot set Authorization, so the Wordle token goes in the
+ * Browser WebSockets cannot set Authorization, so the Word Guess token goes in the
  * first frame. The server checks it before sending timing probes. Abort closes
  * the socket when the modal closes or a new attempt replaces this one.
  */
-export function calibrateHalliGalli(
-  wordleToken: string,
+export function calibrateFruitBuzz(
+  wordGuessToken: string,
   signal: AbortSignal,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const url = new URL(
-      "/api/auth/halli-galli/calibration",
+      "/api/auth/fruit-buzz/calibration",
       window.location.href,
     );
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -56,7 +56,7 @@ export function calibrateHalliGalli(
     }
     socket.onopen = () =>
       socket.send(
-        JSON.stringify({ type: "authenticate", wordle_token: wordleToken }),
+        JSON.stringify({ type: "authenticate", word_guess_token: wordGuessToken }),
       );
     socket.onmessage = (event) => {
       try {
@@ -100,7 +100,7 @@ export function calibrateHalliGalli(
  */
 export function matchingCard(
   card: EncryptedCard,
-  reveal: HalliGalliRevealResponse,
+  reveal: FruitBuzzRevealResponse,
 ): boolean {
   return (
     card.imageId === reveal.image_id &&
@@ -117,12 +117,12 @@ export function matchingCard(
  * without asking every test device to trust a certificate. This does not make
  * HTTP private: tokens and game requests still cross the LAN without TLS.
  */
-export async function decryptHalliGalliCard(
+export async function decryptFruitBuzzCard(
   card: EncryptedCard,
   keyBase64: string,
 ): Promise<string> {
   const bytes = new Uint8Array(await card.image.arrayBuffer());
-  if (bytes.length < 29) throw new AuthChallengeError("HALLI_CARD_LOAD_FAILED");
+  if (bytes.length < 29) throw new AuthChallengeError("FRUIT_BUZZ_CARD_LOAD_FAILED");
   const keyBytes = Uint8Array.from(atob(keyBase64), (character) =>
     character.charCodeAt(0),
   );

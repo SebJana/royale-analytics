@@ -14,8 +14,8 @@ import redis
 
 from core.settings import settings
 from helpers.generate_captcha import generate_captcha_image, generate_captcha_string
-from helpers.halli_galli_card import AVAILABLE_FRUITS, FRUIT_POSITIONS, create_card
-from helpers.halli_galli_rendering.models import HalliGalliCard
+from helpers.fruit_buzz_card import AVAILABLE_FRUITS, FRUIT_POSITIONS, create_card
+from helpers.fruit_buzz_rendering.models import FruitBuzzCard
 
 from . import (
     CAPTCHA_POOL_KEY,
@@ -105,7 +105,7 @@ def fill_card_pools(conn: redis.Redis) -> bool:
         bool: Whether a card was rendered.
     """
     (fruit, amount), size = min(card_pool_sizes(conn).items(), key=lambda item: item[1])
-    if size >= settings.HALLI_GALLI_CARD_VARIATIONS_PER_COMBINATION:
+    if size >= settings.FRUIT_BUZZ_CARD_VARIATIONS_PER_COMBINATION:
         return False
     publish_card(conn, create_card(fruit, amount))
     return True
@@ -131,7 +131,7 @@ def replace_card(conn: redis.Redis, budget: RenderBudget) -> bool:
     amount = int(amount)
     # A lowered pool size shrinks the pool as its cards come due.
     if conn.scard(card_pool_key(fruit, amount)) > (
-        settings.HALLI_GALLI_CARD_VARIATIONS_PER_COMBINATION
+        settings.FRUIT_BUZZ_CARD_VARIATIONS_PER_COMBINATION
     ):
         publish_card(conn, None, replaces=(fruit, amount, template_id))
         return True
@@ -172,7 +172,7 @@ def produce_captchas(conn: redis.Redis, budget: RenderBudget) -> int:
 
 def publish_card(
     conn: redis.Redis,
-    card: HalliGalliCard | None,
+    card: FruitBuzzCard | None,
     replaces: tuple[str, int, str] | None = None,
 ) -> None:
     """Pool a rendered card, in place of a used one if given.
@@ -183,7 +183,7 @@ def publish_card(
 
     Args:
         conn (redis.Redis): Client of the media Redis.
-        card (HalliGalliCard | None): The rendered card, None to only retire.
+        card (FruitBuzzCard | None): The rendered card, None to only retire.
         replaces (tuple[str, int, str] | None): Fruit, amount and template ID
             of the card leaving its pool.
     """
@@ -207,7 +207,7 @@ def publish_card(
             pipe.zrem(CARD_RETIRE_KEY, card_retire_member(fruit, amount, old_id))
             # Games that picked it just before still preload it.
             pipe.expire(
-                card_template_key(old_id), settings.HALLI_GALLI_CARD_GRACE_SECONDS
+                card_template_key(old_id), settings.FRUIT_BUZZ_CARD_GRACE_SECONDS
             )
         pipe.execute()
 

@@ -2,16 +2,16 @@ import { useState, useEffect, useCallback } from "react";
 import { PartyPopper } from "lucide-react";
 import { AuthActionButton } from "./authActionButton";
 import { CircularProgress } from "@mui/material";
-import { isValidGuess } from "../../utils/wordle";
+import { isValidGuess } from "../../utils/wordGuess";
 import {
   getAuthErrorFeedback,
   type AuthErrorFeedback,
 } from "../../utils/authErrors";
 import { useAuthCooldown } from "../../hooks/useAuthCooldown";
-import "./wordle.css";
+import "./wordGuess.css";
 
-// Props for Wordle game component
-interface WordleGameProps {
+// Props for Word Guess game component
+interface WordGuessGameProps {
   readonly loading?: boolean;
   readonly disabled?: boolean;
   readonly guessesAllowed: number; // Maximum number of guesses
@@ -20,14 +20,14 @@ interface WordleGameProps {
     feedback?: { evaluation: Record<number, string>; solution: string };
   }>; // Callback to validate guess and get feedback
   readonly onFailure: () => Promise<void>; // Callback to request a new challenge
-  readonly onSuccess?: () => void; // Callback when the wordle is solved
+  readonly onSuccess?: () => void; // Callback when the Word Guess is solved
 }
 
-const WORDLE_WORD_LENGTH = 5;
+const WORD_GUESS_LENGTH = 5;
 const FLIP_DURATION_MS = 800; // Individual letter flip animation duration
 const FLIP_DELAY_LETTER_MS = 400; // Stagger delay between letter flips
 
-// Keyboard layout for Wordle (always use American 'QWERTY' layout)
+// Keyboard layout for Word Guess (always use American 'QWERTY' layout)
 const KEYBOARD_ROWS = [
   ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
   ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
@@ -35,16 +35,16 @@ const KEYBOARD_ROWS = [
 ];
 
 /**
- * Wordle game component for authentication challenge
+ * Word Guess game component for authentication challenge
  */
-export function WordleGame({
+export function WordGuessGame({
   guessesAllowed,
   onGuess,
   onFailure,
   onSuccess,
   loading = false,
   disabled = false,
-}: WordleGameProps) {
+}: WordGuessGameProps) {
   const [guesses, setGuesses] = useState<string[]>([]);
   const [evaluations, setEvaluations] = useState<string[][]>([]);
   const [currentGuess, setCurrentGuess] = useState("");
@@ -76,7 +76,7 @@ export function WordleGame({
     setIsAnimationRunning(true);
 
     // Stagger each letter's flip animation
-    for (let i = 0; i < WORDLE_WORD_LENGTH; i++) {
+    for (let i = 0; i < WORD_GUESS_LENGTH; i++) {
       // Start flip - Each letter starts after previous letter's delay
       // Letter 0: 0ms, Letter 1: 400ms, Letter 2: 800ms, etc.
       setTimeout(() => {
@@ -105,7 +105,7 @@ export function WordleGame({
         setCompletedLetterIndex(-1);
         setIsAnimationRunning(false);
       },
-      WORDLE_WORD_LENGTH * FLIP_DELAY_LETTER_MS + 5000,
+      WORD_GUESS_LENGTH * FLIP_DELAY_LETTER_MS + 5000,
     );
 
     // Safety unlock - Shorter timeout to prevent stuck input if main cleanup fails
@@ -114,7 +114,7 @@ export function WordleGame({
       () => {
         setIsAnimationRunning(false);
       },
-      WORDLE_WORD_LENGTH * FLIP_DELAY_LETTER_MS + 1000,
+      WORD_GUESS_LENGTH * FLIP_DELAY_LETTER_MS + 1000,
     );
   }, []);
 
@@ -141,7 +141,7 @@ export function WordleGame({
       return;
 
     setError(null);
-    if (currentGuess.length !== WORDLE_WORD_LENGTH) {
+    if (currentGuess.length !== WORD_GUESS_LENGTH) {
       return;
     }
 
@@ -175,12 +175,12 @@ export function WordleGame({
         // Backend: {0: "correct", 1: "in word", 2: "wrong"}
         // Frontend: ["correct", "present", "absent"]
         const evaluationArray: string[] = [];
-        for (let i = 0; i < WORDLE_WORD_LENGTH; i++) {
+        for (let i = 0; i < WORD_GUESS_LENGTH; i++) {
           const backendValue = result.feedback.evaluation[i];
           let cssClass = "";
 
           // Map backend terminology to the matching CSS class names
-          // "in word" becomes "present" to align with Wordle conventions
+          // "in word" becomes "present" to align with Word Guess conventions
           switch (backendValue) {
             case "correct":
               cssClass = "correct"; // Green - letter in correct position
@@ -212,7 +212,7 @@ export function WordleGame({
         // Timeout matches the last letter's completion: (4 * 400ms) + (800ms * 0.8) = 2240ms
         setTimeout(() => {
           const newLetterStates = { ...letterStates };
-          for (let i = 0; i < WORDLE_WORD_LENGTH; i++) {
+          for (let i = 0; i < WORD_GUESS_LENGTH; i++) {
             const letter = currentGuess[i];
             const state = evaluationArray[i];
 
@@ -229,7 +229,7 @@ export function WordleGame({
             }
           }
           setLetterStates(newLetterStates);
-        }, WORDLE_WORD_LENGTH * FLIP_DELAY_LETTER_MS);
+        }, WORD_GUESS_LENGTH * FLIP_DELAY_LETTER_MS);
       }
 
       // Check win/lose conditions and schedule popup display
@@ -239,7 +239,7 @@ export function WordleGame({
         // Formula: (5 letters * 400ms stagger) + 1000ms buffer = 3000ms total
         // This ensures user sees the final letter flip and has time to process the win
         const animationDuration =
-          WORDLE_WORD_LENGTH * FLIP_DELAY_LETTER_MS + 1000;
+          WORD_GUESS_LENGTH * FLIP_DELAY_LETTER_MS + 1000;
         setTimeout(() => {
           setShowGameEndPopup(true);
         }, animationDuration);
@@ -248,7 +248,7 @@ export function WordleGame({
         // Use same timing calculation for consistency in user experience
         // Player gets to see their final guess result before failure message
         const animationDuration =
-          WORDLE_WORD_LENGTH * FLIP_DELAY_LETTER_MS + 1000;
+          WORD_GUESS_LENGTH * FLIP_DELAY_LETTER_MS + 1000;
         setTimeout(() => {
           setShowGameEndPopup(true);
         }, animationDuration);
@@ -257,7 +257,7 @@ export function WordleGame({
       setCurrentGuess("");
     } catch (error) {
       console.error("Error submitting guess:", error);
-      const feedback = getAuthErrorFeedback(error, "wordle_guess");
+      const feedback = getAuthErrorFeedback(error, "word_guess_submit");
       // The parent owns restart menus; show only errors that can be fixed on this board here.
       setError(feedback.recovery ? null : feedback);
     } finally {
@@ -289,7 +289,7 @@ export function WordleGame({
       } else if (key === "BACKSPACE") {
         setCurrentGuess((prev) => prev.slice(0, -1));
       } else if (/^[A-Z]$/.test(key)) {
-        if (currentGuess.length < WORDLE_WORD_LENGTH) {
+        if (currentGuess.length < WORD_GUESS_LENGTH) {
           setCurrentGuess((prev) => prev + key);
         }
       }
@@ -318,7 +318,7 @@ export function WordleGame({
           setCurrentGuess((prev) => prev.slice(0, -1));
         } else if (/^[a-zA-Z]$/.test(event.key)) {
           // Add letter if within word length limit
-          if (currentGuess.length < WORDLE_WORD_LENGTH) {
+          if (currentGuess.length < WORD_GUESS_LENGTH) {
             setCurrentGuess((prev) => prev + event.key.toUpperCase());
           }
         }
@@ -337,31 +337,31 @@ export function WordleGame({
   ]);
 
   return (
-    <div className="wordle-game" aria-busy={loading}>
+    <div className="word-guess-game" aria-busy={loading}>
       <h3 className="auth-stage-heading">
-        Solve the Wordle to prove your reasoning skills
+        Solve the Word Guess to prove your reasoning skills
       </h3>
       {error && (
-        <div className="auth-error-overlay wordle-error-overlay" role="alert">
+        <div className="auth-error-overlay word-guess-error-overlay" role="alert">
           {cooldown.message}
         </div>
       )}
-      <div className="wordle-grid">
+      <div className="word-guess-grid">
         {loading && (
-          <div className="wordle-loading-status" role="status">
+          <div className="word-guess-loading-status" role="status">
             <CircularProgress size={28} className="auth-loading-spinner" />
-            <span>Preparing Wordle…</span>
+            <span>Preparing Word Guess…</span>
           </div>
         )}
         {/* Render game grid with rows for each guess attempt */}
         {Array.from({ length: guessesAllowed }, (_, i) => (
           <div
             key={i}
-            className={`wordle-row ${
+            className={`word-guess-row ${
               i === guesses.length && shakeCurrentRow ? "shake" : ""
             }`}
           >
-            {Array.from({ length: WORDLE_WORD_LENGTH }, (_, j) => {
+            {Array.from({ length: WORD_GUESS_LENGTH }, (_, j) => {
               let letter = "";
               if (i < guesses.length) {
                 letter = guesses[i][j] || "";
@@ -370,7 +370,7 @@ export function WordleGame({
               }
 
               // Determine cell styling based on animation state
-              let cellClass = "wordle-cell ";
+              let cellClass = "word-guess-cell ";
 
               // Animation logic: controls flip timing and color reveal
               // Complex state machine that determines when each letter should animate and show colors
@@ -420,8 +420,8 @@ export function WordleGame({
           </div>
         ))}
       </div>
-      {/* Wordle keyboard */}
-      <div className="wordle-keyboard">
+      {/* Word Guess keyboard */}
+      <div className="word-guess-keyboard">
         {KEYBOARD_ROWS.map((row) => (
           <div key={row.join("")} className="keyboard-row">
             {row.map((key) => (
@@ -454,10 +454,10 @@ export function WordleGame({
           >
             {gameStatus === "won" ? (
               <>
-                <h2 className="wordle-solved-title">
+                <h2 className="word-guess-solved-title">
                   <PartyPopper size={26} aria-hidden="true" /> Solved!
                 </h2>
-                <div className="wordle-result-copy">
+                <div className="word-guess-result-copy">
                   <p>You've proven your puzzle-solving skills.</p>
                   <p>
                     <a
@@ -483,7 +483,7 @@ export function WordleGame({
             ) : (
               <>
                 <h2>Game Over</h2>
-                <div className="wordle-result-copy">
+                <div className="word-guess-result-copy">
                   <p>
                     The correct solution was:{" "}
                     <strong>{solution.toUpperCase()}</strong>

@@ -6,7 +6,7 @@
 }
 
 /* The game uses the available viewport; only expanded rules add scroll. */
-.auth-modal.halli-galli-modal .MuiDialog-paper {
+.auth-modal.fruit-buzz-modal .MuiDialog-paper {
   width: min(1100px, calc(100% - 16px));
   max-width: 1100px;
   height: calc(100dvh - 16px);
@@ -14,14 +14,14 @@
   margin: 8px;
 }
 
-.auth-modal.halli-galli-modal .MuiDialogContent-root {
+.auth-modal.fruit-buzz-modal .MuiDialogContent-root {
   display: flex;
   flex-direction: column;
   min-height: 0;
   padding: var(--spacing-sm);
 }
 
-.auth-modal.halli-galli-modal .halli-galli.auth-step {
+.auth-modal.fruit-buzz-modal .fruit-buzz.auth-step {
   flex: 1;
   min-height: 0;
   margin: 0;
@@ -30,39 +30,39 @@
 }
 
 /* Expanded instructions grow the whole game panel inside the scroll area. */
-.auth-modal.halli-galli-modal
-  .halli-galli.auth-step:has(.halli-mobile-rules[open]) {
+.auth-modal.fruit-buzz-modal
+  .fruit-buzz.auth-step:has(.buzz-mobile-rules[open]) {
   flex: none;
   min-height: 100%;
   height: auto;
 }
 
-.auth-modal.wordle-modal .MuiDialog-paper {
+.auth-modal.word-guess-modal .MuiDialog-paper {
   margin: var(--spacing-sm);
   max-height: calc(100dvh - 16px);
 }
-.auth-modal.wordle-modal .MuiDialogContent-root {
+.auth-modal.word-guess-modal .MuiDialogContent-root {
   padding: var(--spacing-sm);
 }
-.auth-modal.wordle-modal .MuiDialogTitle-root {
+.auth-modal.word-guess-modal .MuiDialogTitle-root {
   padding: var(--spacing-sm) var(--spacing-md);
 }
-.auth-modal.wordle-modal .auth-step {
+.auth-modal.word-guess-modal .auth-step {
   margin-top: 0;
   padding: var(--spacing-sm);
   gap: var(--spacing-sm);
 }
 
 @media (max-width: 600px), (max-height: 500px) {
-  .auth-modal.halli-galli-modal .MuiDialogContent-root {
+  .auth-modal.fruit-buzz-modal .MuiDialogContent-root {
     display: flex;
     flex-direction: column;
     padding: var(--spacing-xs);
   }
-  .auth-modal.halli-galli-modal .MuiDialogActions-root {
+  .auth-modal.fruit-buzz-modal .MuiDialogActions-root {
     padding: var(--spacing-xs);
   }
-  .auth-modal.halli-galli-modal .halli-galli.auth-step {
+  .auth-modal.fruit-buzz-modal .fruit-buzz.auth-step {
     padding: var(--spacing-xs);
     gap: var(--spacing-xs);
   }

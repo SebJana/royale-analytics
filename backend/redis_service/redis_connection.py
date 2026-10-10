@@ -262,11 +262,11 @@ def build_auth_state_key(resource: str, challenge_id: str) -> str:
     """Build a stable, namespaced key for a short-lived auth challenge.
 
     Auth keys carry no version and live in the separate, non-evicting auth
-    state Redis: cache invalidation must never invalidate a CAPTCHA or Wordle
+    state Redis: cache invalidation must never invalidate a CAPTCHA or Word Guess
     challenge that is still within its promised lifetime.
 
     Args:
-        resource (str): Fixed challenge category, such as ``captcha`` or ``wordle``.
+        resource (str): Fixed challenge category, such as ``captcha`` or ``word_guess``.
         challenge_id (str): Client-visible UUID that identifies one challenge.
 
     Returns:

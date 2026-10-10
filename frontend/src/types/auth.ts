@@ -11,11 +11,11 @@ export type CaptchaTokenResponse = {
   captcha_token: string;
 };
 
-export type WordleResponse = {
-  wordle_id: string;
+export type WordGuessResponse = {
+  word_guess_id: string;
 };
 
-export type HalliGalliPublicRules = {
+export type FruitBuzzPublicRules = {
   visible_card_count: number;
   max_preloaded_cards: number;
   winning_fruit_count: number;
@@ -24,66 +24,66 @@ export type HalliGalliPublicRules = {
   target_fruit_edge: "left" | "right" | "top" | "bottom";
 };
 
-export type HalliGalliGameResponse = {
-  halli_galli_id: string;
-  rules: HalliGalliPublicRules;
+export type FruitBuzzGameResponse = {
+  fruit_buzz_id: string;
+  rules: FruitBuzzPublicRules;
   next_card_interval_ms: number;
   initial_cards: { round_index: number; image_id: string }[];
   current_round: number;
   player_lives: number;
   bot_lives: number;
-  game_status: HalliGalliGameStatus;
-  halli_galli_token: string | null;
+  game_status: FruitBuzzGameStatus;
+  fruit_buzz_token: string | null;
 };
 
-export type HalliGalliGameStatus = "playing" | "player_won" | "player_lost";
-export type HalliGalliRoundResult =
-  "player_won" | "player_lost" | "no_halli_galli";
-export type HalliGalliRoundReason =
+export type FruitBuzzGameStatus = "playing" | "player_won" | "player_lost";
+export type FruitBuzzRoundResult =
+  "player_won" | "player_lost" | "no_fruit_buzz";
+export type FruitBuzzRoundReason =
   | "correct_buzz"
   | "late_buzz"
   | "wrong_card"
   | "wrong_fruit"
   | "false_buzz"
-  | "missed_halli_galli"
-  | "no_halli_galli";
+  | "missed_fruit_buzz"
+  | "no_fruit_buzz";
 
-export type HalliGalliStatusResponse = {
+export type FruitBuzzStatusResponse = {
   current_round: number;
   player_lives: number;
   bot_lives: number;
-  game_status: HalliGalliGameStatus;
-  halli_galli_token: string | null;
+  game_status: FruitBuzzGameStatus;
+  fruit_buzz_token: string | null;
   current_image_id: string | null;
   prepared_cards: { round_index: number; image_id: string }[];
   last_round_index: number | null;
-  last_round_result: HalliGalliRoundResult | null;
-  last_round_reason: HalliGalliRoundReason | null;
+  last_round_result: FruitBuzzRoundResult | null;
+  last_round_reason: FruitBuzzRoundReason | null;
   last_round_clear_cards: boolean | null;
   last_round_late_by_ms: number | null;
   last_round_winning_card_ids: string[];
 };
 
-export type HalliGalliRevealResponse = {
+export type FruitBuzzRevealResponse = {
   current_round: number;
   player_lives: number;
   bot_lives: number;
-  game_status: HalliGalliGameStatus;
-  halli_galli_token: string | null;
+  game_status: FruitBuzzGameStatus;
+  fruit_buzz_token: string | null;
   round_index: number;
   image_id: string;
   image_version: number;
   encryption_key: string;
 };
 
-export type HalliGalliRoundResponse = {
+export type FruitBuzzRoundResponse = {
   current_round: number;
   player_lives: number;
   bot_lives: number;
-  game_status: HalliGalliGameStatus;
-  halli_galli_token: string | null;
-  round_result: HalliGalliRoundResult;
-  round_reason: HalliGalliRoundReason;
+  game_status: FruitBuzzGameStatus;
+  fruit_buzz_token: string | null;
+  round_result: FruitBuzzRoundResult;
+  round_reason: FruitBuzzRoundReason;
   late_by_ms: number | null;
   winning_card_ids: string[];
   clear_cards: boolean;
@@ -91,9 +91,9 @@ export type HalliGalliRoundResponse = {
   preloaded_card: { round_index: number; image_id: string } | null;
 };
 
-export type WordleVerifyRequest = {
-  wordle_id: string;
-  wordle_guess: string;
+export type WordGuessVerifyRequest = {
+  word_guess_id: string;
+  guess: string;
   solution?: string;
 };
 

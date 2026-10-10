@@ -7,8 +7,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from helpers.encrypt_image import encrypt_image
 from helpers.media_pool.consumer import get_card_template, pick_pool_card
-from helpers.halli_galli_rendering.models import FruitImagePosition
-from helpers.halli_galli_card import (
+from helpers.fruit_buzz_rendering.models import FruitImagePosition
+from helpers.fruit_buzz_card import (
     AVAILABLE_FRUITS,
     FRUIT_POSITIONS,
     pick_random_card,
@@ -37,12 +37,12 @@ FRUIT_EDGE_COMPARISON_EPSILON = 1e-12
 TARGET_FRUIT_EDGES = ("left", "right", "top", "bottom")
 WINNING_CARD_AGES = ("oldest", "newest")
 
-"""Server-side state and rules for the Halli Galli challenge.
+"""Server-side state and rules for the Fruit Buzz challenge.
 
 Each card has one fruit type and an amount. The current card and a limited
-number of earlier visible cards count towards a Halli Galli when one fruit's
-total equals the configured winning amount exactly. A buzz or a missed Halli
-Galli clears the pile, so earlier cards no longer count in later rounds.
+number of earlier visible cards count towards a Fruit Buzz when one fruit's
+total equals the configured winning amount exactly. A buzz or a missed Fruit
+Buzz clears the pile, so earlier cards no longer count in later rounds.
 
 The game is initialized with a server-selected network RTT and its own rule set,
 including a randomly chosen winning card age and target fruit edge.
@@ -63,7 +63,7 @@ Evaluation accepts either a buzz or a request to move on. A buzz must arrive
 before the deadline, name a winning card in the current round, and satisfy the
 configured winning-card age and target-fruit rules. A wrong or late buzz costs the
 player a life; a correct one costs the bot a life. Moving on after the deadline
-costs the player a life if a Halli Galli was missed. The helper advances the
+costs the player a life if a Fruit Buzz was missed. The helper advances the
 round after scoring, while the gameplay route must save the changed game
 atomically so two requests cannot score the same round.
 
@@ -72,14 +72,14 @@ to stay on the same server clock and cannot survive a machine restart as-is.
 """
 
 
-class HalliGalliRound(BaseModel):
+class FruitBuzzRound(BaseModel):
     """Persisted card metadata, completed as the image is prepared and revealed."""
 
     fruit: str
     amount: int = Field(ge=1, le=len(FRUIT_POSITIONS))
     fruit_positions: list[FruitImagePosition] = Field(default_factory=list)
     # Marks a cleared pile, including a wrong buzz, so older cards stop counting.
-    halli_galli: bool = False
+    fruit_buzz: bool = False
     # Both timestamps use the server's monotonic clock. The deadline is picked
     # once when the card is first revealed and survives reveal retries.
     revelation_timestamp: float | None = None
@@ -94,7 +94,7 @@ class HalliGalliRound(BaseModel):
     encryption_key: str | None = None
 
 
-class HalliGalliRules(BaseModel):
+class FruitBuzzRules(BaseModel):
     """Full rules chosen at game creation and kept in server-side state.
 
     The game keeps its own copy, so later changes to server settings do not
@@ -115,7 +115,7 @@ class HalliGalliRules(BaseModel):
     round_jitter_percent: float = Field(ge=0, le=100)
 
 
-class HalliGalliPublicRules(BaseModel):
+class FruitBuzzPublicRules(BaseModel):
     """Rules the frontend needs to display cards, preload, and explain clicks."""
 
     visible_card_count: int
@@ -126,28 +126,28 @@ class HalliGalliPublicRules(BaseModel):
     target_fruit_edge: Literal["left", "right", "top", "bottom"]
 
 
-def default_game_rules() -> HalliGalliRules:
+def default_game_rules() -> FruitBuzzRules:
     """Copy settings and choose a winning card age and target edge for this game.
 
     Returns:
-        HalliGalliRules: Rule values to keep for the lifetime of one game.
+        FruitBuzzRules: Rule values to keep for the lifetime of one game.
     """
-    return HalliGalliRules(
-        visible_card_count=settings.HALLI_GALLI_GAME_ROUND_CARDS,
-        max_preloaded_cards=settings.HALLI_GALLI_MAX_PRELOADED_CARDS,
-        winning_fruit_count=settings.HALLI_GALLI_WINNING_FRUIT_COUNT,
+    return FruitBuzzRules(
+        visible_card_count=settings.FRUIT_BUZZ_GAME_ROUND_CARDS,
+        max_preloaded_cards=settings.FRUIT_BUZZ_MAX_PRELOADED_CARDS,
+        winning_fruit_count=settings.FRUIT_BUZZ_WINNING_FRUIT_COUNT,
         winning_card_age=random.choice(WINNING_CARD_AGES),
-        require_target_fruit=settings.HALLI_GALLI_REQUIRE_TARGET_FRUIT,
+        require_target_fruit=settings.FRUIT_BUZZ_REQUIRE_TARGET_FRUIT,
         target_fruit_edge=random.choice(TARGET_FRUIT_EDGES),
-        target_fruit_buffer=settings.HALLI_GALLI_TARGET_FRUIT_BUFFER,
-        target_fruit_hitbox_padding=settings.HALLI_GALLI_TARGET_FRUIT_HITBOX_PADDING,
-        round_window_ms=settings.HALLI_GALLI_ROUND_WINDOW_MS,
-        round_jitter_percent=settings.HALLI_GALLI_ROUND_JITTER_PERCENT,
+        target_fruit_buffer=settings.FRUIT_BUZZ_TARGET_FRUIT_BUFFER,
+        target_fruit_hitbox_padding=settings.FRUIT_BUZZ_TARGET_FRUIT_HITBOX_PADDING,
+        round_window_ms=settings.FRUIT_BUZZ_ROUND_WINDOW_MS,
+        round_jitter_percent=settings.FRUIT_BUZZ_ROUND_JITTER_PERCENT,
     )
 
 
-class HalliGalliGame(BaseModel):
-    """Persisted state and network delay allowance for one Halli Galli game."""
+class FruitBuzzGame(BaseModel):
+    """Persisted state and network delay allowance for one Fruit Buzz game."""
 
     current_round: int = Field(ge=0)
     player_lives: int = Field(ge=0)
@@ -159,13 +159,13 @@ class HalliGalliGame(BaseModel):
     # Saved after a player win so a lost final response can be recovered from
     # the status route without issuing a different token for the same game.
     completion_token: str | None = None
-    # JTI of the Wordle token that started the game. A win spends that token,
-    # so one Wordle yields at most one Halli Galli token.
-    wordle_jti: str | None = None
+    # JTI of the Word Guess token that started the game. A win spends that token,
+    # so one Word Guess yields at most one Fruit Buzz token.
+    word_guess_jti: str | None = None
     # Keep the last committed score and pile change so status can reconstruct
     # a round result when its action response never reaches the browser.
     last_round_index: int | None = None
-    last_round_result: Literal["player_won", "player_lost", "no_halli_galli"] | None = (
+    last_round_result: Literal["player_won", "player_lost", "no_fruit_buzz"] | None = (
         None
     )
     last_round_reason: (
@@ -175,8 +175,8 @@ class HalliGalliGame(BaseModel):
             "wrong_card",
             "wrong_fruit",
             "false_buzz",
-            "missed_halli_galli",
-            "no_halli_galli",
+            "missed_fruit_buzz",
+            "no_fruit_buzz",
         ]
         | None
     ) = None
@@ -187,29 +187,29 @@ class HalliGalliGame(BaseModel):
     # Send the required winning card only after settlement, when the answer is
     # no longer useful for buzzing. Status keeps it if the action reply is lost.
     last_round_winning_card_ids: list[str] = Field(default_factory=list)
-    rules: HalliGalliRules = Field(default_factory=default_game_rules)
-    rounds: dict[int, HalliGalliRound]  # round index -> card metadata
+    rules: FruitBuzzRules = Field(default_factory=default_game_rules)
+    rounds: dict[int, FruitBuzzRound]  # round index -> card metadata
 
 
 def init_game(
     network_delay_rtt_ms: int,
-    rules: HalliGalliRules | None = None,
-) -> HalliGalliGame:
+    rules: FruitBuzzRules | None = None,
+) -> FruitBuzzGame:
     """Create a game session with the RTT chosen by the start route.
 
     Args:
         network_delay_rtt_ms (int): Round-trip time used for deadline allowance.
-        rules (HalliGalliRules | None): Per-game rules chosen by the backend, or
+        rules (FruitBuzzRules | None): Per-game rules chosen by the backend, or
             None to copy the current server settings.
 
     Returns:
-        HalliGalliGame: A new game with starting lives and no prepared cards.
+        FruitBuzzGame: A new game with starting lives and no prepared cards.
     """
 
-    return HalliGalliGame(
+    return FruitBuzzGame(
         current_round=0,
-        player_lives=settings.HALLI_GALLI_PLAYER_LIVES,
-        bot_lives=settings.HALLI_GALLI_BOT_LIVES,
+        player_lives=settings.FRUIT_BUZZ_PLAYER_LIVES,
+        bot_lives=settings.FRUIT_BUZZ_BOT_LIVES,
         network_delay_rtt_ms=network_delay_rtt_ms,
         rules=(
             rules.model_copy(deep=True) if rules is not None else default_game_rules()
@@ -218,17 +218,17 @@ def init_game(
     )
 
 
-def get_public_game_rules(game: HalliGalliGame) -> HalliGalliPublicRules:
+def get_public_game_rules(game: FruitBuzzGame) -> FruitBuzzPublicRules:
     """Select display and preload rules without sharing timing or hit-box tolerance.
 
     Args:
-        game (HalliGalliGame): Game whose rules will be sent to the frontend.
+        game (FruitBuzzGame): Game whose rules will be sent to the frontend.
 
     Returns:
-        HalliGalliPublicRules: Card, preload, and click rules for the response.
+        FruitBuzzPublicRules: Card, preload, and click rules for the response.
     """
     rules = game.rules
-    return HalliGalliPublicRules(
+    return FruitBuzzPublicRules(
         visible_card_count=rules.visible_card_count,
         max_preloaded_cards=rules.max_preloaded_cards,
         winning_fruit_count=rules.winning_fruit_count,
@@ -238,11 +238,11 @@ def get_public_game_rules(game: HalliGalliGame) -> HalliGalliPublicRules:
     )
 
 
-def add_next_round(game: HalliGalliGame) -> None:
+def add_next_round(game: FruitBuzzGame) -> None:
     """Pick the card that will enter the preload window in a future round.
 
     Args:
-        game (HalliGalliGame): Game whose future round is being prepared.
+        game (FruitBuzzGame): Game whose future round is being prepared.
 
     Returns:
         None: The new card is added to ``game.rounds``.
@@ -258,7 +258,7 @@ def add_next_round(game: HalliGalliGame) -> None:
 
 
 async def prepare_initial_rounds(
-    game: HalliGalliGame, card_image_conn: RedisConn
+    game: FruitBuzzGame, card_image_conn: RedisConn
 ) -> list[dict[str, int | str]]:
     """Pick and prepare the first card and the future preload window.
 
@@ -268,7 +268,7 @@ async def prepare_initial_rounds(
     happen when the client fetches each image.
 
     Args:
-        game (HalliGalliGame): New game whose first cards are needed.
+        game (FruitBuzzGame): New game whose first cards are needed.
         card_image_conn (RedisConn): Binary connection to the media Redis.
 
     Returns:
@@ -288,7 +288,7 @@ async def prepare_initial_rounds(
 
 
 def update_round_template(
-    game: HalliGalliGame,
+    game: FruitBuzzGame,
     round_index: int,
     image_id: str,
     template_id: str,
@@ -301,7 +301,7 @@ def update_round_template(
     key is set later, when the frontend fetches the encrypted PNG.
 
     Args:
-        game (HalliGalliGame): Game containing the card to update.
+        game (FruitBuzzGame): Game containing the card to update.
         round_index (int): Index of the prepared, unrevealed card.
         image_id (str): ID used to identify the clicked card.
         template_id (str): Private Redis ID for the selected raw PNG.
@@ -336,7 +336,7 @@ def update_round_template(
 
 
 async def prepare_round_card(
-    game: HalliGalliGame, round_index: int, card_image_conn: RedisConn
+    game: FruitBuzzGame, round_index: int, card_image_conn: RedisConn
 ) -> str:
     """Choose a raw PNG from the pool for a current or future round.
 
@@ -345,7 +345,7 @@ async def prepare_round_card(
     No encrypted copy or AES key is made at this stage.
 
     Args:
-        game (HalliGalliGame): Game containing the selected round.
+        game (FruitBuzzGame): Game containing the selected round.
         round_index (int): Current or future round to prepare.
         card_image_conn (RedisConn): Binary connection to the media Redis.
 
@@ -376,7 +376,7 @@ async def prepare_round_card(
 
 
 async def encrypt_prepared_round_image(
-    game: HalliGalliGame, round_index: int, card_image_conn: RedisConn
+    game: FruitBuzzGame, round_index: int, card_image_conn: RedisConn
 ) -> tuple[bytes, int]:
     """Encrypt the selected raw PNG and replace this round's reveal key.
 
@@ -385,7 +385,7 @@ async def encrypt_prepared_round_image(
     later reveal returns the key matching the latest image response.
 
     Args:
-        game (HalliGalliGame): Game that owns the requested round.
+        game (FruitBuzzGame): Game that owns the requested round.
         round_index (int): Prepared, unrevealed round to encrypt.
         card_image_conn (RedisConn): Binary connection to the media Redis.
 
@@ -425,15 +425,15 @@ async def encrypt_prepared_round_image(
     return encrypted_image, round_card.image_version
 
 
-def get_halli_galli_winning_cards(game: HalliGalliGame) -> dict[str, set[int]]:
+def get_fruit_buzz_winning_cards(game: FruitBuzzGame) -> dict[str, set[int]]:
     """Map each winning fruit to the visible cards that contribute to its count.
 
-    Return an empty dictionary when there is no Halli Galli. Keep fruit types
+    Return an empty dictionary when there is no Fruit Buzz. Keep fruit types
     separate because several can win at once; the click rule can then choose
     from the contributing cards according to the current settings.
 
     Args:
-        game (HalliGalliGame): Game at the round being evaluated.
+        game (FruitBuzzGame): Game at the round being evaluated.
 
     Returns:
         dict[str, set[int]]: Winning fruit types and their contributing round
@@ -452,9 +452,9 @@ def get_halli_galli_winning_cards(game: HalliGalliGame) -> dict[str, set[int]]:
         # Stop when the start of the game is reached.
         if round_index < 0:
             break
-        # A prior buzz or missed Halli Galli cleared the pile. That card and
+        # A prior buzz or missed Fruit Buzz cleared the pile. That card and
         # older cards cannot contribute to the current round's fruit count.
-        if game.rounds[round_index].halli_galli:
+        if game.rounds[round_index].fruit_buzz:
             break
 
         # Add this card to its fruit total and remember which round supplied it.
@@ -474,36 +474,36 @@ def get_halli_galli_winning_cards(game: HalliGalliGame) -> dict[str, set[int]]:
     return fruit_rounds
 
 
-RoundResult = Literal["player_won", "player_lost", "no_halli_galli"]
+RoundResult = Literal["player_won", "player_lost", "no_fruit_buzz"]
 RoundReason = Literal[
     "correct_buzz",
     "late_buzz",
     "wrong_card",
     "wrong_fruit",
     "false_buzz",
-    "missed_halli_galli",
-    "no_halli_galli",
+    "missed_fruit_buzz",
+    "no_fruit_buzz",
 ]
 
 
 def _validate_round_action(
-    game: HalliGalliGame,
+    game: FruitBuzzGame,
     round_index: int,
     clicked_card_id: str | None,
     click_x: float | None,
     click_y: float | None,
-) -> HalliGalliRound:
+) -> FruitBuzzRound:
     """Reject finished games, stale rounds, and incomplete buzz requests.
 
     Args:
-        game (HalliGalliGame): Game receiving the action.
+        game (FruitBuzzGame): Game receiving the action.
         round_index (int): Round index supplied with the request.
         clicked_card_id (str | None): Clicked image ID, or None to move on.
         click_x (float | None): Horizontal click position normalized to the card.
         click_y (float | None): Vertical click position normalized to the card.
 
     Returns:
-        HalliGalliRound: The revealed current card when the action is valid.
+        FruitBuzzRound: The revealed current card when the action is valid.
     """
 
     if game.player_lives == 0 or game.bot_lives == 0:
@@ -524,11 +524,11 @@ def _validate_round_action(
     return current
 
 
-def _network_delay_allowance_seconds(game: HalliGalliGame) -> float:
+def _network_delay_allowance_seconds(game: FruitBuzzGame) -> float:
     """Estimate one-way transit time from the calibrated round-trip time.
 
     Args:
-        game (HalliGalliGame): Game holding the calibrated RTT in milliseconds.
+        game (FruitBuzzGame): Game holding the calibrated RTT in milliseconds.
 
     Returns:
         float: Estimated client-to-server delay in seconds.
@@ -540,11 +540,11 @@ def _network_delay_allowance_seconds(game: HalliGalliGame) -> float:
     )
 
 
-def _round_jitter_range_ms(game: HalliGalliGame) -> float:
+def _round_jitter_range_ms(game: FruitBuzzGame) -> float:
     """Calculate the largest timing change allowed by this game's jitter.
 
     Args:
-        game (HalliGalliGame): Game holding its saved window and jitter percent.
+        game (FruitBuzzGame): Game holding its saved window and jitter percent.
 
     Returns:
         float: Maximum milliseconds added to or removed from a round.
@@ -556,7 +556,7 @@ def _round_jitter_range_ms(game: HalliGalliGame) -> float:
     )
 
 
-def get_next_card_interval_ms(game: HalliGalliGame) -> int:
+def get_next_card_interval_ms(game: FruitBuzzGame) -> int:
     """Return a frontend interval beyond this game's latest possible deadline.
 
     After the initial preload, the frontend uses this interval for ordinary
@@ -568,7 +568,7 @@ def get_next_card_interval_ms(game: HalliGalliGame) -> int:
     needs no additional allowance here.
 
     Args:
-        game (HalliGalliGame): Game whose round timing was chosen at startup.
+        game (FruitBuzzGame): Game whose round timing was chosen at startup.
 
     Returns:
         int: Milliseconds to wait between next-card reveal/preload cycles.
@@ -576,15 +576,15 @@ def get_next_card_interval_ms(game: HalliGalliGame) -> int:
     longest_window_ms = math.ceil(
         game.rules.round_window_ms + _round_jitter_range_ms(game)
     )
-    return max(settings.HALLI_GALLI_MIN_NEXT_CARD_INTERVAL_MS, longest_window_ms)
+    return max(settings.FRUIT_BUZZ_MIN_NEXT_CARD_INTERVAL_MS, longest_window_ms)
 
 
-def _round_deadline(game: HalliGalliGame, current: HalliGalliRound) -> float:
+def _round_deadline(game: FruitBuzzGame, current: FruitBuzzRound) -> float:
     """Return the deadline saved at reveal, or the old fixed deadline.
 
     Args:
-        game (HalliGalliGame): Game holding the calibrated network delay.
-        current (HalliGalliRound): Revealed card whose deadline is needed.
+        game (FruitBuzzGame): Game holding the calibrated network delay.
+        current (FruitBuzzRound): Revealed card whose deadline is needed.
 
     Returns:
         float: Deadline on the server's monotonic clock, in seconds.
@@ -606,8 +606,8 @@ def _round_deadline(game: HalliGalliGame, current: HalliGalliRound) -> float:
 
 
 def _hit_target_fruit(
-    card: HalliGalliRound,
-    rules: HalliGalliRules,
+    card: FruitBuzzRound,
+    rules: FruitBuzzRules,
     click_x: float | None,
     click_y: float | None,
 ) -> bool:
@@ -618,8 +618,8 @@ def _hit_target_fruit(
     buffer. The click box has separate padding proportional to the fruit size.
 
     Args:
-        card (HalliGalliRound): Card whose fruit boxes are being checked.
-        rules (HalliGalliRules): Rules chosen for this game.
+        card (FruitBuzzRound): Card whose fruit boxes are being checked.
+        rules (FruitBuzzRules): Rules chosen for this game.
         click_x (float | None): Horizontal click position normalized to the card.
         click_y (float | None): Vertical click position normalized to the card.
 
@@ -666,7 +666,7 @@ def _hit_target_fruit(
 
 
 def _required_winning_card_index(
-    game: HalliGalliGame, winning_cards: dict[str, set[int]]
+    game: FruitBuzzGame, winning_cards: dict[str, set[int]]
 ) -> int | None:
     """Select the oldest or newest visible card contributing to a win."""
     eligible = {index for cards in winning_cards.values() for index in cards}
@@ -676,7 +676,7 @@ def _required_winning_card_index(
 
 
 def _clicked_winning_card(
-    game: HalliGalliGame,
+    game: FruitBuzzGame,
     winning_cards: dict[str, set[int]],
     clicked_card_id: str,
     click_x: float | None,
@@ -687,7 +687,7 @@ def _clicked_winning_card(
     Require the chosen contributing card and optionally a hit on its target fruit.
 
     Args:
-        game (HalliGalliGame): Game containing the visible cards and image IDs.
+        game (FruitBuzzGame): Game containing the visible cards and image IDs.
         winning_cards (dict[str, set[int]]): Winning fruits and contributing
             round indices in the current round.
         clicked_card_id (str): Image ID supplied with the buzz.
@@ -709,31 +709,31 @@ def _clicked_winning_card(
 
 
 def _score_round(
-    game: HalliGalliGame, has_halli_galli: bool, player_won: bool, buzzed: bool
+    game: FruitBuzzGame, has_fruit_buzz: bool, player_won: bool, buzzed: bool
 ) -> RoundResult:
     """Score a buzz or missed win; leave an ordinary round unchanged.
 
     Args:
-        game (HalliGalliGame): Game whose player or bot lives may change.
-        has_halli_galli (bool): Whether this round has a winning fruit count.
+        game (FruitBuzzGame): Game whose player or bot lives may change.
+        has_fruit_buzz (bool): Whether this round has a winning fruit count.
         player_won (bool): Whether a valid buzz beat the deadline.
         buzzed (bool): Whether the player buzzed at all.
 
     Returns:
-        RoundResult: Player win, player loss, or no Halli Galli.
+        RoundResult: Player win, player loss, or no Fruit Buzz.
     """
 
     if player_won:
         game.bot_lives -= 1
         return "player_won"
-    if buzzed or has_halli_galli:
+    if buzzed or has_fruit_buzz:
         game.player_lives -= 1
         return "player_lost"
-    return "no_halli_galli"
+    return "no_fruit_buzz"
 
 
 def eval_round(
-    game: HalliGalliGame,
+    game: FruitBuzzGame,
     round_index: int,
     clicked_card_id: str | None = None,
     click_x: float | None = None,
@@ -742,20 +742,20 @@ def eval_round(
     """Settle one buzz or one attempt to move on without buzzing.
 
     Reject a next-card attempt before the deadline for every round, including
-    those without a Halli Galli, so the response does not reveal the answer.
+    those without a Fruit Buzz, so the response does not reveal the answer.
     A buzz must reach the server before the deadline and hit an eligible card
     and fruit. The caller must save the changed game before serving another card.
     The exact outcome is saved on the game for status recovery.
 
     Args:
-        game (HalliGalliGame): Game state to evaluate and advance.
+        game (FruitBuzzGame): Game state to evaluate and advance.
         round_index (int): Current round index supplied with the request.
         clicked_card_id (str | None): Clicked image ID, or None to move on.
         click_x (float | None): Horizontal click position normalized to the card.
         click_y (float | None): Vertical click position normalized to the card.
 
     Returns:
-        RoundResult: Player win, player loss, or no Halli Galli.
+        RoundResult: Player win, player loss, or no Fruit Buzz.
     """
     current = _validate_round_action(
         game, round_index, clicked_card_id, click_x, click_y
@@ -766,25 +766,21 @@ def eval_round(
     if clicked_card_id is None and now < deadline:
         raise ValueError("Round still open.")
 
-    winning_cards = get_halli_galli_winning_cards(game)
-    has_halli_galli = bool(winning_cards)
+    winning_cards = get_fruit_buzz_winning_cards(game)
+    has_fruit_buzz = bool(winning_cards)
     clicked_winning_card = clicked_card_id is not None and _clicked_winning_card(
         game, winning_cards, clicked_card_id, click_x, click_y
     )
     player_won = clicked_winning_card and now < deadline
-    result = _score_round(
-        game, has_halli_galli, player_won, clicked_card_id is not None
-    )
+    result = _score_round(game, has_fruit_buzz, player_won, clicked_card_id is not None)
 
     # Keep the exact cause with the committed score. A lost HTTP response can
     # then be recovered without guessing whether a buzz was late or inaccurate.
     # Report an incorrect click as such even if it arrived after the deadline.
     # Only a click on the required card and fruit can receive a late-buzz reason.
     if clicked_card_id is None:
-        reason: RoundReason = (
-            "missed_halli_galli" if has_halli_galli else "no_halli_galli"
-        )
-    elif not has_halli_galli:
+        reason: RoundReason = "missed_fruit_buzz" if has_fruit_buzz else "no_fruit_buzz"
+    elif not has_fruit_buzz:
         reason = "false_buzz"
     elif clicked_winning_card and now >= deadline:
         reason = "late_buzz"
@@ -797,12 +793,12 @@ def eval_round(
         reason = "wrong_fruit" if clicked_eligible else "wrong_card"
 
     # Any buzz settles and clears the pile, including a wrong buzz. A missed
-    # Halli Galli also clears it. Earlier cards then cannot count again.
-    current.halli_galli = clicked_card_id is not None or has_halli_galli
+    # Fruit Buzz also clears it. Earlier cards then cannot count again.
+    current.fruit_buzz = clicked_card_id is not None or has_fruit_buzz
     game.last_round_index = round_index
     game.last_round_result = result
     game.last_round_reason = reason
-    game.last_round_clear_cards = current.halli_galli
+    game.last_round_clear_cards = current.fruit_buzz
     # Only report this after settlement. Exposing the live deadline would let
     # a client time its buzz instead of reacting to the visible cards.
     game.last_round_late_by_ms = (
@@ -821,7 +817,7 @@ def eval_round(
     return result
 
 
-def create_round() -> HalliGalliRound:
+def create_round() -> FruitBuzzRound:
     """Pick the fruit and amount before the card image is generated.
 
     The raw template ID, fruit positions, and public image ID are added when
@@ -829,27 +825,27 @@ def create_round() -> HalliGalliRound:
     to preload that image.
 
     Returns:
-        HalliGalliRound: A card with its fruit type and amount selected.
+        FruitBuzzRound: A card with its fruit type and amount selected.
     """
     fruit, amount = pick_random_card()
 
-    return HalliGalliRound(
+    return FruitBuzzRound(
         fruit=fruit,
         amount=amount,
     )
 
 
-def reveal_card(game: HalliGalliGame) -> str:
+def reveal_card(game: FruitBuzzGame) -> str:
     """Reveal the current card's key and set its deadline on the first request.
 
     Sample the deadline from the same range for every round, whether or not its
-    cards contain a Halli Galli. Retrying a reveal returns the same key without
+    cards contain a Fruit Buzz. Retrying a reveal returns the same key without
     giving the player more time. The action route returns this round's
     image_version with the key, so the frontend can use the matching
     encrypted preload response when duplicate fetches arrive out of order.
 
     Args:
-        game (HalliGalliGame): Game whose current card is being revealed.
+        game (FruitBuzzGame): Game whose current card is being revealed.
 
     Returns:
         str: Encryption key for the current card's image.

@@ -84,7 +84,7 @@ class CaptchaAnswerRequest(BaseModel):
     )
 
 
-class HalliGalliStartRequest(BaseModel):
+class FruitBuzzStartRequest(BaseModel):
     # Ids are UUIDs (36 characters)
     calibration_id: str = Field(
         ..., max_length=36, description="Id of the finished latency calibration"
@@ -109,26 +109,12 @@ class SecurityQuestionsRequest(BaseModel):
     )
 
 
-class WordleAnswerRequest(BaseModel):
-    wordle_id: str = Field(..., max_length=36, description="Id of the Wordle session")
-    wordle_guess: str = Field(
+class WordGuessAnswerRequest(BaseModel):
+    word_guess_id: str = Field(
+        ..., max_length=36, description="Id of the Word Guess session"
+    )
+    guess: str = Field(
         ...,
         max_length=settings.AUTH_ANSWER_MAX_LENGTH,
-        description="Answer to the Wordle challenge",
-    )
-
-
-class NYTWordleAnswerRequest(BaseModel):
-    captcha_token: str = Field(
-        ..., description="Token received by correctly solving the captcha"
-    )
-    wordle_guess: str = Field(
-        ...,
-        max_length=settings.AUTH_ANSWER_MAX_LENGTH,
-        description="Answer to todays Wordle challenge",
-    )
-    timezone: str = Field(
-        ...,
-        max_length=settings.TIMEZONE_MAX_LENGTH,
-        description="Timezone of the user",
+        description="Answer to the Word Guess challenge",
     )

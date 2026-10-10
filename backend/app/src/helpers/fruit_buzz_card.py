@@ -1,9 +1,9 @@
-"""Central Halli Galli card configuration and generation API.
+"""Central Fruit Buzz card configuration and generation API.
 
-Tune card appearance in ``halli_galli_rendering.constants``. ``create_card`` orchestrates
+Tune card appearance in ``fruit_buzz_rendering.constants``. ``create_card`` orchestrates
 fruit selection/layout, surface artifacts, balanced background colors, and
 card-wide overlays; ``pick_random_card`` selects a supported fruit/count.
-Detailed drawing operations and metadata models live in ``halli_galli_rendering``.
+Detailed drawing operations and metadata models live in ``fruit_buzz_rendering``.
 
 Generation flow, in execution order:
 
@@ -61,17 +61,17 @@ from io import BytesIO
 import numpy as np
 from PIL import Image
 
-from .halli_galli_rendering.artifacts import add_card_artifacts, add_fruit_artifacts
-from .halli_galli_rendering.assets import get_visible_svg_hull, load_random_fruit_svg
-from .halli_galli_rendering.background import create_noisy_background
-from .halli_galli_rendering.constants import (
+from .fruit_buzz_rendering.artifacts import add_card_artifacts, add_fruit_artifacts
+from .fruit_buzz_rendering.assets import get_visible_svg_hull, load_random_fruit_svg
+from .fruit_buzz_rendering.background import create_noisy_background
+from .fruit_buzz_rendering.constants import (
     AVAILABLE_FRUITS,
     CARD_PNG_COMPRESS_LEVEL,
     FRUIT_POSITIONS,
 )
-from .halli_galli_rendering.layout import create_fruit_placements
-from .halli_galli_rendering.models import FruitImagePosition, HalliGalliCard
-from .halli_galli_rendering.svg import get_card_mask, render_fruit_foreground
+from .fruit_buzz_rendering.layout import create_fruit_placements
+from .fruit_buzz_rendering.models import FruitImagePosition, FruitBuzzCard
+from .fruit_buzz_rendering.svg import get_card_mask, render_fruit_foreground
 
 # The card pool and the game import the supported cards from here.
 __all__ = ["AVAILABLE_FRUITS", "FRUIT_POSITIONS", "create_card", "pick_random_card"]
@@ -141,7 +141,7 @@ def create_fruit_foreground(
     )
 
 
-def create_card(fruit: str, amount: int) -> HalliGalliCard | None:
+def create_card(fruit: str, amount: int) -> FruitBuzzCard | None:
     """Create a PNG card containing ``amount`` of ``fruit``.
 
     Fruit SVGs are rasterized once, then transformed and layered into a PNG.
@@ -151,7 +151,7 @@ def create_card(fruit: str, amount: int) -> HalliGalliCard | None:
         amount (int): Number of fruit icons to draw.
 
     Returns:
-        HalliGalliCard | None: Completed PNG and server-side hit boxes, or None
+        FruitBuzzCard | None: Completed PNG and server-side hit boxes, or None
             when the requested fruit/count is unsupported.
     """
     # The stages are described in the module docstring. The card is sent as a
@@ -169,7 +169,7 @@ def create_card(fruit: str, amount: int) -> HalliGalliCard | None:
     # both. The same positions feed clearance checks and the click boxes.
     foreground, fruit_positions = create_fruit_foreground(fruit, amount)
     background = create_noisy_background(foreground, fruit, amount, fruit_positions)
-    return HalliGalliCard(
+    return FruitBuzzCard(
         image=compose_card(background, foreground, fruit_positions),
         fruit=fruit,
         amount=amount,
@@ -178,7 +178,7 @@ def create_card(fruit: str, amount: int) -> HalliGalliCard | None:
 
 
 def pick_random_card() -> tuple[str, int]:
-    """Pick one random valid Halli Galli card.
+    """Pick one random valid Fruit Buzz card.
 
     A fruit and supported count are selected independently.
 
