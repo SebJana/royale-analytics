@@ -81,6 +81,9 @@ services:
   # All auth challenge state must survive cache invalidation and cache pressure.
   # noeviction preserves active challenges; new writes fail visibly if this
   # deliberately bounded store is ever undersized.
+  # Nothing is persisted: a restart has to drop every token budget, or a
+  # snapshot would bring spent budgets back (helpers/token_budget.py). The
+  # image declares /data a volume; tmpfs keeps an old dump.rdb from loading.
   redis-auth-state:
     image: redis:8.0-alpine
     container_name: redis-auth-state
@@ -88,8 +91,11 @@ services:
       redis-server
       --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
       --appendonly no
+      --save ""
       --maxmemory 64mb
       --maxmemory-policy noeviction
+    tmpfs:
+      - /data
     restart: unless-stopped
     networks:
       - cr-analytics
