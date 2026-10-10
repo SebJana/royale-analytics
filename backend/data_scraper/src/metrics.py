@@ -5,7 +5,9 @@ The latest snapshot is stored in redis-key-store (read by status.py). A capped
 list of per-minute samples next to it keeps the recent history across scraper
 restarts. A small read-only HTTP server serves both, plus a dashboard page
 that charts the history. Compose publishes it on the host's loopback
-interface only; none of it is reachable through nginx or the website.
+interface only; none of it is reachable through nginx or the website. The
+API's route timings, which the API writes to the same Redis, are charted
+there too (/api-history), as the API has no private port of its own.
 """
 
 import asyncio
@@ -16,6 +18,7 @@ import logging
 import math
 import time
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -23,7 +26,14 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from api_key_store import KeyStore
-from scrape_schedule import Capacity, Schedule, METRICS_HISTORY_KEY, METRICS_KEY
+from scrape_schedule import (
+    API_DURATION_BOUNDS_S,
+    API_METRICS_HISTORY_KEY,
+    SCRAPER_METRICS_HISTORY_KEY,
+    METRICS_KEY,
+    Capacity,
+    Schedule,
+)
 from settings import settings
 
 logger = logging.getLogger(__name__)
@@ -63,6 +73,8 @@ def _load_dashboard(dist: Path) -> dict[str, tuple[str, bytes]]:
                 file.read_bytes(),
             )
     files["/"] = files["/dashboard"] = files["/index.html"]
+    if "/api.html" in files:
+        files["/api"] = files["/api.html"]
     return files
 
 
@@ -397,8 +409,10 @@ async def append_history(redis: Redis, sample: dict):
     )
     # MULTI keeps the list capped even if the scraper stops between the two.
     async with redis.pipeline(transaction=True) as pipe:
-        pipe.rpush(METRICS_HISTORY_KEY, json.dumps(sample, separators=(",", ":")))
-        pipe.ltrim(METRICS_HISTORY_KEY, -max_samples, -1)
+        pipe.rpush(
+            SCRAPER_METRICS_HISTORY_KEY, json.dumps(sample, separators=(",", ":"))
+        )
+        pipe.ltrim(SCRAPER_METRICS_HISTORY_KEY, -max_samples, -1)
         await pipe.execute()
 
 
@@ -438,7 +452,10 @@ def _with_percentiles(sample: dict) -> dict:
 
 
 def downsample(
-    samples: list[dict], range_s: float, max_points: int
+    samples: list[dict],
+    range_s: float,
+    max_points: int,
+    merge: Callable[[list[dict]], dict] = _merge_samples,
 ) -> tuple[list[dict], float]:
     """Merge samples into time aligned buckets, at most ``max_points`` of them.
 
@@ -449,6 +466,7 @@ def downsample(
         samples: Samples oldest first, as stored by ``append_history``.
         range_s: Length of the range the samples cover.
         max_points: Upper bound for the number of buckets in the range.
+        merge: Combines the samples of one bucket into one.
 
     Returns:
         tuple[list[dict], float]: The merged samples, oldest first, and the
@@ -462,7 +480,7 @@ def downsample(
     groups: dict[int, list[dict]] = {}
     for sample in samples:
         groups.setdefault(int(sample["t"] // bucket_s), []).append(sample)
-    return [_merge_samples(group) for group in groups.values()], bucket_s
+    return [merge(group) for group in groups.values()], bucket_s
 
 
 async def read_history(redis: Redis, range_s: float) -> dict:
@@ -486,7 +504,7 @@ async def read_history(redis: Redis, range_s: float) -> dict:
     # Twice the expected count covers samples that ran short; the timestamp
     # filter below drops the surplus.
     count = 2 * math.ceil(range_s / settings.METRICS_HISTORY_INTERVAL)
-    raw = await redis.lrange(METRICS_HISTORY_KEY, -count, -1)
+    raw = await redis.lrange(SCRAPER_METRICS_HISTORY_KEY, -count, -1)
     now = time.time()
     samples = [
         sample for sample in map(json.loads, raw) if sample["t"] >= now - range_s
@@ -500,6 +518,220 @@ async def read_history(redis: Redis, range_s: float) -> dict:
         # Percentiles are computed after merging, from the summed histograms.
         "samples": [_with_percentiles(sample) for sample in samples],
     }
+
+
+# The API's busiest routes get their own p95 line. Four, like the colors the
+# dashboard has; more lines become unreadable anyway.
+API_CHARTED_ROUTES = 4
+# Processed /api-history answers by (range, route, group) with the monotonic
+# time they were built, reused for API_HISTORY_CACHE_S. Dashboards ask for a
+# few fixed ranges, and expired entries are dropped on every build.
+_api_history_cache: dict[tuple, tuple[float, dict]] = {}
+
+# Routes of the auth flow (CAPTCHA, Wordle, Halli Galli, security questions,
+# removal token); every other route is regular traffic. The dashboard can
+# chart either group on its own, so an attack on one shows apart from the other.
+# NOTE Matches the /api prefix and the "/auth" router prefix in the API's
+# main.py and routers/auth.py.
+API_AUTH_ROUTE_PREFIX = "/api/auth/"
+
+API_ROUTE_GROUPS = ("regular", "auth")
+
+
+def route_group(route: str) -> str:
+    """Return "auth" for a route of the auth flow, else "regular".
+
+    Args:
+        route: "METHOD /path/template", as the API records it.
+    """
+
+    path = route.split(" ", 1)[-1]
+    return "auth" if path.startswith(API_AUTH_ROUTE_PREFIX) else "regular"
+
+
+def _new_route() -> dict:
+    return {"n": 0, "e4": 0, "e5": 0, "max": 0.0, "h": [], "ch": 0, "cm": 0}
+
+
+def _add_route(total: dict, stats: dict):
+    total["n"] += stats.get("n", 0)
+    total["e4"] += stats.get("e4", 0)
+    total["e5"] += stats.get("e5", 0)
+    # Absent from samples written before the API counted cache lookups.
+    total["ch"] += stats.get("ch", 0)
+    total["cm"] += stats.get("cm", 0)
+    total["max"] = max(total["max"], stats.get("max", 0.0))
+    hist = stats.get("h") or []
+    if len(total["h"]) < len(hist):
+        total["h"] += [0] * (len(hist) - len(total["h"]))
+    _add_hist(total["h"], hist)
+
+
+def _merge_api_samples(samples: list[dict]) -> dict:
+    """Add up the per-route counts and histograms of consecutive API samples."""
+
+    routes: dict[str, dict] = {}
+    for sample in samples:
+        for route, stats in sample["routes"].items():
+            _add_route(routes.setdefault(route, _new_route()), stats)
+    return {
+        "t": samples[-1]["t"],
+        "spanS": round(sum(sample["spanS"] for sample in samples), 1),
+        "routes": routes,
+    }
+
+
+def _api_summary(stats: dict) -> dict:
+    """Request, error and cache lookup counts and p50/p95/p99/max seconds.
+
+    ``cacheHits`` and ``cacheMisses`` count response cache lookups, so both
+    stay 0 for a route without a response cache. A percentile past the top
+    bucket bound only reads that bound, so ``p<q>Over`` marks it as a lower
+    limit; it is left out otherwise to keep the samples small.
+    """
+
+    fields = {
+        "requests": stats["n"],
+        "e4": stats["e4"],
+        "e5": stats["e5"],
+        # Raw samples from before the API counted cache lookups lack both.
+        "cacheHits": stats.get("ch", 0),
+        "cacheMisses": stats.get("cm", 0),
+        "maxS": round(stats["max"], 4) if stats["n"] else None,
+    }
+    hist = stats["h"]
+    total = sum(hist)
+    # Requests up to the top bound; the last histogram entry is the overflow.
+    bounded = total - hist[-1] if len(hist) > len(API_DURATION_BOUNDS_S) else total
+    for q in (50, 95, 99):
+        value = percentile(hist, API_DURATION_BOUNDS_S, q / 100)
+        # Interpolation inside the top bucket can overshoot the slowest request.
+        if value is not None:
+            value = round(min(value, stats["max"]), 4)
+        fields[f"p{q}S"] = value
+        if total and bounded < q / 100 * total:
+            fields[f"p{q}Over"] = True
+    return fields
+
+
+async def read_api_history(
+    redis: Redis, range_s: float, route: str | None = None, group: str | None = None
+) -> dict:
+    """Return the API's route timings of the last ``range_s`` seconds.
+
+    Args:
+        redis: The key store Redis the API writes its samples to.
+        range_s: Length of the range. Clamped like ``read_history``.
+        route: Chart and total only this route ("GET /api/cards"), None
+            for all routes together.
+        group: Without a route, chart and total only "regular" or "auth"
+            routes; None for both.
+
+    Returns:
+        dict: ``rangeS``, ``intervalS``, ``bucketS`` and ``now`` as in
+        ``read_history``; ``route`` and ``group``, what is charted, or None;
+        ``samples`` (oldest first) with the counts and percentiles of that
+        route or group per bucket, and the p95 of its busiest routes
+        (``routeP95S``), for the charts; ``routes``, every route's totals and
+        ``group`` over the whole range, most requested first, for the table,
+        whatever is charted; and ``total``, the charted route(s) over the
+        whole range.
+
+    Raises:
+        RedisError: If the key store Redis is unavailable.
+    """
+
+    # NOTE The API samples every ROUTE_METRICS_INTERVAL_S and keeps
+    # ROUTE_METRICS_RETENTION_S, which match this history's settings.
+    range_s = min(max(range_s, 60), settings.METRICS_HISTORY_RETENTION)
+    key = (range_s, route, group)
+    cached = _api_history_cache.get(key)
+    if cached and time.monotonic() - cached[0] < settings.API_HISTORY_CACHE_S:
+        return cached[1]
+    count = 2 * math.ceil(range_s / settings.METRICS_HISTORY_INTERVAL)
+    raw = await redis.lrange(API_METRICS_HISTORY_KEY, -count, -1)
+    # Decoding and merging a long range is pure CPU; on this loop it would
+    # hold up the scheduling and scraping that share it.
+    history = await asyncio.to_thread(_build_api_history, raw, range_s, route, group)
+    now = time.monotonic()
+    for stale in [
+        k
+        for k, (at, _) in _api_history_cache.items()
+        if now - at >= settings.API_HISTORY_CACHE_S
+    ]:
+        del _api_history_cache[stale]
+    _api_history_cache[key] = (now, history)
+    return history
+
+
+def _build_api_history(
+    raw: list[bytes], range_s: float, route: str | None, group: str | None
+) -> dict:
+    """Decode and summarize raw API samples, see ``read_api_history``."""
+
+    now = time.time()
+    samples = [
+        sample for sample in map(json.loads, raw) if sample["t"] >= now - range_s
+    ]
+    whole = _merge_api_samples(samples) if samples else {"routes": {}}
+    routes = [
+        {"route": name, "group": route_group(name), **_api_summary(stats)}
+        for name, stats in whole["routes"].items()
+    ]
+    routes.sort(key=lambda row: (-row["requests"], row["route"]))
+    busiest = [
+        row["route"] for row in routes if group is None or row["group"] == group
+    ][:API_CHARTED_ROUTES]
+    samples, bucket_s = downsample(
+        samples, range_s, settings.HISTORY_MAX_POINTS, _merge_api_samples
+    )
+    charted = []
+    for sample in samples:
+        total = _charted_stats(sample["routes"], route, group)
+        charted.append(
+            {
+                "t": sample["t"],
+                "spanS": sample["spanS"],
+                **_api_summary(total),
+                # Absent from a bucket without requests, which breaks the line.
+                "routeP95S": {
+                    route: _api_summary(sample["routes"][route])["p95S"]
+                    for route in busiest
+                    if route in sample["routes"]
+                },
+            }
+        )
+    return {
+        "rangeS": range_s,
+        "intervalS": settings.METRICS_HISTORY_INTERVAL,
+        "bucketS": bucket_s,
+        "now": now,
+        "route": route,
+        "group": group,
+        "samples": charted,
+        "routes": routes,
+        "total": _api_summary(_charted_stats(whole["routes"], route, group)),
+    }
+
+
+def _charted_stats(
+    routes: dict[str, dict], route: str | None, group: str | None = None
+) -> dict:
+    """One route's counts, else one group's or all routes' added up.
+
+    A route without requests yields zero counts, so its charts show the
+    quiet stretch instead of a gap that would read as the API being down.
+    """
+
+    total = _new_route()
+    for name, stats in routes.items():
+        if route is not None:
+            charted = name == route
+        else:
+            charted = group is None or route_group(name) == group
+        if charted:
+            _add_route(total, stats)
+    return total
 
 
 def _json_error(status: str, detail: str) -> tuple[str, str, bytes]:
@@ -522,15 +754,25 @@ async def _route(
     if url.path == "/status":
         body = json.dumps(metrics.latest, indent=2).encode()
         return "200 OK", "application/json", body
-    if url.path == "/history":
+    if url.path in ("/history", "/api-history"):
+        query = parse_qs(url.query)
         try:
-            range_s = float(parse_qs(url.query).get("range", ["3600"])[0])
+            range_s = float(query.get("range", ["3600"])[0])
         except ValueError:
             range_s = math.nan
         if not math.isfinite(range_s):
             return _json_error("400 Bad Request", "range must be seconds")
         try:
-            history = await read_history(redis, range_s)
+            if url.path == "/history":
+                history = await read_history(redis, range_s)
+            else:
+                route = query.get("route", [None])[0]
+                group = query.get("group", [None])[0]
+                if group is not None and group not in API_ROUTE_GROUPS:
+                    return _json_error(
+                        "400 Bad Request", "group must be regular or auth"
+                    )
+                history = await read_api_history(redis, range_s, route, group)
         except RedisError:
             logger.exception("History read failed")
             return _json_error("503 Service Unavailable", "Key store unavailable")
@@ -580,8 +822,11 @@ async def start_status_server(
 ) -> asyncio.base_events.Server:
     """Start the read-only status endpoint and dashboard on STATUS_PORT.
 
-    Routes: ``/`` (dashboard page) with its ``/assets/``, ``/status`` (latest snapshot as JSON) and
-    ``/history?range=<seconds>`` (samples for the dashboard charts).
+    Routes: ``/`` (scraper page) and ``/api`` (API page) with their
+    ``/assets/``, ``/status`` (latest snapshot as JSON),
+    ``/history?range=<seconds>`` (samples for the dashboard charts) and
+    ``/api-history?range=<seconds>[&route=<route>][&group=regular|auth]``
+    (the API's route timings, of all routes, one group, or one route).
 
     It listens on all interfaces inside the container, which Docker needs to
     forward the port. docker-compose.yml publishes it as 127.0.0.1:9100 only,

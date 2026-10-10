@@ -280,6 +280,14 @@ class Settings:
     # A save copies the whole index on the event loop (~20 ms at 100k
     # players, ~450 ms at 1M); a restart catches up on what it missed.
     SEARCH_SNAPSHOT_INTERVAL_S: int = 30 * 60  # 30 minutes
+
+    # Route timings for the scraper's status dashboard: one sample per
+    # interval in the key store, kept for the retention. ~125 bytes per route
+    # used in a minute, so a dozen busy routes take ~10-15 MB over 7 days.
+    # NOTE Match METRICS_HISTORY_INTERVAL and METRICS_HISTORY_RETENTION in the
+    # scraper's settings.py: the dashboard charts both on the same clock.
+    ROUTE_METRICS_INTERVAL_S: int = 60  # seconds
+    ROUTE_METRICS_RETENTION_S: int = 7 * 24 * 60 * 60  # 7 days
     # Retry delay while the first index build has not succeeded, also sent
     # as Retry-After with the 503 search responses in the meantime.
     SEARCH_BUILD_RETRY_S: int = 30  # seconds

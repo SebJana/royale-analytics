@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from fastapi_limiter import FastAPILimiter
 from redis.asyncio import Redis
 from fastapi.responses import JSONResponse
@@ -27,6 +27,11 @@ from api_key_store import (
 )
 from scrape_schedule import Schedule, BATTLES_SCHEDULE, PROFILES_SCHEDULE
 from core.deps import ScrapeSchedules
+from core.route_timing import (
+    RouteTimingMiddleware,
+    RouteTimings,
+    publish_route_timings,
+)
 from mongo import MongoConn
 from player_search import PlayerSearchService
 from helpers.ip_utils import rate_limit_key_func
@@ -190,9 +195,23 @@ async def lifespan(app: FastAPI):
         initialize_rate_limit_redis, name="rate-limit Redis"
     )
 
+    # Next to the scraper's own history, which the same dashboard reads.
+    route_timing_task = asyncio.create_task(
+        publish_route_timings(
+            route_timings,
+            key_redis,
+            settings.ROUTE_METRICS_INTERVAL_S,
+            settings.ROUTE_METRICS_RETENTION_S,
+        )
+    )
+
     yield
 
     # Shutdown
+    # Before the key store closes: cancelling writes the last partial minute.
+    route_timing_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await route_timing_task
     await player_search.close()
     await app.state.cr_api.close()
     await app.state.key_store.close()
@@ -202,6 +221,9 @@ async def lifespan(app: FastAPI):
     await auth_state_redis.close()
     await rate_limit_redis.aclose()
 
+
+# Created with the app, not in lifespan: the middleware below needs it first.
+route_timings = RouteTimings()
 
 app = FastAPI(lifespan=lifespan)
 
@@ -236,6 +258,10 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Halli-Galli-Image-Version"],
 )
+
+# Added last, so it is the outermost middleware: the time covers CORS and the
+# error handlers too, and a request CORS answers itself still counts.
+app.add_middleware(RouteTimingMiddleware, timings=route_timings)
 
 # Include routers
 app.include_router(players_tracked.router, prefix="/api")

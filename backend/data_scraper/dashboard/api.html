@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Scraper monitoring</title>
+    <title>API monitoring</title>
     <!-- Inline SVG, so the icon needs neither a file nor an outside request. -->
     <link
       rel="icon"
@@ -38,14 +38,14 @@
     <script src="assets/uPlot.iife.min.js"></script>
     <link rel="stylesheet" href="assets/dashboard.css" />
   </head>
-  <body data-page="scraper">
+  <body data-page="api">
     <main>
       <div class="top">
         <div class="title">
-          <h1>Scraper monitoring</h1>
+          <h1>API monitoring</h1>
           <nav class="segmented pages" aria-label="Dashboards">
-            <a href="./" aria-current="page">Scraper</a>
-            <a href="api">API</a>
+            <a href="./">Scraper</a>
+            <a href="api" aria-current="page">API</a>
           </nav>
           <span class="status" id="status"><i></i><span>Loading</span></span>
         </div>
@@ -69,10 +69,14 @@
       <div class="kpis" id="kpis"></div>
       <div id="sections"></div>
       <footer>
-        Rates are per minute. Percentiles come from bucketed histograms and are
-        exact to the bucket. Breaks in a line mean no samples were written.
-        Longer ranges merge samples: counts and histograms add up, backlogs keep
-        the worst value of each period.
+        Every HTTP request that reaches the API counts once, under its method
+        and route template, so player tags and queries share a row. Times run
+        from the request reaching the API to its last byte leaving: nginx, the
+        network and WebSockets are not included, and neither are requests nginx
+        answers itself, such as a 502 while the API is down. Percentiles come
+        from bucketed histograms and are exact to the bucket; one past the top
+        bucket reads "≥ 10s" and plots at 10s. Breaks in a line mean the API
+        reported no samples: it was down, or it could not write them.
       </footer>
     </main>
     <script src="assets/dashboard.js"></script>

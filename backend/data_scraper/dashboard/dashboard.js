@@ -1,5 +1,8 @@
 "use strict";
 
+// index.html is the scraper page, api.html the API page; both load this script.
+const PAGE = document.body.dataset.page === "api" ? "api" : "scraper";
+
 const RANGES = {
   "1h": 3600,
   "3h": 10800,
@@ -37,9 +40,22 @@ function dur(s) {
   if (s < 172800) return (s / 3600).toFixed(1) + "h";
   return (s / 86400).toFixed(1) + "d";
 }
+// API responses take milliseconds, which dur would round to "0ms".
+function ms(s) {
+  if (s == null) return "–";
+  if (s === 0) return "0";
+  const m = s * 1000;
+  if (m < 10) return m.toFixed(1) + "ms";
+  if (m < 1000) return Math.round(m) + "ms";
+  return dur(s);
+}
+// An API percentile past the histogram's top bound reads only that bound, so
+// it shows as a lower limit (p95Over and friends, see _api_summary).
+const apiPct = (r, q) => (r[`p${q}Over`] ? "≥ " : "") + ms(r[`p${q}S`]);
 // dur keeps a bare "0" for chart axes; elapsed time reads "0s" instead.
 const age = (s) => (s < 1 ? "0s" : dur(s));
 const mb = (b) => (b == null ? "–" : (b / 1048576).toFixed(1) + " MB");
+const pct = (v) => (v == null ? "–" : `${Number(v.toFixed(1))}%`);
 
 const perMin = (count, s) =>
   s.spanS > 0 ? ((count || 0) * 60) / s.spanS : null;
@@ -57,8 +73,9 @@ const percentiles = (name) => [
   ["p99", "--c3", (s) => s[`battleP99${name}`], { dash: [4, 3] }],
 ];
 
-// Sections of charts. Each chart: title, value format, and
-// [label, color variable, getter, extra uPlot series options] per series.
+// Sections of charts. Each chart: title, value format,
+// [label, color variable, getter, extra uPlot series options] per series,
+// and optionally { log: true } for a logarithmic value axis.
 const SECTIONS = [
   [
     "Throughput",
@@ -204,6 +221,98 @@ const SECTIONS = [
   ],
 ];
 
+// The API's route timings (from /api-history), of the selected route, one
+// route group, or all routes together. Titles name the scope (null for a
+// single route), so a screenshot keeps it.
+const scoped = (title, scope) => (scope ? `${title}, ${scope}` : title);
+const apiCharts = (scope) => [
+  [
+    "Requests / min",
+    rate,
+    [
+      ["Requests", "--c1", (s) => perMin(s.requests, s)],
+      ["4xx", "--c3", (s) => perMin(s.e4, s)],
+      ["5xx", "--c4", (s) => perMin(s.e5, s)],
+    ],
+  ],
+  // Logarithmic: response times span from under a millisecond to seconds,
+  // and one slow request would flatten every faster line at the bottom.
+  [
+    scoped("Response time", scope),
+    ms,
+    [
+      ["p50", "--c2", (s) => s.p50S],
+      ["p95", "--c1", (s) => s.p95S],
+      ["p99", "--c3", (s) => s.p99S, { dash: [4, 3] }],
+    ],
+    { log: true },
+  ],
+  // Share of the requests, not their count, so a busy minute with few
+  // errors does not look worse than a quiet one with many. A bucket without
+  // requests is a gap. 4xx includes expected answers such as a wrong CAPTCHA
+  // (401) or a player without battles in the range (404).
+  [
+    scoped("Error rate", scope),
+    pct,
+    [
+      ["4xx", "--c3", (s) => (s.requests ? (s.e4 * 100) / s.requests : null)],
+      ["5xx", "--c4", (s) => (s.requests ? (s.e5 * 100) / s.requests : null)],
+    ],
+  ],
+  // Without lookups in a bucket the rate is a gap, not 0%: a quiet minute
+  // or a route without a response cache did not miss anything.
+  [
+    scoped("Cache hit rate", scope),
+    pct,
+    [
+      [
+        "Hits",
+        "--c2",
+        (s) => {
+          const lookups = (s.cacheHits || 0) + (s.cacheMisses || 0);
+          return lookups ? (s.cacheHits * 100) / lookups : null;
+        },
+      ],
+    ],
+    { max: 100 },
+  ],
+];
+const ROUTE_COLORS = ["--c1", "--c3", "--c4", "--c2"];
+// "GET /api/players/{player_tag}/battles" reads "/players/{player_tag}/battles";
+// other methods keep their name.
+const shortRoute = (route) =>
+  route.replace(/^GET /, "").replace(/^(\w+ )?\/api\//, "$1/");
+
+// One p95 line per busiest route; the server sends their values per bucket.
+function busiestRoutesChart(api) {
+  const routes = groupRoutes(api, apiGroup)
+    .slice(0, ROUTE_COLORS.length)
+    .map((r) => r.route);
+  return [
+    "p95 of the busiest routes",
+    ms,
+    routes.map((route, i) => [
+      shortRoute(route),
+      ROUTE_COLORS[i],
+      (s) => (s.routeP95S || {})[route] ?? null,
+    ]),
+    { log: true },
+  ];
+}
+const API_COLUMNS = [
+  ["Route", (r) => r.route],
+  ["Requests", (r) => num(r.requests)],
+  ["p50", (r) => apiPct(r, 50)],
+  ["p95", (r) => apiPct(r, 95)],
+  ["p99", (r) => apiPct(r, 99)],
+  ["Max", (r) => ms(r.maxS)],
+  ["4xx", (r) => num(r.e4)],
+  ["5xx", (r) => num(r.e5)],
+  ["Error rate", (r) => share(r.e4 + r.e5, r.requests)],
+  // Routes without a response cache never look one up and show a dash.
+  ["Cache hits", (r) => share(r.cacheHits, r.cacheHits + r.cacheMisses)],
+];
+
 const ICONS = {
   auto: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="8.5" rx="1.5"/><path d="M5.5 14h5M8 11.5V14"/></svg>',
   light:
@@ -214,6 +323,25 @@ const ICONS = {
 let range = RANGES[location.hash.slice(1)] || 21600;
 let status = null;
 let lastHistory = null;
+let lastApiHistory = null;
+// The API page's selected route, null for all; kept in the URL (?route=), so
+// a reload or a shared link opens the same route.
+let apiRoute = new URLSearchParams(location.search).get("route");
+// Route groups the server charts on their own; the auth flow apart from
+// regular traffic, so an attack on one shows separately.
+// NOTE Matches API_ROUTE_GROUPS and route_group in src/metrics.py.
+const API_GROUPS = [
+  ["", "All", "all routes"],
+  ["regular", "Regular", "regular traffic"],
+  ["auth", "Auth flow", "auth flow"],
+];
+// The selected group, "" for all; kept in the URL (?group=) like the route.
+let apiGroup = new URLSearchParams(location.search).get("group") || "";
+if (!API_GROUPS.some(([value]) => value === apiGroup)) apiGroup = "";
+const groupScope = (group) => API_GROUPS.find(([v]) => v === group)[2];
+// Routes of one group, all for "". Rows from before groups count as regular.
+const groupRoutes = (api, group) =>
+  api.routes.filter((r) => !group || (r.group || "regular") === group);
 let plots = [];
 // A width read while the charts are rebuilt can be stale. Every newly
 // observed card reports its final size once, which corrects that width,
@@ -289,7 +417,19 @@ function readout(el, timeEl, series, fmt, data, idx) {
   timeEl.textContent = idx == null ? "latest" : timeLabel(data[0][idx]);
 }
 
-function chart(parent, [title, fmt, series], history) {
+// 1ms, 10ms, 100ms, ... within a log axis's range.
+function decades(u, axisIdx, min, max) {
+  const splits = [];
+  for (
+    let e = Math.floor(Math.log10(min));
+    e <= Math.ceil(Math.log10(max));
+    e++
+  )
+    if (10 ** e >= min && 10 ** e <= max) splits.push(10 ** e);
+  return splits;
+}
+
+function chart(parent, [title, fmt, series, options = {}], history) {
   const values = node("div", { className: "readout" });
   const time = node("span", { className: "time" });
   const card = node(
@@ -304,6 +444,12 @@ function chart(parent, [title, fmt, series], history) {
     history,
     series.map((s) => s[2]),
   );
+  // A log axis has no zero; such a point becomes a gap instead.
+  if (options.log)
+    for (const col of data.slice(1))
+      col.forEach((v, i) => {
+        if (v != null && v <= 0) col[i] = null;
+      });
   const axis = {
     stroke: css("--muted"),
     font: "11px Inter, system-ui, sans-serif",
@@ -320,7 +466,11 @@ function chart(parent, [title, fmt, series], history) {
       // An array range pins the axis to the selected window. min/max
       // alone are overwritten by autoscaling to the first and last sample.
       x: { range: [history.now - history.rangeS, history.now] },
-      y: { range: (u, min, max) => [0, max > 0 ? max * 1.15 : 1] },
+      y: options.log
+        ? { distr: 3, log: 10 }
+        : options.max != null
+          ? { range: [0, options.max] }
+          : { range: (u, min, max) => [0, max > 0 ? max * 1.15 : 1] },
     },
     axes: [
       {
@@ -334,6 +484,10 @@ function chart(parent, [title, fmt, series], history) {
         space: 36,
         grid: { stroke: css("--grid"), width: 1 },
         values: (u, vals) => vals.map(fmt),
+        // Powers of ten only: uPlot's default also lines 2..9 of each decade,
+        // a dense grid that hides the data. Every one keeps its label, which
+        // uPlot's log filter would otherwise blank on alternate lines.
+        ...(options.log && { splits: decades, filter: (u, splits) => splits }),
       },
     ],
     series: [
@@ -359,23 +513,195 @@ function chart(parent, [title, fmt, series], history) {
   readout(values, time, series, fmt, data, null);
 }
 
-function renderCharts(history) {
+// Rebuilds the current page's charts from the last loaded data.
+function renderCharts() {
   resizer.disconnect();
   plots.forEach((p) => p.destroy());
   plots = [];
   const root = $("sections");
   root.replaceChildren();
+  if (PAGE === "api") {
+    if (lastApiHistory) renderApi(root, lastApiHistory);
+    return;
+  }
+  if (!lastHistory) return;
   for (const [heading, charts] of SECTIONS) {
     const grid = node("div", { className: "grid" });
     root.append(
       node("section", {}, node("h3", { textContent: heading }), grid),
     );
-    charts.forEach((spec) => chart(grid, spec, history));
+    charts.forEach((spec) => chart(grid, spec, lastHistory));
   }
+}
+
+// Charts of all routes together, then every route over the whole range,
+// most requested first.
+function renderApi(root, api) {
+  const grid = node("div", { className: "grid" });
+  root.append(
+    node(
+      "section",
+      { id: "route-charts" },
+      node("div", { className: "section-head" }, groupPicker(), routePicker(api)),
+      grid,
+    ),
+  );
+  apiCharts(apiRoute ? null : groupScope(apiGroup))
+    // The auth flow has no response cache, so its hit rate chart stays empty.
+    .filter(([title]) => !(apiGroup === "auth" && !apiRoute && title.startsWith("Cache")))
+    .forEach((spec) => chart(grid, spec, api));
+  // Comparing routes only makes sense while a whole group is shown.
+  if (!apiRoute && groupRoutes(api, apiGroup).length)
+    chart(grid, busiestRoutesChart(api), api);
+  const routes = node("div", { className: "grid" });
+  root.append(
+    node("section", {}, node("h3", { textContent: "Per route" }), routes),
+  );
+  // One table per group, whatever is charted: regular traffic and the auth
+  // flow side by side.
+  for (const [group, label] of API_GROUPS.slice(1))
+    routes.append(routeTable(`${label} routes`, groupRoutes(api, group)));
+}
+
+function routeTable(title, rows) {
+  const card = node(
+    "article",
+    { className: "card routes" },
+    node("h2", { textContent: title }),
+    node("p", {
+      className: "hint",
+      textContent: "Select a route to chart it on its own.",
+    }),
+  );
+  if (!rows.length) {
+    card.append(
+      node("p", {
+        className: "empty",
+        textContent: "No requests in this range.",
+      }),
+    );
+    return card;
+  }
+  const head = node(
+    "tr",
+    {},
+    ...API_COLUMNS.map(([label]) => node("th", { textContent: label })),
+  );
+  const cells = rows.map((r) => {
+    const selected = r.route === apiRoute;
+    // The route name is a button: the row reads as a row, the name as the
+    // control, and the keyboard reaches it. A second click deselects.
+    const pick = node("button", {
+      type: "button",
+      textContent: r.route,
+      title: selected ? "Show the whole group" : "Chart this route",
+      onclick: () => selectRoute(selected ? null : r.route),
+    });
+    pick.setAttribute("aria-pressed", String(selected));
+    return node(
+      "tr",
+      { className: selected ? "selected" : "" },
+      node("td", {}, pick),
+      ...API_COLUMNS.slice(1).map(([, value]) =>
+        node("td", { textContent: value(r) }),
+      ),
+    );
+  });
+  card.append(
+    node(
+      "div",
+      { className: "table" },
+      node("table", {}, node("thead", {}, head), node("tbody", {}, ...cells)),
+    ),
+  );
+  return card;
+}
+
+// All routes, regular traffic or the auth flow; picking a group shows its
+// totals instead of a single route's.
+function groupPicker() {
+  const picker = node("div", { className: "segmented" });
+  picker.setAttribute("role", "group");
+  picker.setAttribute("aria-label", "Route group");
+  for (const [value, label] of API_GROUPS) {
+    const button = node("button", { type: "button", textContent: label });
+    button.setAttribute("aria-pressed", String(!apiRoute && value === apiGroup));
+    button.onclick = () => selectGroup(value);
+    picker.append(button);
+  }
+  return picker;
+}
+
+function selectGroup(group) {
+  apiGroup = group;
+  apiRoute = null;
+  const url = new URL(location.href);
+  url.searchParams.delete("route");
+  if (group) url.searchParams.set("group", group);
+  else url.searchParams.delete("group");
+  history.replaceState(null, "", url);
+  refresh();
+}
+
+// The whole group first, then the group's routes of the range by requests; a
+// selected route without requests in this range still stays selectable.
+function routePicker(api) {
+  const names = groupRoutes(api, apiGroup).map((r) => r.route);
+  if (apiRoute && !names.includes(apiRoute)) names.unshift(apiRoute);
+  const label = API_GROUPS.find(([v]) => v === apiGroup)[1].toLowerCase();
+  const select = node(
+    "select",
+    { id: "route", onchange: () => selectRoute(select.value || null) },
+    node("option", {
+      value: "",
+      textContent: apiGroup ? `All ${label} routes` : "All routes",
+    }),
+    ...names.map((name) => node("option", { value: name, textContent: name })),
+  );
+  select.value = apiRoute || "";
+  return node(
+    "label",
+    { className: "route-picker" },
+    node("span", { textContent: "Route" }),
+    select,
+  );
+}
+
+function selectRoute(route) {
+  apiRoute = route;
+  const url = new URL(location.href);
+  if (route) url.searchParams.set("route", route);
+  else url.searchParams.delete("route");
+  history.replaceState(null, "", url);
+  // The table sits below the charts; a pick there would change charts out of
+  // view.
+  const charts = $("route-charts");
+  if (charts && charts.getBoundingClientRect().top < 0)
+    charts.scrollIntoView({ behavior: "smooth" });
+  refresh();
+}
+
+// The API page has no snapshot: its samples show whether the API writes.
+function apiState() {
+  const samples = lastApiHistory ? lastApiHistory.samples : [];
+  if (!lastApiHistory) return ["Loading", "--muted"];
+  if (!samples.length) return ["No samples in range", "--warn"];
+  const quiet = Date.now() / 1000 - samples[samples.length - 1].t;
+  // Three missed samples, like the scraper's snapshots
+  return quiet > 3 * lastApiHistory.intervalS
+    ? [`Not reporting · last sample ${age(quiet)} ago`, "--bad"]
+    : ["Running", "--ok"];
 }
 
 function renderStatus() {
   const el = $("status");
+  if (PAGE === "api") {
+    const [text, color] = apiState();
+    el.style.setProperty("--dot", css(color));
+    el.lastChild.textContent = text;
+    showUpdated();
+    return;
+  }
   let [text, color] = ["Running", "--ok"];
   if (!status || !status.updatedAt)
     [text, color] = ["No snapshot yet", "--warn"];
@@ -391,6 +717,10 @@ function renderStatus() {
     status && status.startedAt
       ? `${text} · up ${age(Date.now() / 1000 - status.startedAt)}`
       : text;
+  showUpdated();
+}
+
+function showUpdated() {
   if (loadedAt)
     $("updated").textContent =
       `Updated ${age(Math.round((Date.now() - loadedAt) / 1000))} ago`;
@@ -438,18 +768,76 @@ function renderKpis() {
       s.redis.maxMemory ? `of ${mb(s.redis.maxMemory)}` : "no limit",
     ],
   ];
+  showKpis(kpis);
+}
+
+const share = (part, whole) =>
+  whole ? `${Number(((part / whole) * 100).toFixed(1))}%` : "–";
+
+// Over the selected range, unlike the scraper's tiles, which cover the last
+// minute: a minute of a quiet site holds too few requests for a p95.
+function renderApiKpis() {
+  const api = lastApiHistory;
+  const t = api.total;
+  const upS = api.samples.reduce((sum, s) => sum + s.spanS, 0);
+  // A route seen a handful of times has its slowest request as p95; with at
+  // least 20 requests, one slow outlier is not the whole p95.
+  // The routes the tiles cover: the selected group's, or all.
+  const inScope = groupRoutes(api, apiGroup);
+  const steady = inScope.filter((r) => r.requests >= 20);
+  const slowest = (steady.length ? steady : inScope).reduce(
+    (a, b) => (b.p95S > a.p95S ? b : a),
+    { p95S: null },
+  );
+  const scope = apiRoute ? routeLabel(apiRoute) : groupScope(apiGroup);
+  showKpis([
+    [
+      "Requests / min",
+      rate(upS ? (t.requests * 60) / upS : null),
+      `${num(t.requests)} in range`,
+    ],
+    ["p50", apiPct(t, 50), scope, apiRoute],
+    ["p95", apiPct(t, 95), scope, apiRoute],
+    ["p99", apiPct(t, 99), `slowest ${ms(t.maxS)}`],
+    ["4xx", share(t.e4, t.requests), `${num(t.e4)} requests`],
+    ["5xx", share(t.e5, t.requests), `${num(t.e5)} requests`],
+    [
+      "Cache hits",
+      share(t.cacheHits, t.cacheHits + t.cacheMisses),
+      `${num(t.cacheHits + t.cacheMisses)} lookups`,
+    ],
+    [
+      "Slowest route p95",
+      apiPct(slowest, 95),
+      slowest.route ? routeLabel(slowest.route) : "no requests",
+      slowest.route,
+    ],
+    ["Routes", num(inScope.length), "with requests"],
+  ]);
+}
+
+// Tiles: [label, value, subtitle, tooltip]. A subtitle is text or the nodes
+// routeLabel returns.
+function showKpis(kpis) {
   $("kpis").replaceChildren(
-    ...kpis.map(([label, value, sub]) =>
+    ...kpis.map(([label, value, sub, title = ""]) =>
       node(
         "div",
         { className: "kpi" },
         node("span", { textContent: label }),
         node("b", { textContent: value }),
-        node("small", { textContent: sub }),
+        node("small", { title }, ...[sub].flat()),
       ),
     ),
   );
 }
+
+// A route path has no spaces, so it could not wrap and would run into the
+// next tile. <wbr> after each "/" lets it break between segments.
+const routeLabel = (route) =>
+  shortRoute(route)
+    .split(/(?<=\/)/)
+    .flatMap((part, i) => (i ? [node("wbr"), part] : [part]));
 
 async function getJson(url) {
   const response = await fetch(url, { cache: "no-store" });
@@ -462,17 +850,29 @@ async function refresh() {
   // request renders, so an older range never replaces a newer one.
   const request = ++refreshSeq;
   try {
-    const [snapshot, history] = await Promise.all([
-      getJson("status"),
-      getJson(`history?range=${range}`),
-    ]);
-    if (request !== refreshSeq) return;
-    status = snapshot;
-    lastHistory = history;
+    if (PAGE === "api") {
+      const query = apiRoute
+        ? `&route=${encodeURIComponent(apiRoute)}`
+        : apiGroup
+          ? `&group=${apiGroup}`
+          : "";
+      const apiHistory = await getJson(`api-history?range=${range}${query}`);
+      if (request !== refreshSeq) return;
+      lastApiHistory = apiHistory;
+      renderApiKpis();
+    } else {
+      const [snapshot, history] = await Promise.all([
+        getJson("status"),
+        getJson(`history?range=${range}`),
+      ]);
+      if (request !== refreshSeq) return;
+      status = snapshot;
+      lastHistory = history;
+      if (status.jobs) renderKpis();
+    }
     loadedAt = Date.now();
     $("error").replaceChildren();
-    if (status.jobs) renderKpis();
-    renderCharts(history);
+    renderCharts();
   } catch (error) {
     $("error").replaceChildren(
       node("div", {
@@ -493,7 +893,7 @@ function applyTheme(choice) {
   for (const b of $("theme").children)
     b.setAttribute("aria-pressed", String(b.dataset.value === choice));
   // Canvas colors are read when a chart is built, so the charts redraw.
-  if (lastHistory) renderCharts(lastHistory);
+  renderCharts();
   renderStatus();
 }
 
@@ -503,6 +903,7 @@ for (const [label, seconds] of Object.entries(RANGES)) {
   button.onclick = () => {
     range = seconds;
     history.replaceState(null, "", "#" + label);
+    keepRangeInPageLinks();
     for (const b of $("ranges").children)
       b.setAttribute("aria-pressed", String(b === button));
     refresh();
@@ -525,6 +926,12 @@ for (const value of ["auto", "light", "dark"]) {
   };
   $("theme").append(button);
 }
+// The other page opens with the same range selected.
+function keepRangeInPageLinks() {
+  for (const link of document.querySelectorAll("nav.pages a"))
+    link.hash = location.hash;
+}
+keepRangeInPageLinks();
 applyTheme(document.documentElement.dataset.themeChoice);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   if (document.documentElement.dataset.themeChoice === "auto")

@@ -131,12 +131,22 @@ h1 {
   width: 14px;
   height: 14px;
 }
-.segmented button:hover {
+.segmented button:hover,
+.segmented a:hover {
   color: var(--text);
 }
-.segmented button[aria-pressed="true"] {
+.segmented button[aria-pressed="true"],
+.segmented a[aria-current="page"] {
   color: var(--text);
   background: var(--grid);
+}
+/* Links between the two pages, styled like the range buttons */
+.segmented a {
+  font-weight: 500;
+  color: var(--muted);
+  text-decoration: none;
+  border-radius: 5px;
+  padding: 3px 11px;
 }
 
 .error {
@@ -157,6 +167,9 @@ h1 {
   margin-bottom: 36px;
 }
 .kpi {
+  /* Grid items grow to their content by default; a long subtitle would
+     widen the tile past its column instead of wrapping. */
+  min-width: 0;
   padding: 14px 18px 16px;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
@@ -167,6 +180,11 @@ h1 {
   display: block;
   color: var(--muted);
   font-size: 12px;
+}
+/* Routes break after a "/" (see routeLabel); a single segment longer than
+   the tile breaks anywhere rather than overflow. */
+.kpi small {
+  overflow-wrap: anywhere;
 }
 .kpi b {
   display: block;
@@ -246,6 +264,116 @@ section + section {
 }
 .u-cursor-x {
   border-right: 1px solid var(--muted) !important;
+}
+/* The route picker sits where the other sections have their heading */
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-bottom: 12px;
+}
+.route-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+.route-picker select {
+  min-width: 0;
+  max-width: 100%;
+  font:
+    12px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.card.routes .hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 2px 0 0;
+}
+/* The route name is the row's control; it looks like the text it replaces */
+.card.routes td button {
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.card.routes td button:hover {
+  text-decoration: underline;
+}
+.card.routes tr.selected td {
+  background: var(--grid);
+}
+.card.routes tr.selected td button {
+  font-weight: 600;
+}
+
+/* The route table spans the whole row; a narrow window scrolls it sideways
+   instead of squeezing the route names. */
+.card.routes {
+  grid-column: 1 / -1;
+  padding-bottom: 12px;
+}
+.card.routes .table {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+.card.routes table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.card.routes th,
+.card.routes td {
+  padding: 6px 10px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+.card.routes th {
+  color: var(--muted);
+  font-weight: 500;
+}
+.card.routes th:first-child,
+.card.routes td:first-child {
+  text-align: left;
+  padding-left: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.card.routes th:first-child {
+  font-family: inherit;
+}
+/* p95 is the column to read first */
+.card.routes td:nth-child(4) {
+  color: var(--text);
+  font-weight: 600;
+}
+.card.routes td {
+  color: var(--text-2);
+}
+.card.routes tr:last-child td {
+  border-bottom: none;
+}
+.card.routes .empty {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 8px 0 4px;
 }
 footer {
   color: var(--muted);

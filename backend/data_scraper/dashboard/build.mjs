@@ -19,7 +19,8 @@ const assets = {
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(join(dist, "assets"), { recursive: true });
-await copyFile(join(root, "index.html"), join(dist, "index.html"));
+for (const page of ["index.html", "api.html"])
+  await copyFile(join(root, page), join(dist, page));
 for (const [name, source] of Object.entries(assets)) {
   await copyFile(join(root, source), join(dist, "assets", name));
 }

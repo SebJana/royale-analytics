@@ -203,6 +203,10 @@ class Settings:
     # Most points a history response returns. Longer ranges merge neighboring
     # samples, so a 7 day chart stays small enough to render quickly.
     HISTORY_MAX_POINTS: int = 720
+    # How long a processed /api-history answer is reused. The API adds one
+    # sample per METRICS_HISTORY_INTERVAL, while building a 7 day answer takes
+    # seconds of CPU that every dashboard refresh would otherwise repeat.
+    API_HISTORY_CACHE_S: float = 30  # seconds
     # How often a throughput and schedule summary is logged
     STATUS_LOG_INTERVAL: float = 60  # seconds
     # Port of the read-only status endpoint inside the container. Compose

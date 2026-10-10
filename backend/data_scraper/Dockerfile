@@ -3,7 +3,7 @@ FROM node:22-alpine AS dashboard
 WORKDIR /dashboard
 COPY data_scraper/dashboard/package.json data_scraper/dashboard/package-lock.json ./
 RUN npm ci --no-audit --no-fund
-COPY data_scraper/dashboard/build.mjs data_scraper/dashboard/index.html data_scraper/dashboard/dashboard.css data_scraper/dashboard/dashboard.js ./
+COPY data_scraper/dashboard/build.mjs data_scraper/dashboard/index.html data_scraper/dashboard/api.html data_scraper/dashboard/dashboard.css data_scraper/dashboard/dashboard.js ./
 RUN npm run build
 
 # Use an official Python runtime as a parent image
