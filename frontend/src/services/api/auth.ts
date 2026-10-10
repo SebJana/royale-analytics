@@ -86,8 +86,6 @@ export async function getHalliGalliGame(
   const response = await api.get<HalliGalliGameResponse>(
     "/auth/halli_galli_id",
     {
-      // Initial card generation can take longer than the normal API timeout.
-      timeout: 20000,
       headers: {
         Authorization: `Bearer ${wordleToken}`,
         "X-Halli-Galli-Calibration": calibrationId,
@@ -107,7 +105,7 @@ export async function getHalliGalliCard(
   const response = await api.post<Blob>(
     `/auth/halli_galli_card/${gameId}/${roundIndex}`,
     undefined,
-    { responseType: "blob", timeout: 10000 },
+    { responseType: "blob" },
   );
   return {
     image: response.data,

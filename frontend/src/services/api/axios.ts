@@ -35,11 +35,26 @@ api.interceptors.response.use(
     settleRequest();
     return response;
   },
-  (error) => {
+  async (error) => {
     settleRequest();
-    return Promise.reject(error);
+    await decodeBlobError(error);
+    throw error;
   },
 );
+
+// Image requests use responseType "blob", so their JSON error bodies (such as
+// IMAGES_NOT_READY) arrive as Blobs too. Parsing them back lets every error
+// handler read detail.code, whatever the request expected on success.
+async function decodeBlobError(error: unknown) {
+  if (!axios.isAxiosError(error)) return;
+  const data: unknown = error.response?.data;
+  if (!(data instanceof Blob) || !data.type.includes("json")) return;
+  try {
+    error.response!.data = JSON.parse(await data.text());
+  } catch {
+    // An unreadable body stays a Blob; the status code still classifies it.
+  }
+}
 
 /**
  * Resolves once no API request is in flight.

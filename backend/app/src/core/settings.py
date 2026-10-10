@@ -12,6 +12,9 @@ class Settings:
     CACHE_REDIS_HOST: str = "redis-cache"
     AUTH_STATE_REDIS_HOST: str = "redis-auth-state"
     KEY_STORE_REDIS_HOST: str = "redis-key-store"
+    # Pre-rendered Halli Galli cards and CAPTCHAs. Only the media worker
+    # renders and adds them; the API takes them and never renders an image.
+    MEDIA_REDIS_HOST: str = "redis-media"
     REDIS_PORT: int = 6379
 
     # The app's key pool starts at most one request per second on each key.
@@ -53,10 +56,59 @@ class Settings:
     # the incoming (from the same pool) to those
     HALLI_GALLI_CARD_VARIATIONS_PER_COMBINATION = 25
 
-    # Rotate raw card variations after they are created, so that an automated attack
-    # does not receive the same variations of cards over and over for hours.
-    # Reusing a variation does not extend its lifetime.
+    # Rotate raw card variations once they are in use, so that an automated
+    # attack does not receive the same variations of cards over and over for
+    # hours. A card's lifetime starts at its first delivery; a card in stock
+    # that no game picked has none. Reusing a variation does not extend its
+    # lifetime. This is the mean; each card's lifetime is spread by the jitter
+    # below.
     HALLI_GALLI_CARD_TTL_MINUTES = 10
+
+    # A card's replacement becomes due TTL * (1 +/- jitter) after its first
+    # delivery; it stays in service longer when the replacement budget is
+    # spent. The spread keeps replacements, and so the worker's rendering,
+    # even instead of in bursts.
+    HALLI_GALLI_CARD_TTL_JITTER = 0.5
+
+    # A replaced card leaves its pool, so no new game picks it, but its image
+    # stays this long for games that already did. A game needs its template
+    # only until the client preloads that round, a few rounds ahead.
+    HALLI_GALLI_CARD_GRACE_SECONDS = 5 * 60  # 5 minutes
+
+    # Most card replacements the media worker renders a minute (~60 ms each,
+    # so ~6% of a core). With every card in use, 500 cards (20 combinations x
+    # 25) at a 10 minute mean lifetime need ~50 a minute. Past the cap, used
+    # cards stay in service longer instead of the worker rendering more. It
+    # also bounds the replaced images kept for their grace (cap x grace, ~300
+    # at ~300 KB each) in redis-media.
+    MEDIA_WORKER_MAX_CARDS_PER_MINUTE = 60
+
+    # Most CAPTCHAs the media worker renders a minute (~8 ms each, so ~8% of
+    # a core). Each CAPTCHA is handed out once, so claims beyond this rate
+    # drain the stock and get 503 until it recovers: the auth flow fails
+    # under a flood instead of the worker taking more CPU.
+    MEDIA_WORKER_MAX_CAPTCHAS_PER_MINUTE = 600
+
+    # Ready, never used CAPTCHAs the media worker keeps in stock. Each one is
+    # handed out once. ~16 KB each
+    CAPTCHA_POOL_SIZE = 200
+
+    # A claimed CAPTCHA's image stays in the media Redis this long; its answer
+    # lives in auth state for the whole challenge. The client loads the image
+    # right after claiming, and a short TTL keeps a claim flood's images
+    # (~16 KB each) from filling redis-media (noeviction).
+    CAPTCHA_IMAGE_TTL_SECONDS = 60  # seconds
+
+    # Retry-After of the 503 an empty card or CAPTCHA pool answers with. The
+    # media worker notices an empty pool within MEDIA_WORKER_IDLE_SECONDS and,
+    # with budget left, refills a CAPTCHA batch or a card within a second.
+    # NOTE Keep above MEDIA_WORKER_IDLE_SECONDS.
+    MEDIA_POOL_RETRY_AFTER_SECONDS = 3  # seconds
+
+    # Longest sleep of the media worker when every pool is full. It wakes
+    # earlier for the next card replacement. A pool drained during the sleep
+    # waits for the wake-up, and an idle check costs only four Redis calls.
+    MEDIA_WORKER_IDLE_SECONDS = 1  # seconds
 
     # A fruit counts as a Halli Galli only when its visible total equals this
     # number exactly. Tune it together with the maximum fruit amount per card

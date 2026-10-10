@@ -27,7 +27,7 @@ from fastapi_limiter.depends import RateLimiter
 from pydantic import BaseModel, Field
 from redis.exceptions import WatchError
 
-from core.deps import AuthStateConn, CardImageConn
+from core.deps import AuthStateConn, MediaConn
 from core.settings import settings
 from helpers.halli_galli_game import (
     HalliGalliGame,
@@ -109,11 +109,14 @@ def _halli_galli_status(game: HalliGalliGame) -> dict:
 @router.get(
     "/halli_galli_id",
     dependencies=[Depends(RateLimiter(times=5, seconds=60))],
-    responses={401: {"description": "Wordle token or calibration invalid"}},
+    responses={
+        401: {"description": "Wordle token or calibration invalid"},
+        503: {"description": "Cards not ready yet (IMAGES_NOT_READY), see Retry-After"},
+    },
 )
 async def get_halli_galli_id(
     auth_state_conn: AuthStateConn,
-    card_image_conn: CardImageConn,
+    card_image_conn: MediaConn,
     response: Response,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Depends(round_token_scheme)
@@ -129,7 +132,7 @@ async def get_halli_galli_id(
 
     Args:
         auth_state_conn (AuthStateConn): Versionless auth-state Redis connection.
-        card_image_conn (CardImageConn): Binary cache connection for card images.
+        card_image_conn (MediaConn): Binary connection to the media Redis.
         response (Response): HTTP response whose cache policy is set here.
         calibration_id (str | None): One-use ID from the calibration request.
 
@@ -171,7 +174,7 @@ async def get_halli_galli_id(
     game_id = str(uuid.uuid4())
 
     # Save the chosen rounds and their hit boxes together. Raw PNGs live in
-    # redis-cache; this game state lives in the separate auth-state Redis.
+    # redis-media; this game state lives in the separate auth-state Redis.
     key = build_auth_state_key("halli_galli", game_id)
     await set_auth_state_json(
         auth_state_conn,
@@ -200,13 +203,14 @@ async def get_halli_galli_id(
     responses={
         404: {"description": "Game or prepared card not found"},
         409: {"description": "Card image changed during preload"},
+        503: {"description": "No replacement card ready (IMAGES_NOT_READY)"},
     },
 )
 async def get_halli_galli_card(
     game_id: str,
     round_index: int,
     auth_state_conn: AuthStateConn,
-    card_image_conn: CardImageConn,
+    card_image_conn: MediaConn,
 ):
     """Encrypt one raw card and save the key for its future reveal.
 
@@ -219,7 +223,7 @@ async def get_halli_galli_card(
         game_id (str): Halli Galli session ID returned by the start route.
         round_index (int): Prepared card index returned with the game ID.
         auth_state_conn (AuthStateConn): Redis connection for game state.
-        card_image_conn (CardImageConn): Binary Redis connection for card images.
+        card_image_conn (MediaConn): Binary connection to the media Redis.
 
     Returns:
         Response: Fresh ciphertext with its nonce and image version header.
@@ -369,7 +373,7 @@ async def _refill_preload_window(
 
     Args:
         game (HalliGalliGame): Active game after the current round advanced.
-        card_image_conn (RedisConn): Cache connection for raw card templates.
+        card_image_conn (RedisConn): Binary connection to the media Redis.
 
     Returns:
         tuple[dict[str, int | str], dict[str, int | str]]: Next visible card
@@ -404,7 +408,7 @@ async def _handle_round_end(
         game (HalliGalliGame): Current game state to update.
         round_index (int): Round being settled.
         req (HalliGalliActionRequest): Buzz click or next-card action.
-        card_image_conn (RedisConn): Cache connection for raw card templates.
+        card_image_conn (RedisConn): Binary connection to the media Redis.
 
     Returns:
         dict[str, object]: Round result, clear flag, and next card IDs.
@@ -452,7 +456,7 @@ async def _apply_action(
         game (HalliGalliGame): Current game state to update.
         round_index (int): Round receiving the action.
         req (HalliGalliActionRequest): Reveal, buzz, or next-card request.
-        card_image_conn (RedisConn): Cache connection for future raw cards.
+        card_image_conn (RedisConn): Binary connection to the media Redis.
 
     Returns:
         dict[str, object]: Action-specific response fields.
@@ -467,6 +471,7 @@ async def _apply_action(
     responses={
         404: {"description": "Halli Galli game not found"},
         409: {"description": "Round or game state changed"},
+        503: {"description": "Next card not ready yet (IMAGES_NOT_READY)"},
         422: {"description": "Invalid action or click details"},
     },
 )
@@ -475,7 +480,7 @@ async def act_on_halli_galli_round(
     round_index: int,
     req: HalliGalliActionRequest,
     auth_state_conn: AuthStateConn,
-    card_image_conn: CardImageConn,
+    card_image_conn: MediaConn,
     response: Response,
 ):
     """reveal, buzz, or move on using one saved current round.
@@ -489,7 +494,7 @@ async def act_on_halli_galli_round(
         round_index (int): Round receiving the action.
         req (HalliGalliActionRequest): Action and optional buzz coordinates.
         auth_state_conn (AuthStateConn): Redis connection holding game state.
-        card_image_conn (CardImageConn): Binary cache for future raw cards.
+        card_image_conn (MediaConn): Binary connection to the media Redis.
         response (Response): HTTP response whose cache policy is set here.
 
     Returns:

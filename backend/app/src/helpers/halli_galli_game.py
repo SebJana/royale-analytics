@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from helpers.encrypt_image import encrypt_image
-from helpers.halli_galli_card_pool import get_card_template, get_or_create_card
+from helpers.media_pool.consumer import get_card_template, pick_pool_card
 from helpers.halli_galli_rendering.models import FruitImagePosition
 from helpers.halli_galli_card import (
     AVAILABLE_FRUITS,
@@ -266,7 +266,7 @@ async def prepare_initial_rounds(
 
     Args:
         game (HalliGalliGame): New game whose first cards are needed.
-        card_image_conn (RedisConn): Binary Redis connection for card images.
+        card_image_conn (RedisConn): Binary connection to the media Redis.
 
     Returns:
         list[dict[str, int | str]]: Round indices and public image IDs in order.
@@ -344,7 +344,7 @@ async def prepare_round_card(
     Args:
         game (HalliGalliGame): Game containing the selected round.
         round_index (int): Current or future round to prepare.
-        card_image_conn (RedisConn): Binary connection to the cache Redis.
+        card_image_conn (RedisConn): Binary connection to the media Redis.
 
     Returns:
         str: Public image ID stored on this round.
@@ -357,7 +357,7 @@ async def prepare_round_card(
     if round_card.image_id is not None and round_card.template_id is not None:
         return round_card.image_id
 
-    template_id, card = await get_or_create_card(
+    template_id, card = await pick_pool_card(
         card_image_conn,
         round_card.fruit,
         round_card.amount,
@@ -384,7 +384,7 @@ async def encrypt_prepared_round_image(
     Args:
         game (HalliGalliGame): Game that owns the requested round.
         round_index (int): Prepared, unrevealed round to encrypt.
-        card_image_conn (RedisConn): Binary connection to the cache Redis.
+        card_image_conn (RedisConn): Binary connection to the media Redis.
 
     Returns:
         tuple[bytes, int]: Encrypted image and this response's version number.
@@ -406,10 +406,11 @@ async def encrypt_prepared_round_image(
         round_card.amount,
     )
     if card is None:
-        # redis-cache can evict a raw template between game creation and the
-        # preload request. This round is still hidden, so choose a replacement
-        # and update its hit boxes before saving the new key.
-        template_id, card = await get_or_create_card(
+        # The template's grace ended before this preload request, e.g. after
+        # a very slow client or a media Redis restart. This round is still
+        # hidden, so choose a replacement and update its hit boxes before
+        # saving the new key.
+        template_id, card = await pick_pool_card(
             card_image_conn, round_card.fruit, round_card.amount
         )
         round_card.template_id = template_id

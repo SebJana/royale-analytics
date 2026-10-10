@@ -38,11 +38,11 @@ def get_auth_state_redis(request: Request) -> RedisConn:
     return r
 
 
-def get_card_image_redis(request: Request) -> RedisConn:
-    """Return the binary client for the existing Redis cache server.
+def get_media_redis(request: Request) -> RedisConn:
+    """Return the binary client for the media Redis.
 
-    The pool size and future preload count come from settings and game rules;
-    this connection only reads and writes the associated image bytes.
+    It holds the pre-rendered Halli Galli cards and CAPTCHAs; the API picks
+    and claims them but never adds any (see helpers/media_pool).
 
     Args:
         request (Request): Request whose app owns the Redis connection.
@@ -50,9 +50,9 @@ def get_card_image_redis(request: Request) -> RedisConn:
     Returns:
         RedisConn: Connection that returns raw image bytes.
     """
-    r = getattr(request.app.state, "card_image_redis", None)
+    r = getattr(request.app.state, "media_redis", None)
     if r is None:
-        raise HTTPException(status_code=500, detail="Card image Redis not initialized")
+        raise HTTPException(status_code=500, detail="Media Redis not initialized")
     return r
 
 
@@ -100,7 +100,7 @@ CrApi = Annotated[ClashRoyaleAPI, Depends(get_cr_api)]
 DbConn = Annotated[MongoConn, Depends(get_mongo)]
 RedConn = Annotated[CacheRedisConn, Depends(get_redis)]
 AuthStateConn = Annotated[RedisConn, Depends(get_auth_state_redis)]
-CardImageConn = Annotated[RedisConn, Depends(get_card_image_redis)]
+MediaConn = Annotated[RedisConn, Depends(get_media_redis)]
 Schedules = Annotated[ScrapeSchedules, Depends(get_scrape_schedules)]
 PlayerSearch = Annotated[PlayerSearchService, Depends(get_player_search)]
 

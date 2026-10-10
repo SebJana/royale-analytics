@@ -35,6 +35,7 @@ from core.mongo_deadline import (
     http_error_handler,
     mongo_error_handler,
 )
+from helpers.media_pool import MediaPoolEmpty
 from core.route_timing import (
     RouteTimingMiddleware,
     RouteTimings,
@@ -145,17 +146,16 @@ async def lifespan(app: FastAPI):
     await retry_async(redis_conn.connect, name="cache Redis")
     app.state.redis = redis_conn
 
-    # Both clients use the same redis-cache server and keyspace. Card templates
-    # contain raw PNG bytes, so this client disables UTF-8 response decoding
-    # used by the ordinary JSON cache connection.
-    card_image_redis = RedisConn(
-        host=settings.CACHE_REDIS_HOST,
+    # Pre-rendered Halli Galli cards and CAPTCHAs from the media worker. They
+    # are raw PNG bytes, so this client disables UTF-8 response decoding.
+    media_redis = RedisConn(
+        host=settings.MEDIA_REDIS_HOST,
         port=settings.REDIS_PORT,
         password=settings.REDIS_PASSWORD,
         decode_responses=False,
     )
-    await retry_async(card_image_redis.connect, name="card image Redis")
-    app.state.card_image_redis = card_image_redis
+    await retry_async(media_redis.connect, name="media Redis")
+    app.state.media_redis = media_redis
 
     # Challenge state is isolated from evictable response/media cache entries.
     # A cache memory spike can no longer remove a valid CAPTCHA or Wordle game.
@@ -228,7 +228,7 @@ async def lifespan(app: FastAPI):
     await app.state.key_store.close()
     mongo_conn.close()
     await redis_conn.close()
-    await card_image_redis.close()
+    await media_redis.close()
     await auth_state_redis.close()
     await rate_limit_redis.aclose()
 
@@ -255,6 +255,17 @@ async def no_key_available(_request: Request, exc: NoKeyAvailable):
 async def key_store_unavailable(_request: Request, _exc: KeyStoreUnavailable):
     return JSONResponse(
         status_code=503, content={"detail": "Clash Royale key store unavailable"}
+    )
+
+
+@app.exception_handler(MediaPoolEmpty)
+async def media_pool_empty(_request: Request, exc: MediaPoolEmpty):
+    # Requests never render; the media worker refills the pool, so the client
+    # retries instead of the API drawing.
+    return JSONResponse(
+        status_code=503,
+        content={"detail": {"code": "IMAGES_NOT_READY", "message": str(exc)}},
+        headers={"Retry-After": str(exc.retry_after)},
     )
 
 

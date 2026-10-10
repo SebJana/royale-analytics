@@ -92,6 +92,11 @@ const messages: Record<string, AuthErrorFeedback> = {
     message:
       "Your win couldn't be verified. Please try a new Halli Galli game.",
   },
+  // NOTE: Matches MediaPoolEmpty in backend/app/src/helpers/media_pool: the
+  // server's CAPTCHA or card stock is empty until the media worker refills it.
+  IMAGES_NOT_READY: {
+    message: "Something went wrong. Please try again in a moment.",
+  },
 };
 
 const fallbackMessages: Record<AuthErrorContext, string> = {
@@ -143,6 +148,13 @@ export function getAuthErrorFeedback(
     detail && typeof detail === "object" && !Array.isArray(detail)
       ? detail.code
       : undefined;
+  // An empty image stock is a short wait, so the retry button honors Retry-After.
+  if (code === "IMAGES_NOT_READY") {
+    return {
+      ...messages.IMAGES_NOT_READY,
+      retryAt: retryDeadline(headers?.["retry-after"]),
+    };
+  }
   // A used-up Wordle is also HTTP 429, but it needs a new game, not a cooldown.
   if (typeof code === "string" && messages[code]) return messages[code];
   if (status === 429) {

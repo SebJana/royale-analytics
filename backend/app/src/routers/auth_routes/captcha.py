@@ -1,38 +1,50 @@
 """CAPTCHA challenge and answer routes."""
 
-import uuid
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from fastapi_limiter.depends import RateLimiter
-from starlette.concurrency import run_in_threadpool
 
-from core.deps import AuthStateConn
+from core.deps import AuthStateConn, MediaConn
 from core.settings import settings
 from helpers.auth import get_captcha_text_from_state
-from helpers.generate_captcha import generate_captcha_string, generate_captcha_image
 from helpers.jwt import AvailableTokenTypes, create_access_token
+from helpers.media_pool.consumer import (
+    claim_captcha,
+    get_captcha_image as load_captcha_image,
+)
 from models.schema import CaptchaAnswerRequest
 from redis_service import build_auth_state_key, set_auth_state_json
 
 router = APIRouter()
 
 
-@router.get("/captcha_id", dependencies=[Depends(RateLimiter(times=5, seconds=60))])
-async def get_captcha_id(auth_state_conn: AuthStateConn):
-    """Generate a new CAPTCHA ID and store its answer in auth state.
+@router.get(
+    "/captcha_id",
+    dependencies=[Depends(RateLimiter(times=5, seconds=60))],
+    responses={
+        503: {"description": "No CAPTCHA ready (IMAGES_NOT_READY)"},
+    },
+)
+async def get_captcha_id(auth_state_conn: AuthStateConn, media_conn: MediaConn):
+    """Claim a pre-rendered CAPTCHA and store its answer in auth state.
 
     Challenge keys have no cache version. They remain readable until their TTL
     expires, regardless of data-scraper cache invalidation.
 
     Args:
         auth_state_conn (AuthStateConn): Versionless auth-state Redis connection.
+        media_conn (MediaConn): Media Redis with the media worker's CAPTCHAs.
 
     Returns:
-        dict: Dictionary containing the generated captcha_id.
+        dict: Dictionary containing the claimed captcha_id.
     """
-    text = generate_captcha_string(settings.CAPTCHA_CHAR_LENGTH)
-    captcha_id = str(uuid.uuid4())
+    # NOTE CAPTCHAs come from the media pool for surge capacity, not for CPU:
+    # one costs ~8 ms, far less than a Halli Galli card. The stock absorbs
+    # bursts; a sustained flood empties it, and the auth flow then fails with
+    # IMAGES_NOT_READY (503) instead of rendering in the API and dragging the
+    # regular routes down with it. Keep rendering out of this route.
+    # The media worker rendered it in advance; claiming hands it out once.
+    captcha_id, text = await claim_captcha(media_conn)
 
     key = build_auth_state_key("captcha", captcha_id)
     await set_auth_state_json(
@@ -48,13 +60,20 @@ async def get_captcha_id(auth_state_conn: AuthStateConn):
 @router.get(
     "/captcha_image/{captcha_id}",
     dependencies=[Depends(RateLimiter(times=5, seconds=60))],
-    responses={404: {"description": "CAPTCHA challenge expired or not found"}},
+    responses={
+        404: {"description": "CAPTCHA challenge expired or not found"},
+    },
 )
-async def get_captcha_image(auth_state_conn: AuthStateConn, captcha_id: str):
+async def get_captcha_image(
+    auth_state_conn: AuthStateConn, media_conn: MediaConn, captcha_id: str
+):
 
     text = await get_captcha_text_from_state(auth_state_conn, captcha_id=captcha_id)
+    # The image lives CAPTCHA_IMAGE_TTL_SECONDS, the answer the whole challenge;
+    # either one missing means this CAPTCHA has to be restarted.
+    image = await load_captcha_image(media_conn, captcha_id) if text else None
 
-    if not text:
+    if not image:
         raise HTTPException(
             status_code=404,
             detail={
@@ -62,11 +81,6 @@ async def get_captcha_image(auth_state_conn: AuthStateConn, captcha_id: str):
                 "message": "CAPTCHA took too long. Restart the CAPTCHA.",
             },
         )
-
-    # ImageCaptcha renders synchronously; run it in a worker thread so other
-    # async requests can keep using the event loop while it draws the PNG.
-    # TODO potentially pool those to have max X concurrent unique captcha images
-    image = await run_in_threadpool(generate_captcha_image, text)
 
     # Return the image with the session ID in headers
     return Response(
