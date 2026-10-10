@@ -37,7 +37,32 @@ from helpers.token_budget import refund_token
 
 router = APIRouter(prefix="/players", tags=["Tracked Players"])
 
+# TODO Give the actual admin a way to batch insert and untrack player tags
+# without the challenge flow, the removal budget and the per-IP rate limits.
+# The security questions are a shared, guessable secret, so this must not hang
+# off them: use a real secret compared exactly, or keep it off the public API
+# (a CLI script against Mongo and the schedules, or a route reachable only
+# from the internal network). Batch inserts still spend one Clash Royale
+# request per new tag and must respect ensure_tracking_capacity.
 
+
+# TODO Park the least viewed players when tracking nears capacity, instead of
+# refusing new ones. Parked is a third state besides active and deactivated:
+# the scraper stops syncing the player (off both schedules), but search still
+# lists it and its page shows the stored data with a notice that it is no
+# longer tracked. Opening a parked player reactivates it if capacity allows,
+# parking the next least viewed player if needed. Rank by the view counts from
+# the TODO in players_details.py (views in the last 30 days, then
+# lastViewedAt), and spare recently added or viewed players so two of them
+# cannot keep parking each other. require_tracked_player has to let parked
+# players through, and the state has to stay apart from a user removal
+# (e.g. deactivatedReason "parked").
+# A protected list (e.g. the top 1000 of the ranked leaderboard) is tracked at
+# all times, as the meta analysis needs those players: never parked, and not
+# removable through the removal route either, only by the admin. Refresh it
+# from the leaderboard regularly; a player leaving the top loses protection
+# and is ranked like everyone else. Its size counts against capacity first,
+# so the parking only ever shares what is left.
 async def ensure_tracking_capacity(
     mongo_conn: DbConn, schedules: Schedules, player_tag: str
 ):

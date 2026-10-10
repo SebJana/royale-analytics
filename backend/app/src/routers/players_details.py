@@ -52,7 +52,8 @@ router = APIRouter(
 # viewed players and lengthen those of players nobody opens. The explore list
 # (TODO above /players/count in players_tracked.py) ranks by views in the
 # last 30 days, so keep the counts per day as well; a single running total
-# cannot be windowed.
+# cannot be windowed. Parking players near capacity (TODO above
+# ensure_tracking_capacity in players_tracked.py) ranks by the same counts.
 @router.get(
     "/{player_tag}/profile",
     # The profile is a database lookup now, so the limit only guards against
