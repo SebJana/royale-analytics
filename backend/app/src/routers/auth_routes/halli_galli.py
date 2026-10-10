@@ -1,9 +1,10 @@
 """Halli Galli game start, card preload, and round action routes.
 
 The browser first completes the calibration WebSocket using its Wordle token.
-It sends the returned calibration ID as X-Halli-Galli-Calibration and the Wordle
-token as Bearer to /halli_galli_id. The response gives the game ID, display
-rules, initial card IDs, preload count, next-card interval, and life counts.
+It POSTs the returned calibration ID in the body and the Wordle token as Bearer
+to /halli_galli_id, which spends one of the token's games and closes its
+previous game. The response gives the game ID, display rules, initial card
+IDs, preload count, next-card interval, and life counts.
 
 For each prepared round, the browser POSTs /halli_galli_card/{game_id}/{round_index}
 to fetch encrypted image bytes. The key stays in game state until the browser
@@ -20,7 +21,7 @@ player win returns the saved halli_galli_token for the security questions.
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi_limiter.depends import RateLimiter
@@ -41,15 +42,17 @@ from helpers.halli_galli_game import (
     prepare_round_card,
     reveal_card,
 )
-from helpers.jwt import (
-    AvailableTokenTypes,
-    create_access_token,
-    get_access_token_claims,
+from helpers.jwt import AvailableTokenTypes, get_access_token_claims
+from helpers.token_budget import (
+    mint_token,
+    open_session,
+    queue_token_record,
+    queue_token_spend,
 )
+from models.schema import HalliGalliStartRequest
 from redis_service import (
     RedisConn,
     build_auth_state_key,
-    set_auth_state_json,
     consume_auth_state_json,
 )
 from routers.auth_routes.common import round_token_scheme
@@ -106,83 +109,117 @@ def _halli_galli_status(game: HalliGalliGame) -> dict:
     }
 
 
-@router.get(
+@router.post(
     "/halli_galli_id",
     dependencies=[Depends(RateLimiter(times=5, seconds=60))],
     responses={
-        401: {"description": "Wordle token or calibration invalid"},
+        401: {
+            "description": (
+                "Wordle token missing or expired (WORDLE_TOKEN_EXPIRED), won or "
+                "its games used up (WORDLE_TOKEN_USED_UP), or calibration invalid "
+                "(CALIBRATION_INVALID)"
+            )
+        },
         429: {"description": "Rate limit exceeded, see Retry-After"},
         503: {"description": "Cards not ready yet (IMAGES_NOT_READY), see Retry-After"},
     },
 )
 async def get_halli_galli_id(
+    req: HalliGalliStartRequest,
     auth_state_conn: AuthStateConn,
     card_image_conn: MediaConn,
     response: Response,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Depends(round_token_scheme)
     ],
-    calibration_id: Annotated[
-        str | None, Header(alias="X-Halli-Galli-Calibration")
-    ] = None,
 ):
-    """Generate a new Halli Galli ID and store this session in auth state.
+    """Start a Halli Galli game, spending one game of the Wordle token.
+
+    The game replaces the token's previous one, which is deleted, as is the
+    solved Wordle that minted the token.
 
     Challenge keys have no cache version. They remain readable until their TTL
     expires, regardless of data-scraper cache invalidation.
 
     Args:
+        req (HalliGalliStartRequest): One-use ID from the calibration.
         auth_state_conn (AuthStateConn): Versionless auth-state Redis connection.
         card_image_conn (MediaConn): Binary connection to the media Redis.
         response (Response): HTTP response whose cache policy is set here.
-        calibration_id (str | None): One-use ID from the calibration request.
+        credentials (HTTPAuthorizationCredentials | None): The Wordle token.
 
     Returns:
         dict: Game ID, public rules, next-card interval, initial image IDs,
             both life counts, and the current game status.
+
+    Raises:
+        HTTPException: 401 with WORDLE_TOKEN_EXPIRED, WORDLE_TOKEN_USED_UP or
+            CALIBRATION_INVALID.
+        MediaPoolEmpty: If no card is ready, answered as 503 IMAGES_NOT_READY.
     """
+    invalid_calibration = HTTPException(
+        status_code=401,
+        detail={
+            "code": "CALIBRATION_INVALID",
+            "message": "The connection check didn't complete correctly. Try again.",
+        },
+    )
 
-    if not credentials:
-        raise HTTPException(status_code=401, detail="Invalid or missing wordle token")
-
-    claims = get_access_token_claims(
-        credentials.credentials,
-        AvailableTokenTypes.WORDLE.value,
+    claims = (
+        get_access_token_claims(credentials.credentials, AvailableTokenTypes.WORDLE)
+        if credentials
+        else None
     )
     if claims is None:
-        raise HTTPException(status_code=401, detail="Invalid or missing wordle token")
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "WORDLE_TOKEN_EXPIRED",
+                "message": "Halli Galli took too long. Restart verification.",
+            },
+        )
 
-    if not calibration_id:
-        raise HTTPException(status_code=401, detail="Missing Halli Galli calibration")
-
-    calibration_key = build_auth_state_key("halli_galli_calibration", calibration_id)
+    calibration_key = build_auth_state_key(
+        "halli_galli_calibration", req.calibration_id
+    )
     calibration = await consume_auth_state_json(auth_state_conn, calibration_key)
     if (
         not isinstance(calibration, dict)
         or calibration.get("wordle_jti") != claims["jti"]
     ):
-        raise HTTPException(status_code=401, detail="Invalid Halli Galli calibration")
+        raise invalid_calibration
 
     network_delay_rtt_ms = calibration.get("network_delay_rtt_ms")
     if type(network_delay_rtt_ms) is not int or network_delay_rtt_ms < 0:
-        raise HTTPException(status_code=401, detail="Invalid Halli Galli calibration")
+        raise invalid_calibration
 
     # Pick the current card plus the configured number of future cards before
     # returning the game ID. This saves references to raw pool templates, not
     # extra image copies. AES keys are created when the client fetches a card.
+    # Prepared BEFORE the charge, so an empty card pool costs no game.
     game_session = init_game(network_delay_rtt_ms=network_delay_rtt_ms)
+    game_session.wordle_jti = claims["jti"]
     initial_cards = await prepare_initial_rounds(game_session, card_image_conn)
     game_id = str(uuid.uuid4())
 
-    # Save the chosen rounds and their hit boxes together. Raw PNGs live in
-    # redis-media; this game state lives in the separate auth-state Redis.
-    key = build_auth_state_key("halli_galli", game_id)
-    await set_auth_state_json(
+    # Charging and saving happen together, and only after the calibration
+    # checks out, so a broken connection check does not cost a game. Raw PNGs
+    # live in redis-media; this game state lives in the auth-state Redis.
+    opened = await open_session(
         auth_state_conn,
-        key,
-        value=game_session.model_dump(mode="json"),
-        ttl=settings.CACHE_TTL_HALLI_GALLI,
+        claims,
+        build_auth_state_key("halli_galli", game_id),
+        game_session.model_dump_json(),
+        settings.CACHE_TTL_HALLI_GALLI,
     )
+    if not opened:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "WORDLE_TOKEN_USED_UP",
+                "message": "This Wordle can't start another Halli Galli game. Restart verification.",
+            },
+        )
 
     # The game ID grants access to later routes. "no-store" tells browsers and
     # proxies not to retain it; "no-cache" would still allow storage. FastAPI
@@ -422,11 +459,9 @@ async def _handle_round_end(
     )
     if game.bot_lives == 0:
         # Save the token only on the final player win. A status request can
-        # return the same token if the committed win response is lost.
-        game.completion_token = create_access_token(
-            type=AvailableTokenTypes.HALLI_GALLI.value,
-            expires_minutes=settings.HALLI_GALLI_TOKEN_EXPIRES_IN,
-        )
+        # return the same token if the committed win response is lost. Its
+        # budget record is queued with the game state by the caller.
+        game.completion_token = mint_token(AvailableTokenTypes.HALLI_GALLI)
 
     response: dict[str, object] = {
         "round_result": result,
@@ -516,6 +551,7 @@ async def act_on_halli_galli_round(
                     status_code=404, detail="Halli Galli game not found"
                 )
             game = HalliGalliGame.model_validate_json(game_data)
+            previous_token = game.completion_token
             # The round index is supplied by the client, so reject a second
             # action for a round that another request has already settled.
             if round_index != game.current_round:
@@ -534,6 +570,15 @@ async def act_on_halli_galli_round(
             # KEEPTTL prevents each action from extending the game session.
             pipe.multi()
             pipe.set(game_key, game.model_dump_json(), keepttl=True)
+            if game.completion_token != previous_token:
+                # In the same transaction, so a retry after a WatchError never
+                # leaves a budget behind for a token that was not handed out.
+                # The first security attempt with the token closes this game.
+                queue_token_record(pipe, game.completion_token, origin=game_key)
+                # The win spends the Wordle token: no further game could
+                # replace this one and its saved win token.
+                if game.wordle_jti is not None:
+                    queue_token_spend(pipe, {"jti": game.wordle_jti})
             try:
                 await pipe.execute()
             except WatchError:

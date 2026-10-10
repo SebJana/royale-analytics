@@ -15,6 +15,7 @@ from helpers.halli_galli_calibration import (
     calculate_calibration_rtt_ms,
 )
 from helpers.jwt import AvailableTokenTypes, get_access_token_claims
+from helpers.token_budget import token_has_budget
 from redis_service import build_auth_state_key, set_auth_state_json
 
 router = APIRouter()
@@ -101,6 +102,52 @@ async def _fail_calibration(websocket: WebSocket, reason: str) -> None:
     await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
 
 
+async def _authenticate_calibration(websocket: WebSocket) -> dict | None:
+    """Read the Wordle token from the first frame and check that it can play.
+
+    Args:
+        websocket (WebSocket): Accepted connection whose first frame is awaited.
+
+    Returns:
+        dict | None: The token's verified claims, or None once the socket has
+            been failed or disconnected.
+    """
+
+    try:
+        authentication = await asyncio.wait_for(
+            websocket.receive_json(),
+            timeout=settings.HALLI_GALLI_CALIBRATION_PROBE_TIMEOUT_SECONDS,
+        )
+    except WebSocketDisconnect:
+        return None
+    except (TimeoutError, ValueError, TypeError):
+        await _fail_calibration(websocket, "authentication_timeout_or_invalid")
+        return None
+
+    if (
+        not isinstance(authentication, dict)
+        or authentication.get("type") != "authenticate"
+    ):
+        await _fail_calibration(websocket, "authentication_required")
+        return None
+
+    wordle_token = authentication.get("wordle_token")
+    claims = (
+        get_access_token_claims(wordle_token, AvailableTokenTypes.WORDLE)
+        if isinstance(wordle_token, str)
+        else None
+    )
+    if claims is None:
+        await _fail_calibration(websocket, "invalid_wordle_token")
+        return None
+    # A won or used-up token could not start the game, so its probes would be
+    # wasted. Game start still charges atomically; this only skips the work.
+    if not await token_has_budget(websocket.app.state.auth_state_redis, claims):
+        await _fail_calibration(websocket, "wordle_token_used_up")
+        return None
+    return claims
+
+
 @router.websocket("/halli-galli/calibration")
 async def calibrate_halli_galli_latency(websocket: WebSocket):
     """Measure browser round-trip time with server-timed, nonce-bound probes.
@@ -119,32 +166,8 @@ async def calibrate_halli_galli_latency(websocket: WebSocket):
         return
 
     await websocket.accept()
-    try:
-        authentication = await asyncio.wait_for(
-            websocket.receive_json(),
-            timeout=settings.HALLI_GALLI_CALIBRATION_PROBE_TIMEOUT_SECONDS,
-        )
-    except WebSocketDisconnect:
-        return
-    except (TimeoutError, ValueError, TypeError):
-        await _fail_calibration(websocket, "authentication_timeout_or_invalid")
-        return
-
-    if (
-        not isinstance(authentication, dict)
-        or authentication.get("type") != "authenticate"
-    ):
-        await _fail_calibration(websocket, "authentication_required")
-        return
-
-    wordle_token = authentication.get("wordle_token")
-    if not isinstance(wordle_token, str):
-        await _fail_calibration(websocket, "invalid_wordle_token")
-        return
-
-    claims = get_access_token_claims(wordle_token, AvailableTokenTypes.WORDLE.value)
+    claims = await _authenticate_calibration(websocket)
     if claims is None:
-        await _fail_calibration(websocket, "invalid_wordle_token")
         return
 
     # Do not send any probes until the token has been checked. Their timings

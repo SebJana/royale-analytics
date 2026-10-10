@@ -8,6 +8,17 @@ export type EncryptedCard = {
   imageId: string;
 };
 
+// NOTE: Match the failure reasons sent by the backend's calibration route
+// (routers/auth_routes/halli_galli_calibration.py and its CalibrationError
+// messages). Any other reason is shown as CALIBRATION_INVALID.
+const CALIBRATION_FAILURES: Partial<Record<string, string>> = {
+  invalid_wordle_token: "WORDLE_TOKEN_EXPIRED",
+  wordle_token_used_up: "WORDLE_TOKEN_USED_UP",
+  "connection latency is too unstable": "CALIBRATION_UNSTABLE",
+  "not enough valid probe replies": "CALIBRATION_TIMEOUT",
+  authentication_timeout_or_invalid: "CALIBRATION_TIMEOUT",
+};
+
 /**
  * Run the server's connection test and return the short-lived ID for game start.
  * Browser WebSockets cannot set Authorization, so the Wordle token goes in the
@@ -69,17 +80,7 @@ export function calibrateHalliGalli(
           finish();
           resolve(message.calibration_id);
         } else if (message.type === "calibration_failed") {
-          const reason = message.reason;
-          fail(
-            reason === "invalid_wordle_token"
-              ? "WORDLE_TOKEN_EXPIRED"
-              : reason === "connection latency is too unstable"
-                ? "CALIBRATION_UNSTABLE"
-                : reason === "not enough valid probe replies" ||
-                    reason === "authentication_timeout_or_invalid"
-                  ? "CALIBRATION_TIMEOUT"
-                  : "CALIBRATION_INVALID",
-          );
+          fail(CALIBRATION_FAILURES[message.reason] ?? "CALIBRATION_INVALID");
         }
       } catch {
         fail("CALIBRATION_INVALID");

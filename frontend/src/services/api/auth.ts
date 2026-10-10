@@ -16,6 +16,8 @@ import type {
 
 // Capability tokens authorize the next authentication step. Every HTTP call
 // that consumes one sends it as Authorization: Bearer <token>, never in JSON.
+// NOTE: Each token only opens a few next steps (budgets in the backend's
+// settings.py); a used-up one answers with a *_TOKEN_USED_UP code.
 
 /**
  * Step 1.1: claims a CAPTCHA challenge.
@@ -23,7 +25,7 @@ import type {
  * @returns The challenge ID, which also names its image
  */
 export async function getCaptchaId(): Promise<CaptchaResponse> {
-  const response = await api.get<CaptchaResponse>("/auth/captcha_id");
+  const response = await api.post<CaptchaResponse>("/auth/captcha_id");
   return response.data;
 }
 
@@ -57,7 +59,8 @@ export async function verifyCaptcha(
 }
 
 /**
- * Step 2.1: opens a Wordle session.
+ * Step 2.1: opens a Wordle session, spending one of the CAPTCHA token's
+ * sessions.
  *
  * @param captchaToken - Token from verifyCaptcha
  * @returns The Wordle session ID
@@ -65,11 +68,15 @@ export async function verifyCaptcha(
 export async function getWordleId(
   captchaToken: string,
 ): Promise<WordleResponse> {
-  const response = await api.get<WordleResponse>("/auth/wordle_id", {
-    headers: {
-      Authorization: `Bearer ${captchaToken}`,
+  const response = await api.post<WordleResponse>(
+    "/auth/wordle_id",
+    undefined,
+    {
+      headers: {
+        Authorization: `Bearer ${captchaToken}`,
+      },
     },
-  });
+  );
   return response.data;
 }
 
@@ -102,7 +109,8 @@ export async function submitWordleGuess(
  * Step 3: starts a Halli Galli game after latency calibration. Instructions
  * come from the game's public rules. Keep up to rules.max_preloaded_cards
  * future card images ready from initial_cards, then use
- * next_card_interval_ms after each reveal to schedule the next one.
+ * next_card_interval_ms after each reveal to schedule the next one. Spends
+ * one of the Wordle token's games.
  *
  * @param wordleToken - Token from submitWordleGuess
  * @param calibrationId - ID of the finished latency calibration
@@ -112,12 +120,12 @@ export async function getHalliGalliGame(
   wordleToken: string,
   calibrationId: string,
 ): Promise<HalliGalliGameResponse> {
-  const response = await api.get<HalliGalliGameResponse>(
+  const response = await api.post<HalliGalliGameResponse>(
     "/auth/halli_galli_id",
+    { calibration_id: calibrationId },
     {
       headers: {
         Authorization: `Bearer ${wordleToken}`,
-        "X-Halli-Galli-Calibration": calibrationId,
       },
     },
   );

@@ -56,6 +56,9 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
   const [captchaImageLoaded, setCaptchaImageLoaded] = useState(false);
   const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [captchaIncorrect, setCaptchaIncorrect] = useState(false);
+  // The server dropped the challenge (too many wrong answers or expired), so
+  // only loading a new one can help.
+  const [captchaGone, setCaptchaGone] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
 
   // Wordle state
@@ -82,6 +85,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
     setLoading(true);
     setError(null);
     setCaptchaIncorrect(false);
+    setCaptchaGone(false);
     setCaptchaId("");
     setCaptchaImageUrl("");
     setCaptchaImageLoaded(false);
@@ -103,7 +107,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
   };
 
   const handleCaptchaSubmit = async () => {
-    if (loading || retryBlocked || !captchaAnswer.trim()) return;
+    if (loading || retryBlocked || captchaGone || !captchaAnswer.trim()) return;
 
     setLoading(true);
     setError(null);
@@ -122,8 +126,12 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
         const code = err.response?.data?.detail?.code;
         setCaptchaIncorrect(
           code === "CAPTCHA_INCORRECT" ||
+            code === "CAPTCHA_ATTEMPTS_EXHAUSTED" ||
             (!code &&
               (err.response?.status === 401 || err.response?.status === 403)),
+        );
+        setCaptchaGone(
+          code === "CAPTCHA_ATTEMPTS_EXHAUSTED" || code === "CAPTCHA_EXPIRED",
         );
       }
       console.error("Captcha verification error:", err);
@@ -358,7 +366,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
           value={captchaAnswer}
           onChange={(e) => setCaptchaAnswer(e.target.value)}
           placeholder="Enter the text you see"
-          disabled={loading || !captchaImageLoaded}
+          disabled={loading || captchaGone || !captchaImageLoaded}
           onKeyDown={(e) => e.key === "Enter" && handleCaptchaSubmit()}
         />
         <div className="captcha-buttons">
@@ -367,6 +375,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
             disabled={
               loading ||
               retryBlocked ||
+              captchaGone ||
               !captchaImageLoaded ||
               !captchaAnswer.trim()
             }

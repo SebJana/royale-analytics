@@ -24,6 +24,10 @@ router.include_router(token.router)
 # that consumes one reads it from Authorization: Bearer <token>, never from a
 # JSON body or query parameter. The browser WebSocket calibration is the sole
 # exception because browser WebSocket APIs cannot set an Authorization header.
+# Each token keeps one live session, yields one next token and has a small
+# budget for retries (helpers/token_budget.py), so one solved step cannot
+# multiply into many.
+# A route that creates a session or spends a redemption is a POST, never a GET.
 
 # Authentication Flow:
 # 1) Captcha:
@@ -40,4 +44,7 @@ router.include_router(token.router)
 
 # Use relatively strict rate limiting here to try and limit bot attack opportunities
 
-# TODO clear redis auth sessions once they're done (failed or succeeded) Wordle and Halli Galli before TTL or just wait on TTL to clear?
+# A solved CAPTCHA or Wordle and a won game keep their one token for a client
+# that lost the response, until the token is used for the next step or the
+# session's TTL ends. Success spends the parent token, so no newer session can
+# replace them. Unsolved sessions are closed by a newer one or expire.

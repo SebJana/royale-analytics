@@ -203,6 +203,20 @@ class Settings:
         15  # How long does the user have access to protected routes?
     )
 
+    # Redemption budgets: how often one token may start the next step before
+    # it expires (see helpers/token_budget.py). Only one session runs at a
+    # time and the first success spends the token, so these count retries.
+    CAPTCHA_TOKEN_BUDGET: int = 5  # Wordle sessions
+    WORDLE_TOKEN_BUDGET: int = 3  # Halli Galli games
+    HALLI_GALLI_TOKEN_BUDGET: int = 5  # security question attempts
+    # A repeated request replays the first removal token, so a lost response
+    # does not need a second one.
+    SECURITY_TOKEN_BUDGET: int = 1  # removal tokens
+    REMOVE_PLAYER_TOKEN_BUDGET: int = 3  # player removals
+
+    # Wrong answers one CAPTCHA takes before it is dropped and a new one is needed.
+    MAX_CAPTCHA_ATTEMPTS: int = 3
+
     # Amount of guesses a user has to solve a wordle
     MAX_WORDLE_GUESSES: int = 6
 
@@ -364,7 +378,7 @@ class Settings:
     )  # 5 minutes (how long does a captcha challenge stay valid in cache)
     # Time PER VALID GUESS on the wordle challenge, as every new guess resets the redis json and ttl
     CACHE_TTL_WORDLE_CHALLENGE: int = 10 * 60  # 10 minutes
-    CACHE_TTL_HALLI_GALLI: int = 15 * 60  # 10 minutes
+    CACHE_TTL_HALLI_GALLI: int = 15 * 60  # 15 minutes
     CACHE_TTL_NYT_WORDLE_ANSWER: int = 6 * 60 * 60  # 6 hours
 
 

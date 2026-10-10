@@ -34,8 +34,15 @@ const messages: Record<string, AuthErrorFeedback> = {
     message: "The CAPTCHA text doesn't match. Check the image and try again.",
   },
   CAPTCHA_EXPIRED: { message: "CAPTCHA took too long. Restart the CAPTCHA." },
+  CAPTCHA_ATTEMPTS_EXHAUSTED: {
+    message: "Too many wrong answers. Load a new CAPTCHA.",
+  },
   CAPTCHA_TOKEN_EXPIRED: {
     message: "CAPTCHA took too long. Restart verification.",
+    recovery: "restart",
+  },
+  CAPTCHA_TOKEN_USED_UP: {
+    message: "This CAPTCHA can't start another Wordle. Restart verification.",
     recovery: "restart",
   },
   WORDLE_EXPIRED: {
@@ -53,8 +60,17 @@ const messages: Record<string, AuthErrorFeedback> = {
     message: "Halli Galli took too long. Restart verification from CAPTCHA.",
     recovery: "restart",
   },
+  WORDLE_TOKEN_USED_UP: {
+    message:
+      "This Wordle can't start another Halli Galli game. Restart verification.",
+    recovery: "restart",
+  },
   HALLI_GALLI_TOKEN_EXPIRED: {
     message: "Halli Galli took too long. Restart verification.",
+    recovery: "restart",
+  },
+  HALLI_GALLI_TOKEN_USED_UP: {
+    message: "No answer attempts left. Restart verification.",
     recovery: "restart",
   },
   SECURITY_ANSWERS_INCORRECT: {
@@ -63,6 +79,10 @@ const messages: Record<string, AuthErrorFeedback> = {
   },
   SECURITY_TOKEN_EXPIRED: {
     message: "Verification took too long. Restart verification.",
+    recovery: "restart",
+  },
+  SECURITY_TOKEN_USED_UP: {
+    message: "This verification was already used. Restart verification.",
     recovery: "restart",
   },
   CALIBRATION_UNSTABLE: {

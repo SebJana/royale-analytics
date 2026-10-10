@@ -84,6 +84,13 @@ class CaptchaAnswerRequest(BaseModel):
     )
 
 
+class HalliGalliStartRequest(BaseModel):
+    # Ids are UUIDs (36 characters)
+    calibration_id: str = Field(
+        ..., max_length=36, description="Id of the finished latency calibration"
+    )
+
+
 class SecurityQuestionsRequest(BaseModel):
     most_annoying_card: str = Field(
         ...,

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi_limiter.depends import RateLimiter
 from redis.exceptions import RedisError
 from core.deps import (
+    AuthStateConn,
     DbConn,
     CrApi,
     PlayerSearch,
@@ -32,6 +33,7 @@ from mongo import (
 from scrape_schedule import CAPACITY_MAX_AGE_S, read_capacity
 from player_search import SearchIndexNotReady
 from core.settings import settings
+from helpers.token_budget import refund_token
 
 router = APIRouter(prefix="/players", tags=["Tracked Players"])
 
@@ -276,7 +278,13 @@ async def add_tracked_player(
     "/{player_tag}",
     dependencies=[Depends(RateLimiter(times=3, seconds=60))],
     responses={
-        403: {"description": "Invalid or untracked player, or invalid removal token"},
+        403: {
+            "description": (
+                "Invalid or untracked player, removal token invalid or expired "
+                "(REMOVE_PLAYER_TOKEN_EXPIRED), or its removals used up "
+                "(REMOVE_PLAYER_TOKEN_USED_UP)"
+            )
+        },
         404: {"description": "Tracked player not found"},
         429: {"description": "Rate limit exceeded, see Retry-After"},
         500: {"description": "Could not remove tracked player"},
@@ -286,8 +294,10 @@ async def remove_tracked_player(
     mongo_conn: DbConn,
     schedules: Schedules,
     search: PlayerSearch,
+    auth_state_conn: AuthStateConn,
     player: TrackedPlayerDep,
-    _: Annotated[None, Depends(require_remove_player_token)],
+    # After the player check, so an invalid or untracked tag costs no removal.
+    token_claims: Annotated[dict, Depends(require_remove_player_token)],
 ):
     player_tag = player.tag
     try:
@@ -317,6 +327,17 @@ async def remove_tracked_player(
     except HTTPException:
         raise  # keep original FastAPI errors
     except Exception:
+        # A failure that removed nobody is no spent removal. Mongo can commit
+        # the deactivation and still fail the request (a lost acknowledgement),
+        # so refund only when the player is verifiably still tracked. A 404
+        # above keeps the charge: the request did name a player, just one
+        # already removed.
+        try:
+            unchanged = await check_player_tracked(mongo_conn, player_tag)
+        except Exception:
+            unchanged = False
+        if unchanged:
+            await refund_token(auth_state_conn, token_claims)
         raise HTTPException(
             status_code=500,
             detail=f"Player {player_tag} could not be removed from tracking",

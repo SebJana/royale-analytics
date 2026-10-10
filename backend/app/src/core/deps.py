@@ -4,7 +4,8 @@ from core.settings import settings
 from fastapi import Depends, Request, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Annotated
-from helpers.jwt import validate_access_token, AvailableTokenTypes
+from helpers.jwt import AvailableTokenTypes, get_access_token_claims
+from helpers.token_budget import charge_token
 from redis_service import CacheRedisConn, RedisConn
 from clash_royale_api import ClashRoyaleAPI
 from mongo import MongoConn, get_tracked_player_cache_state
@@ -220,19 +221,46 @@ TrackedPlayerDep = Annotated[TrackedPlayer, Depends(require_tracked_player)]
 auth_scheme = HTTPBearer()
 
 
-# Dependency that ensures authorization token is received and validated
-def require_remove_player_token(
+# Dependency that ensures authorization token is received, validated and charged
+async def require_remove_player_token(
+    auth_state_conn: AuthStateConn,
     credentials: HTTPAuthorizationCredentials = Depends(auth_scheme),
-):
-    """
-    Validates a Bearer token provided via the Authorization header.
-    """
-    token = credentials.credentials
+) -> dict:
+    """Validate the removal token and spend one of its removals.
 
-    if not validate_access_token(token, AvailableTokenTypes.REMOVE_PLAYER_TOKEN.value):
+    Declare it after the route's other checks: FastAPI resolves dependencies in
+    order, so a rejected player tag then costs no removal.
+
+    Args:
+        auth_state_conn (AuthStateConn): Auth-state Redis with the budgets.
+        credentials (HTTPAuthorizationCredentials): Bearer removal token.
+
+    Returns:
+        dict: The token's verified claims, for a refund if the removal fails.
+
+    Raises:
+        HTTPException: 403 for an invalid or expired token
+            (REMOVE_PLAYER_TOKEN_EXPIRED) or a spent budget
+            (REMOVE_PLAYER_TOKEN_USED_UP).
+    """
+    claims = get_access_token_claims(
+        credentials.credentials, AvailableTokenTypes.REMOVE_PLAYER_TOKEN
+    )
+    if claims is None:
         raise HTTPException(
             status_code=403,
-            detail="No authorization, invalid or expired auth token.",
+            detail={
+                "code": "REMOVE_PLAYER_TOKEN_EXPIRED",
+                "message": "Your verification expired. Verify again.",
+            },
+        )
+    if not await charge_token(auth_state_conn, claims):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "REMOVE_PLAYER_TOKEN_USED_UP",
+                "message": "This verification removed the most players it can. Verify again.",
+            },
         )
 
-    return token
+    return claims

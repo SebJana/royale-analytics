@@ -1,24 +1,59 @@
 """CAPTCHA challenge and answer routes."""
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from fastapi_limiter.depends import RateLimiter
+from redis.exceptions import WatchError
 
 from core.deps import AuthStateConn, MediaConn
 from core.settings import settings
-from helpers.auth import get_captcha_text_from_state
-from helpers.jwt import AvailableTokenTypes, create_access_token
+from helpers.auth import get_captcha_challenge
+from helpers.jwt import AvailableTokenTypes
 from helpers.media_pool.consumer import (
     claim_captcha,
     get_captcha_image as load_captcha_image,
 )
+from helpers.token_budget import mint_token, queue_token_record
 from models.schema import CaptchaAnswerRequest
-from redis_service import build_auth_state_key, set_auth_state_json
+from redis_service import RedisConn, build_auth_state_key, set_auth_state_json
 
 router = APIRouter()
 
+# Parallel answers on one challenge can race. Retry a few times if another
+# request commits first.
+CAPTCHA_STATE_UPDATE_ATTEMPTS = 3
 
-@router.get(
+CAPTCHA_EXPIRED = {
+    "code": "CAPTCHA_EXPIRED",
+    "message": "CAPTCHA took too long. Restart the CAPTCHA.",
+}
+
+# KEYS[1] is the CAPTCHA challenge, KEYS[2] its wrong-answer counter. ARGV[1]
+# is the number of wrong answers allowed. Returns the attempts left, 0 once the
+# challenge is dropped, or -1 if it was already gone. The counter takes the
+# challenge's remaining TTL, so it never outlives it, and counting and dropping
+# in one step stops parallel wrong answers from all getting another try.
+FAIL_CAPTCHA_SCRIPT = """
+local ttl = redis.call('PTTL', KEYS[1])
+if ttl < 0 then
+    return -1
+end
+local attempts = redis.call('INCR', KEYS[2])
+if attempts == 1 then
+    redis.call('PEXPIRE', KEYS[2], ttl)
+end
+local left = tonumber(ARGV[1]) - attempts
+if left <= 0 then
+    redis.call('DEL', KEYS[1], KEYS[2])
+    return 0
+end
+return left
+"""
+
+
+@router.post(
     "/captcha_id",
     dependencies=[Depends(RateLimiter(times=5, seconds=60))],
     responses={
@@ -70,68 +105,135 @@ async def get_captcha_image(
     auth_state_conn: AuthStateConn, media_conn: MediaConn, captcha_id: str
 ):
 
-    text = await get_captcha_text_from_state(auth_state_conn, captcha_id=captcha_id)
+    challenge = await get_captcha_challenge(auth_state_conn, captcha_id=captcha_id)
     # The image lives CAPTCHA_IMAGE_TTL_SECONDS, the answer the whole challenge;
     # either one missing means this CAPTCHA has to be restarted.
-    image = await load_captcha_image(media_conn, captcha_id) if text else None
+    image = await load_captcha_image(media_conn, captcha_id) if challenge else None
 
     if not image:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "CAPTCHA_EXPIRED",
-                "message": "CAPTCHA took too long. Restart the CAPTCHA.",
-            },
-        )
+        raise HTTPException(status_code=404, detail=CAPTCHA_EXPIRED)
 
-    # Return the image with the session ID in headers
     return Response(
         content=image,
         media_type="image/png",
     )
 
 
+async def _solve(
+    conn: RedisConn, challenge_key: str, attempts_key: str, answer: str
+) -> str | None:
+    """Return the challenge's token for a correct answer, None for a wrong one.
+
+    The first correct answer mints the token and stores it on the challenge,
+    later ones get it back. WATCH lets only one of parallel correct answers
+    commit; the others retry and find its token.
+
+    Args:
+        conn (RedisConn): Auth-state Redis with the challenge.
+        challenge_key (str): Key of the challenge.
+        attempts_key (str): Key of its wrong-answer counter.
+        answer (str): The typed text.
+
+    Returns:
+        str | None: The CAPTCHA token, or None if the answer is wrong.
+
+    Raises:
+        HTTPException: 404 if the challenge is gone, 409 if parallel answers
+            kept changing it.
+    """
+    for _ in range(CAPTCHA_STATE_UPDATE_ATTEMPTS):
+        async with conn.client.pipeline() as pipe:
+            await pipe.watch(challenge_key)
+            raw = await pipe.get(challenge_key)
+            if raw is None:
+                raise HTTPException(status_code=404, detail=CAPTCHA_EXPIRED)
+            # The answer text, or {"text", "token"} once solved.
+            state = json.loads(raw)
+            text = state["text"] if isinstance(state, dict) else state
+
+            # Case-insensitive: some glyphs look alike in both cases, which would
+            # make the CAPTCHA hard even for a human.
+            if answer.lower() != text.lower():
+                return None
+            if isinstance(state, dict):
+                return state["token"]
+
+            token = mint_token(AvailableTokenTypes.CAPTCHA)
+            pipe.multi()
+            pipe.set(
+                challenge_key, json.dumps({"text": text, "token": token}), keepttl=True
+            )
+            pipe.delete(attempts_key)
+            # Opening a Wordle with the token closes this challenge.
+            queue_token_record(pipe, token, origin=challenge_key)
+            try:
+                await pipe.execute()
+            except WatchError:
+                continue
+        return token
+    raise HTTPException(status_code=409, detail="CAPTCHA changed; retry")
+
+
 @router.post(
     "/verify_captcha",
     dependencies=[Depends(RateLimiter(times=5, seconds=60))],
     responses={
-        401: {"description": "CAPTCHA answer incorrect"},
+        401: {
+            "description": (
+                "CAPTCHA answer incorrect (CAPTCHA_INCORRECT), or incorrect too "
+                "often and dropped (CAPTCHA_ATTEMPTS_EXHAUSTED)"
+            )
+        },
         404: {"description": "CAPTCHA challenge expired or not found"},
+        409: {"description": "Parallel answers changed the challenge; retry"},
         429: {"description": "Rate limit exceeded, see Retry-After"},
     },
 )
 async def get_captcha_token(auth_state_conn: AuthStateConn, req: CaptchaAnswerRequest):
+    """Trade a correct CAPTCHA answer for a CAPTCHA token.
 
-    text = await get_captcha_text_from_state(auth_state_conn, captcha_id=req.captcha_id)
+    A challenge mints one token. The solved challenge keeps it, so a repeated
+    correct answer (a client that lost the response) gets the same token
+    again; using the token for a Wordle closes the challenge. Wrong answers are
+    counted, and after MAX_CAPTCHA_ATTEMPTS the challenge is deleted, so a
+    rotating set of IPs cannot guess on one image indefinitely.
 
-    if not text:
+    Args:
+        auth_state_conn (AuthStateConn): Auth-state Redis with the challenge.
+        req (CaptchaAnswerRequest): Challenge ID and the typed text.
+
+    Returns:
+        dict: The CAPTCHA token for the Wordle step.
+
+    Raises:
+        HTTPException: 401 with CAPTCHA_INCORRECT or CAPTCHA_ATTEMPTS_EXHAUSTED,
+            404 with CAPTCHA_EXPIRED, or 409 if parallel answers kept
+            changing the challenge.
+    """
+    challenge_key = build_auth_state_key("captcha", req.captcha_id)
+    attempts_key = build_auth_state_key("captcha_attempts", req.captcha_id)
+
+    token = await _solve(auth_state_conn, challenge_key, attempts_key, req.answer)
+    if token is not None:
+        return {"captcha_token": token}
+
+    attempts_left = await auth_state_conn.client.eval(
+        FAIL_CAPTCHA_SCRIPT,
+        2,
+        challenge_key,
+        attempts_key,
+        settings.MAX_CAPTCHA_ATTEMPTS,
+    )
+    if attempts_left < 0:
+        raise HTTPException(status_code=404, detail=CAPTCHA_EXPIRED)
+    if attempts_left == 0:
         raise HTTPException(
-            status_code=404,
+            status_code=401,
             detail={
-                "code": "CAPTCHA_EXPIRED",
-                "message": "CAPTCHA took too long. Restart the CAPTCHA.",
+                "code": "CAPTCHA_ATTEMPTS_EXHAUSTED",
+                "message": "Too many wrong answers. Load a new CAPTCHA.",
             },
         )
-
-    # TODO Lock the challenge once it is used up. Today the answer stays valid
-    # for the whole CACHE_TTL_CAPTCHA_CHALLENGE: one solved CAPTCHA mints a new
-    # CAPTCHA token (and so a new Wordle) on every call, and one challenge
-    # takes unlimited wrong guesses, bounded only by the per-IP rate limit,
-    # which rotating IPs bypass. Delete the challenge on a correct answer
-    # (atomically, e.g. GETDEL, so two parallel requests cannot both succeed),
-    # and count wrong answers on it, deleting it after a few (3?) so a new
-    # CAPTCHA is needed. The frontend then shows CAPTCHA_EXPIRED and reloads.
-    # NOTE: compare with lowercase answer and text, otherwise the captcha is very hard to solve
-    # even for a human
-    # Check if stored and given answer match
-    if req.answer.lower() == text.lower():
-        return {
-            "captcha_token": create_access_token(
-                type=AvailableTokenTypes.CAPTCHA.value,
-                expires_minutes=settings.CAPTCHA_TOKEN_EXPIRES_IN,
-            )
-        }
-
     raise HTTPException(
         status_code=401,
         detail={

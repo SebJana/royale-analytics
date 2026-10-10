@@ -57,6 +57,10 @@ function getErrorMessage(error: unknown): string {
   if (code === "PLAYER_NOT_FOUND")
     return "Player not found. Check the tag and try again.";
   if (code === "PLAYER_NOT_TRACKED") return "That player isn't being tracked.";
+  if (code === "REMOVE_PLAYER_TOKEN_USED_UP")
+    return "This verification removed the most players it can. Verify again to remove more.";
+  if (code === "REMOVE_PLAYER_TOKEN_EXPIRED")
+    return "Your verification expired. Verify again.";
   if (code === "TRACKING_CAPACITY_REACHED")
     return "The maximum number of tracked players is reached. No new players can be added right now.";
   if (code === "CR_API_AUTH_FAILED")
@@ -103,6 +107,21 @@ const AUTH_STATUS: HomeStatus = {
   title: "Verification complete",
   message: "Enter a player tag to remove.",
 };
+
+// NOTE: Match the removal token codes of require_remove_player_token in the
+// backend's core/deps.py.
+const REMOVAL_TOKEN_CODES = new Set([
+  "REMOVE_PLAYER_TOKEN_USED_UP",
+  "REMOVE_PLAYER_TOKEN_EXPIRED",
+]);
+
+/** Returns the backend's error code of a failed request, if it sent one. */
+function errorCode(error: unknown): string | undefined {
+  if (!axios.isAxiosError<{ detail?: { code?: string } | string }>(error))
+    return undefined;
+  const detail = error.response?.data?.detail;
+  return typeof detail === "object" ? detail?.code : undefined;
+}
 
 /**
  * Turns a failed add or remove into a status. Rate limits and outages pass on
@@ -222,7 +241,7 @@ function HomePage() {
   const trackingStatusId = useId();
   const untrackingStatusId = useId();
   const navigate = useNavigate();
-  const { isAuthenticated, checkAuthStatus } = useAuth();
+  const { isAuthenticated, checkAuthStatus, logout } = useAuth();
 
   // A battle's "add this player" link fills in the add form. The parameter
   // is dropped right away, so a reload or a later visit starts empty.
@@ -389,6 +408,10 @@ function HomePage() {
       setUntrackedPlayerTag("");
     } catch (error) {
       setUntrackingStatus(getErrorStatus(error, "Couldn't remove player"));
+      // A spent or expired removal token is useless, so the next removal
+      // opens verification instead of failing again.
+      const code = errorCode(error);
+      if (code && REMOVAL_TOKEN_CODES.has(code)) logout();
     } finally {
       setUntrackingPlayer(false);
     }

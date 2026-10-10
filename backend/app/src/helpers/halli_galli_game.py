@@ -159,6 +159,9 @@ class HalliGalliGame(BaseModel):
     # Saved after a player win so a lost final response can be recovered from
     # the status route without issuing a different token for the same game.
     completion_token: str | None = None
+    # JTI of the Wordle token that started the game. A win spends that token,
+    # so one Wordle yields at most one Halli Galli token.
+    wordle_jti: str | None = None
     # Keep the last committed score and pile change so status can reconstruct
     # a round result when its action response never reaches the browser.
     last_round_index: int | None = None
