@@ -4,6 +4,8 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi_limiter import FastAPILimiter
 from redis.asyncio import Redis
+from pymongo.errors import PyMongoError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import JSONResponse
 
 from routers import (
@@ -27,6 +29,12 @@ from api_key_store import (
 )
 from scrape_schedule import Schedule, BATTLES_SCHEDULE, PROFILES_SCHEDULE
 from core.deps import ScrapeSchedules
+from core.mongo_deadline import (
+    MONGO_TIMEOUT_RESPONSES,
+    MongoDeadlineMiddleware,
+    http_error_handler,
+    mongo_error_handler,
+)
 from core.route_timing import (
     RouteTimingMiddleware,
     RouteTimings,
@@ -160,7 +168,10 @@ async def lifespan(app: FastAPI):
     app.state.auth_state_redis = auth_state_redis
 
     # Retry MongoDB
-    mongo_conn = MongoConn(app_name=settings.MONGO_CLIENT_NAME)
+    mongo_conn = MongoConn(
+        app_name=settings.MONGO_CLIENT_NAME,
+        max_pool_size=settings.MONGO_MAX_POOL_SIZE,
+    )
     await retry_async(mongo_conn.connect, name="MongoDB")
     app.state.mongo = mongo_conn
 
@@ -225,7 +236,10 @@ async def lifespan(app: FastAPI):
 # Created with the app, not in lifespan: the middleware below needs it first.
 route_timings = RouteTimings()
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, responses=MONGO_TIMEOUT_RESPONSES)
+
+app.add_exception_handler(PyMongoError, mongo_error_handler)
+app.add_exception_handler(StarletteHTTPException, http_error_handler)
 
 
 @app.exception_handler(NoKeyAvailable)
@@ -243,6 +257,10 @@ async def key_store_unavailable(_request: Request, _exc: KeyStoreUnavailable):
         status_code=503, content={"detail": "Clash Royale key store unavailable"}
     )
 
+
+# Added first, so it is the innermost middleware: only the request's own
+# handling counts against the deadline.
+app.add_middleware(MongoDeadlineMiddleware, timeout_s=settings.MONGO_REQUEST_TIMEOUT_S)
 
 # Add CORS middleware for local development
 app.add_middleware(

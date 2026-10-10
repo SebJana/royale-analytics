@@ -99,7 +99,11 @@ async def init():
     await retry_async(redis_conn.connect, name="Redis")
 
     # Retry MongoDB
-    mongo_conn = MongoConn(app_name=settings.MONGO_CLIENT_NAME)
+    mongo_conn = MongoConn(
+        app_name=settings.MONGO_CLIENT_NAME,
+        max_pool_size=settings.MONGO_MAX_POOL_SIZE,
+        wait_queue_timeout_s=settings.MONGO_WAIT_QUEUE_TIMEOUT,
+    )
     await retry_async(mongo_conn.connect, name="MongoDB")
 
     logger.info("Successfully connected to all services")

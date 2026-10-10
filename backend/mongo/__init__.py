@@ -1,4 +1,4 @@
-from .connection import MongoConn
+from .connection import MongoConn, is_mongo_timeout, request_deadline
 from .battles_read import (
     get_battles_count,
     print_first_battles,
@@ -41,6 +41,8 @@ from .database_read import get_database_health, get_server_time
 
 __all__ = [
     "MongoConn",
+    "is_mongo_timeout",
+    "request_deadline",
     # battles
     ## read
     "get_battles_count",

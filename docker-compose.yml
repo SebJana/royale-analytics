@@ -136,6 +136,12 @@ services:
       - redis-rate-limit
     env_file:
       - .env
+    environment:
+      # Motor's thread pool, cpu_count() * 5 by default. A wait for a free
+      # thread is outside the request's Mongo deadline, so it exceeds the
+      # connection pool and most queueing happens in the driver instead.
+      # NOTE Keep above MONGO_MAX_POOL_SIZE in backend/app/src/core/settings.py.
+      MOTOR_MAX_WORKERS: "110"
     volumes:
       # Saved player search index, loaded on restart instead of rebuilt.
       # NOTE Matches SNAPSHOT_PATH in player_search/snapshot.py.

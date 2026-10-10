@@ -160,6 +160,20 @@ class Settings:
 
     # MongoDB Configuration
     MONGO_CLIENT_NAME: str = "cr-analytics-api"
+    # Connections the API opens at most. Requests beyond it wait for a free
+    # one, up to the request's Mongo deadline below.
+    # NOTE Keep below MOTOR_MAX_WORKERS of the api service in docker-compose.yml.
+    MONGO_MAX_POOL_SIZE: int = 100
+    # Total time the Mongo operations of one request may take, counted from
+    # the request's start; past it the API answers 503. Covers waiting for a
+    # pooled connection, server selection and the queries themselves, and
+    # Mongo stops a query that overruns it.
+    # NOTE Keep below the browser's timeout (12 s, frontend axios.ts), which
+    # stays below proxy_read_timeout (15 s) of /api/ in frontend/nginx.conf, so
+    # the browser receives the 503 instead of giving up first.
+    MONGO_REQUEST_TIMEOUT_S: float = 8  # seconds
+    # Retry-After sent with that 503.
+    MONGO_TIMEOUT_RETRY_AFTER_S: int = 5  # seconds
 
     # Untracked periods shorter than this are not shown on the player page.
     # The first sync after reactivation fetches the last 25 battles, so a short

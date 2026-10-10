@@ -5,7 +5,10 @@ import axios from "axios";
 // - Production (Docker): nginx proxy handles /api -> http://api:8000/api
 const api = axios.create({
   baseURL: "/api",
-  timeout: 5000,
+  // NOTE: Above the API's Mongo deadline (MONGO_REQUEST_TIMEOUT_S, 8 s), so a
+  // slow query arrives as a 503 DATABASE_TIMEOUT with Retry-After, and below
+  // nginx's proxy_read_timeout (15 s) for /api/.
+  timeout: 12000,
   headers: {
     "Content-Type": "application/json",
   },
@@ -51,4 +54,7 @@ export function whenApiIdle(): Promise<void> {
 // TODO: Handle player data route rate limits (HTTP 429): read Retry-After,
 // show a clear cooldown message in the affected view, preserve existing data,
 // and prevent automatic retries/refetches until the cooldown has passed.
+// The same applies to HTTP 503 with detail.code "DATABASE_TIMEOUT" (Mongo did
+// not answer within the request's deadline): retry once Retry-After has
+// passed instead of showing a hard error.
 export default api;

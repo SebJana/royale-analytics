@@ -215,6 +215,13 @@ class Settings:
 
     # MongoDB Configuration
     MONGO_CLIENT_NAME: str = "cr-analytics-data-scraper"
+    # Connections the scraper opens at most. Above MAX_WORKERS, so every
+    # worker gets one while the monitoring and flush loops use the rest.
+    MONGO_MAX_POOL_SIZE: int = 100
+    # Longest wait for a free pooled connection once all are busy. Past it
+    # the operation fails and the job takes the failure backoff instead of
+    # holding its claim until JOB_TIMEOUT.
+    MONGO_WAIT_QUEUE_TIMEOUT: float = 30  # seconds
 
     # Cache TTL (Time To Live) in seconds
     # Twice the refresh interval keeps the cards cached if one refresh fails
