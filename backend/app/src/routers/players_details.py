@@ -18,7 +18,12 @@ from helpers.validate import (
     ParamsRequestError,
 )
 from models.schema import BetweenRequest, BattlesRequest, DeckCardFilterRequest
-from redis_service import get_redis_json, set_redis_json, build_redis_key
+from helpers.json_response import (
+    cache_json_response,
+    get_cached_response,
+    json_response,
+)
+from redis_service import build_redis_key
 from mongo import (
     get_last_battles,
     get_decks_win_percentage,
@@ -132,14 +137,13 @@ async def last_battles(
         }
         key = build_redis_key(
             service="crApi",
-            resource="playerBattles",
+            resource="playerBattlesResponse",
             params=params,
             player_version=player.sync_version,
         )
-        cached_battles = await get_redis_json(redis_conn, key)
-
-        if cached_battles is not None:
-            return {"player_tag": player_tag, "last_battles": cached_battles}
+        cached = await get_cached_response(redis_conn, key)
+        if cached is not None:
+            return cached
 
         battles = await get_last_battles(mongo_conn, player_tag, cutoff, req.limit)
 
@@ -152,14 +156,20 @@ async def last_battles(
             # A just-tracked player whose first battle sync has not finished.
             # Not cached: the next request after the sync must see the battles,
             # and a player without new battles keeps the same sync version.
-            return {
-                "player_tag": player_tag,
-                "last_battles": battles,
-                "first_sync_pending": True,
-            }
+            return json_response(
+                {
+                    "player_tag": player_tag,
+                    "last_battles": battles,
+                    "first_sync_pending": True,
+                }
+            )
 
-        await set_redis_json(redis_conn, key, battles, ttl=settings.CACHE_TTL_BATTLES)
-        return {"player_tag": player_tag, "last_battles": battles}
+        return await cache_json_response(
+            redis_conn,
+            key,
+            {"player_tag": player_tag, "last_battles": battles},
+            ttl=settings.CACHE_TTL_BATTLES,
+        )
 
     except ParamsRequestError as e:
         raise HTTPException(status_code=e.code, detail=e.detail)
@@ -240,19 +250,13 @@ async def deck_percentage_stats(
             }
         key = build_redis_key(
             service="crApi",
-            resource="playerDecks",
+            resource="playerDecksResponse",
             params=params,
             player_version=player.sync_version,
         )
-        cached_decks = await get_redis_json(redis_conn, key)
-
-        if cached_decks is not None:
-            return {
-                "player_tag": player_tag,
-                "game_modes": validated_game_modes,
-                "exclude_game_modes": excluded_game_modes,
-                "deck_statistics": cached_decks,
-            }
+        cached = await get_cached_response(redis_conn, key)
+        if cached is not None:
+            return cached
 
         decks = await get_decks_win_percentage(
             mongo_conn,
@@ -273,13 +277,17 @@ async def deck_percentage_stats(
                 status_code=404, detail=f"No decks found for {player_tag}"
             )
 
-        await set_redis_json(redis_conn, key, decks, ttl=settings.CACHE_TTL_DECK_STATS)
-        return {
-            "player_tag": player_tag,
-            "game_modes": validated_game_modes,
-            "exclude_game_modes": excluded_game_modes,
-            "deck_statistics": decks,
-        }
+        return await cache_json_response(
+            redis_conn,
+            key,
+            {
+                "player_tag": player_tag,
+                "game_modes": validated_game_modes,
+                "exclude_game_modes": excluded_game_modes,
+                "deck_statistics": decks,
+            },
+            ttl=settings.CACHE_TTL_DECK_STATS,
+        )
 
     except ParamsRequestError as e:
         raise HTTPException(status_code=e.code, detail=e.detail)
@@ -333,19 +341,13 @@ async def card_percentage_stats(
             params["excludeGameModes"] = excluded_game_modes
         key = build_redis_key(
             service="crApi",
-            resource="playerCards",
+            resource="playerCardsResponse",
             params=params,
             player_version=player.sync_version,
         )
-        cached_cards = await get_redis_json(redis_conn, key)
-
-        if cached_cards is not None:
-            return {
-                "player_tag": player_tag,
-                "game_modes": validated_game_modes,
-                "exclude_game_modes": excluded_game_modes,
-                "card_statistics": cached_cards,
-            }
+        cached = await get_cached_response(redis_conn, key)
+        if cached is not None:
+            return cached
 
         cards = await get_cards_win_percentage(
             mongo_conn,
@@ -361,13 +363,17 @@ async def card_percentage_stats(
                 status_code=404, detail=f"No cards found for {player_tag}"
             )
 
-        await set_redis_json(redis_conn, key, cards, ttl=settings.CACHE_TTL_CARD_STATS)
-        return {
-            "player_tag": player_tag,
-            "game_modes": validated_game_modes,
-            "exclude_game_modes": excluded_game_modes,
-            "card_statistics": cards,
-        }
+        return await cache_json_response(
+            redis_conn,
+            key,
+            {
+                "player_tag": player_tag,
+                "game_modes": validated_game_modes,
+                "exclude_game_modes": excluded_game_modes,
+                "card_statistics": cards,
+            },
+            ttl=settings.CACHE_TTL_CARD_STATS,
+        )
 
     except ParamsRequestError as e:
         raise HTTPException(status_code=e.code, detail=e.detail)
@@ -423,19 +429,13 @@ async def daily_player_statistics(
             params["excludeGameModes"] = excluded_game_modes
         key = build_redis_key(
             service="crApi",
-            resource="dailyStats",
+            resource="dailyStatsResponse",
             params=params,
             player_version=player.sync_version,
         )
-        cached_stats = await get_redis_json(redis_conn, key)
-
-        if cached_stats is not None:
-            return {
-                "player_tag": player_tag,
-                "game_modes": validated_game_modes,
-                "exclude_game_modes": excluded_game_modes,
-                "daily_statistics": cached_stats,
-            }
+        cached = await get_cached_response(redis_conn, key)
+        if cached is not None:
+            return cached
 
         stats = await get_daily_stats(
             mongo_conn,
@@ -452,15 +452,17 @@ async def daily_player_statistics(
                 status_code=404, detail=f"No battles found for {player_tag}"
             )
 
-        await set_redis_json(
-            redis_conn, key, stats, ttl=settings.CACHE_TTL_PLAYER_BATTLE_STATS
+        return await cache_json_response(
+            redis_conn,
+            key,
+            {
+                "player_tag": player_tag,
+                "game_modes": validated_game_modes,
+                "exclude_game_modes": excluded_game_modes,
+                "daily_statistics": stats,
+            },
+            ttl=settings.CACHE_TTL_PLAYER_BATTLE_STATS,
         )
-        return {
-            "player_tag": player_tag,
-            "game_modes": validated_game_modes,
-            "exclude_game_modes": excluded_game_modes,
-            "daily_statistics": stats,
-        }
 
     except ParamsRequestError as e:
         raise HTTPException(status_code=e.code, detail=e.detail)

@@ -1,6 +1,8 @@
 # API server framework
 fastapi==0.109.2
 uvicorn[standard]==0.27.1
+# Encodes the JSON responses once, see helpers/json_response.py
+orjson==3.13.0
 
 # Rate limiting and authentication
 fastapi-limiter==0.1.6

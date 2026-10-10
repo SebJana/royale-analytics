@@ -2,8 +2,9 @@ from fastapi import APIRouter, HTTPException
 
 from core.deps import DbConn, RedConn
 from core.settings import settings
+from helpers.json_response import cache_json_response, get_cached_response
 from mongo import get_battles_count
-from redis_service import get_redis_json, set_redis_json, build_redis_key
+from redis_service import build_redis_key
 
 router = APIRouter(prefix="/battles", tags=["Total battles"])
 
@@ -14,16 +15,17 @@ router = APIRouter(prefix="/battles", tags=["Total battles"])
 )
 async def fetch_battles_count(mongo_conn: DbConn, redis_conn: RedConn):
     try:
-        key = build_redis_key(service="crApi", resource="totalBattles")
-        cached_battle_count = await get_redis_json(redis_conn, key)
-
-        if cached_battle_count is not None:
-            return {"totalBattleCount": cached_battle_count}
+        key = build_redis_key(service="crApi", resource="totalBattlesResponse")
+        cached = await get_cached_response(redis_conn, key)
+        if cached is not None:
+            return cached
         battle_count = await get_battles_count(mongo_conn)
-        await set_redis_json(
-            redis_conn, key, battle_count, ttl=settings.CACHE_TTL_TOTAL_BATTLES
+        return await cache_json_response(
+            redis_conn,
+            key,
+            {"totalBattleCount": battle_count},
+            ttl=settings.CACHE_TTL_TOTAL_BATTLES,
         )
-        return {"totalBattleCount": battle_count}
 
     except Exception as e:
         # Upon any lookup/redis error

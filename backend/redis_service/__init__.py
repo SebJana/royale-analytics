@@ -7,6 +7,7 @@ from .redis_connection import (
     consume_auth_state_json,
     get_auth_state_json,
     get_redis_json,
+    jitter_ttl,
     set_auth_state_json,
     set_redis_json,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "consume_auth_state_json",
     "get_auth_state_json",
     "get_redis_json",
+    "jitter_ttl",
     "set_auth_state_json",
     "set_redis_json",
 ]

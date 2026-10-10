@@ -2,7 +2,9 @@ from fastapi import APIRouter, HTTPException
 
 from core.deps import DbConn, RedConn
 from core.settings import settings
-from redis_service import get_redis_json, CARDS_CACHE_KEY
+from core.route_timing import note_cache_lookup
+from helpers.json_response import get_cached_response, json_response
+from redis_service import CARDS_CACHE_KEY
 from mongo import get_cards as get_stored_cards
 
 router = APIRouter(prefix="/cards", tags=["Cards"])
@@ -18,13 +20,15 @@ router = APIRouter(prefix="/cards", tags=["Cards"])
 async def get_cards(mongo_conn: DbConn, redis_conn: RedConn):
     try:
         # The cache only holds a copy of Mongo, so a cache outage falls back to
-        # Mongo instead of failing the request.
-        cached_cards = await get_redis_json(redis_conn, CARDS_CACHE_KEY)
+        # Mongo instead of failing the request. The scraper stores exactly the
+        # served list, so its text is sent as it is.
+        cached = await get_cached_response(redis_conn, CARDS_CACHE_KEY)
     except Exception as e:
         print(f"[CACHE] [WARNING] reading the cards failed, using Mongo: {e}")
-        cached_cards = None
-    if cached_cards is not None:
-        return cached_cards
+        note_cache_lookup(False)
+        cached = None
+    if cached is not None:
+        return cached
 
     try:
         stored = await get_stored_cards(mongo_conn)
@@ -39,7 +43,7 @@ async def get_cards(mongo_conn: DbConn, redis_conn: RedConn):
     # (see data_scraper/src/jobs/cards.py). Caching this Mongo read could overwrite
     # a newer list written after the read and keep it until the TTL ends.
     if stored and stored.get("payload"):
-        return stored["payload"]
+        return json_response(stored["payload"])
 
     # Only on a fresh install, before the scraper's first card refresh. The
     # scraper stores the list before mirroring its images, so this resolves
