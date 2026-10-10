@@ -2,7 +2,6 @@
 
 import colorsys
 import random
-import re
 from collections import Counter
 from io import BytesIO
 from pathlib import Path
@@ -10,7 +9,7 @@ from pathlib import Path
 import cairosvg
 from PIL import Image
 
-from ..halli_galli_card import (
+from .constants import (
     ColorPalette,
     FRUIT_SIZE,
     RGBColor,
@@ -29,10 +28,6 @@ FRUIT_COLOR_CACHE: dict[str, ColorPalette] = {}
 
 
 FRUIT_MAIN_COLOR_CACHE: dict[str, RGBColor] = {}
-
-
-# Match literal SVG palette values only; this avoids changing IDs or dimensions.
-HEX_COLOR_PATTERN = re.compile(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b")
 
 
 DOCKER_HALLI_GALLI_DIR = Path("/app/shared_resources/halli_galli")

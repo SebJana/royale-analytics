@@ -4,7 +4,7 @@ import math
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..halli_galli_card import (
+from .constants import (
     CARD_HEIGHT,
     CARD_WIDTH,
     FRUIT_SIZE,
@@ -82,8 +82,9 @@ class FruitCreationPlacement(BaseModel):
 
         transformed_points = []
         for source_x, source_y in visible_hull:
-            # This matches the translate -> rotate -> scale SVG transform used
-            # for rendering each image element below.
+            # NOTE This matches the scale -> flip -> rotate around the center
+            # that create_fruit_sprite in svg.py applies to each fruit. Change
+            # both together, or click boxes drift from the drawn fruit.
             offset_x = (image_x + source_x - self.center_x) * horizontal_scale
             offset_y = (image_y + source_y - self.center_y) * vertical_scale
             transformed_points.append(

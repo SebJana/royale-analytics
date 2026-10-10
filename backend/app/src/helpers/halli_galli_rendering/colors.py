@@ -4,13 +4,14 @@ import colorsys
 import random
 from functools import lru_cache
 
+import numpy as np
 from PIL import Image, ImageChops
 
 from .assets import (
     get_fruit_colors,
     get_main_fruit_color,
 )
-from ..halli_galli_card import (
+from .constants import (
     AVAILABLE_FRUITS,
     BACKGROUND_HUE_BINS,
     BACKGROUND_HUE_TARGETS,
@@ -60,6 +61,44 @@ def count_foreground_hues(foreground: Image.Image) -> list[int]:
     for hue_value, count in enumerate(hue.histogram(mask)):
         foreground_counts[hue_value * BACKGROUND_HUE_BINS // 256] += count
     return foreground_counts
+
+
+@lru_cache(maxsize=len(AVAILABLE_FRUITS) + 1)
+def get_fruit_color_array(fruit: str | None = None) -> np.ndarray:
+    """Return a fruit's sampled colors, or every fruit's for None, as an array.
+
+    The palettes keep repeated colors (thousands per fruit) so common fills
+    are drawn more often; converting them per card cost ~17 ms. The cached
+    array is read-only because every card shares it.
+
+    Args:
+        fruit (str | None): Fruit name, or None for all fruits together.
+
+    Returns:
+        np.ndarray: Colors as an N x 3 uint8 array.
+    """
+    fruits = AVAILABLE_FRUITS if fruit is None else (fruit,)
+    colors = np.array(
+        [color for name in fruits for color in get_fruit_colors(name)], dtype=np.uint8
+    )
+    colors.setflags(write=False)
+    return colors
+
+
+def count_painted_hues(rgb: np.ndarray, painted: np.ndarray) -> np.ndarray:
+    """Count vivid painted pixels per hue bin, as count_foreground_hues does.
+
+    Args:
+        rgb (np.ndarray): RGB pixels, height x width x 3, uint8.
+        painted (np.ndarray): Boolean mask of the pixels that were painted.
+
+    Returns:
+        np.ndarray: Pixel count per background hue bin.
+    """
+    hsv = np.asarray(Image.fromarray(rgb, "RGB").convert("HSV"))
+    vivid = painted & (hsv[..., 1] >= 90) & (hsv[..., 2] >= 60)
+    bins = hsv[..., 0][vivid].astype(np.int32) * BACKGROUND_HUE_BINS // 256
+    return np.bincount(bins, minlength=BACKGROUND_HUE_BINS)
 
 
 def get_background_hue_bins(main_hues: list[float]) -> list[int]:

@@ -2,34 +2,34 @@
 
 import random
 
-from PIL import Image, ImageChops, ImageDraw
+import numpy as np
+from PIL import Image, ImageDraw
 
-from .assets import (
-    get_fruit_colors,
-)
 from .colors import (
-    count_foreground_hues,
+    count_painted_hues,
     create_component_texture,
     get_contrasting_fruits,
+    get_fruit_color_array,
     get_decoy_palette,
 )
-from ..halli_galli_card import (
+from .constants import (
     BACKGROUND_DECOY_COUNT,
     BACKGROUND_DECOY_FALLBACK_ATTEMPTS,
     BACKGROUND_DECOY_FALLBACK_SIZE,
     BACKGROUND_DECOY_PLACEMENT_ATTEMPTS,
     BACKGROUND_DECOY_SHADES,
     BACKGROUND_DECOY_SIZE,
+    CARD_HEIGHT,
+    CARD_WIDTH,
     ColorPalette,
 )
 from .layout import (
     clamp,
 )
-from .masks import (
-    component_pixel_indices,
-    component_placement_is_valid,
-    get_exclusion_mask,
-)
+
+# Random positions are tried this often before the free positions are listed.
+# Most decoys fit within a few tries; crowded cards then avoid hundreds more.
+DECOY_RANDOM_ATTEMPTS = 10
 
 
 def draw_blob_lobe(
@@ -99,90 +99,99 @@ def create_decoy_mask(fruit: str) -> Image.Image:
     return mask
 
 
-def draw_component_artifacts(
-    texture: Image.Image, points: list[tuple[int, int]], accent_palette: ColorPalette
-) -> None:
-    """Add small source-colored marks to the painted part of a blob."""
-    detail = ImageDraw.Draw(texture)
-    # 65-110 specks, each 1-3px across, give the decoy a fruit-like surface.
-    # Sample only inside the mask so most detail reaches the painted shape.
-    for x, y in random.choices(points, k=random.randint(65, 110)):
-        detail.rectangle(
-            (x, y, x + random.randint(0, 2), y + random.randint(0, 2)),
-            fill=random.choice(accent_palette),
-        )
+def create_decoy_texture(
+    mask: np.ndarray,
+    palette: ColorPalette,
+    accents: np.ndarray,
+    brightness: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Shade a blob surface and add small source-colored marks inside it."""
+    height, width = mask.shape
+    texture = create_component_texture((width, height), palette, brightness)
     # Four short, 1-2px wide scratches add detail without replacing the surface
-    # with dense noise. Their endpoints stay within 5px of the sampled position.
-    for x, y in random.choices(points, k=4):
+    # with dense noise. Their endpoints stay within 5px of a painted position.
+    inside = np.argwhere(mask)
+    detail = ImageDraw.Draw(texture)
+    for y, x in inside[rng.integers(len(inside), size=4)]:
         detail.line(
-            (x, y, x + random.randint(-5, 5), y + random.randint(-5, 5)),
-            fill=random.choice(accent_palette),
+            (
+                int(x),
+                int(y),
+                int(x) + random.randint(-5, 5),
+                int(y) + random.randint(-5, 5),
+            ),
+            fill=tuple(int(c) for c in accents[rng.integers(len(accents))]),
             width=random.randint(1, 2),
         )
+    pixels = np.array(texture)
+    # 65-110 specks, each 1-3px across, give the decoy a fruit-like surface.
+    # Sample only inside the mask so most detail reaches the painted shape.
+    count = random.randint(65, 110)
+    origins = inside[rng.integers(len(inside), size=count)]
+    sizes = rng.integers(1, 4, size=(count, 2))
+    colors = accents[rng.integers(len(accents), size=count)]
+    for dy in range(3):
+        for dx in range(3):
+            keep = (sizes[:, 0] > dy) & (sizes[:, 1] > dx)
+            ys = np.minimum(origins[keep, 0] + dy, height - 1)
+            xs = np.minimum(origins[keep, 1] + dx, width - 1)
+            pixels[ys, xs] = colors[keep]
+    return pixels
 
 
-def paint_component_texture(
-    background: Image.Image,
-    texture: Image.Image,
-    indices: list[int],
-    left: int,
-    top: int,
-    occupied: bytearray,
-    hue_counts: list[int],
-) -> None:
-    """Paint accepted pixels and count their final colors for balancing."""
-    card_width = background.width
-    mask = Image.new("L", texture.size)
-    mask_pixels = mask.load()
-    # Only newly occupied pixels contribute, preserving the overlap rule.
-    for index in indices:
-        if occupied[index]:
+def find_decoy_position(
+    mask: np.ndarray,
+    occupied: np.ndarray,
+    clearance: np.ndarray,
+    attempts: int,
+) -> tuple[int, int] | None:
+    """Pick a top-left that keeps the blob off the fruit clearance.
+
+    Random positions first; once those fail, every position whose whole box
+    is clear is listed with one summed-area pass, and half the remaining
+    attempts draw from that list.
+
+    Args:
+        mask (np.ndarray): Boolean blob shape.
+        occupied (np.ndarray): Card pixels already painted.
+        clearance (np.ndarray): Card pixels reserved around real fruit.
+        attempts (int): Placement attempts for this shape.
+
+    Returns:
+        tuple[int, int] | None: Top and left, or None if nothing fits.
+    """
+    height, width = mask.shape
+    painted = int(mask.sum())
+    free = None
+    for attempt in range(attempts):
+        if attempt == DECOY_RANDOM_ATTEMPTS:
+            table = np.pad(clearance.astype(np.int32), ((1, 0), (1, 0)))
+            table = table.cumsum(0).cumsum(1)
+            sums = (
+                table[height:, width:]
+                - table[:-height, width:]
+                - table[height:, :-width]
+                + table[:-height, :-width]
+            )[2 : CARD_HEIGHT - height - 2, 2 : CARD_WIDTH - width - 2]
+            free = np.argwhere(sums == 0) + 2
+        if free is not None and len(free) and attempt < attempts // 2:
+            top, left = (int(value) for value in free[random.randrange(len(free))])
+        else:
+            # Keep the mask viewport a couple of pixels inside the image. The
+            # final card alpha handles the rounded corners.
+            left = random.randint(2, CARD_WIDTH - width - 3)
+            top = random.randint(2, CARD_HEIGHT - height - 3)
+        window = (slice(top, top + height), slice(left, left + width))
+        if np.any(clearance[window][mask]):
             continue
-        occupied[index] = 1
-        mask_pixels[index % card_width - left, index // card_width - top] = 255
-    background.paste(texture, (left, top), mask)
-    painted = texture.convert("RGBA")
-    painted.putalpha(mask)
-    for hue_bin, count in enumerate(count_foreground_hues(painted)):
-        hue_counts[hue_bin] += count
-
-
-def place_colored_component(
-    background: Image.Image,
-    occupied: bytearray,
-    exclusion: bytes,
-    palette: ColorPalette,
-    accent_palette: ColorPalette,
-    brightness: float,
-    mask: Image.Image,
-    hue_counts: list[int],
-) -> int:
-    """Try one position, then texture and paint the accepted blob."""
-    # Keep the mask viewport a couple of pixels inside the image. The final
-    # card alpha handles the rounded corners without drawing a separate border.
-    left = random.randint(2, background.width - mask.width - 3)
-    top = random.randint(2, background.height - mask.height - 3)
-    clearance = get_exclusion_mask(exclusion, background.size)
-    if ImageChops.multiply(
-        mask, clearance.crop((left, top, left + mask.width, top + mask.height))
-    ).getbbox():
-        return 0
-    indices = component_pixel_indices(mask, left, top, background.width)
-    if not component_placement_is_valid(indices, occupied, exclusion):
-        return 0
-
-    # Texture work happens only after placement succeeds. Rejected positions
-    # do not need a rendered surface or spend extra random color selections.
-    texture = create_component_texture(mask.size, palette, brightness)
-    points = [
-        (index % background.width - left, index // background.width - top)
-        for index in indices
-    ]
-    draw_component_artifacts(texture, points, accent_palette)
-    paint_component_texture(
-        background, texture, indices, left, top, occupied, hue_counts
-    )
-    return len(indices)
+        # At most 1/20 (5%) of a candidate may overlap other background
+        # components. This leaves most of its shape intact and avoids merging
+        # several decoys into one large patch.
+        if np.count_nonzero(occupied[window][mask]) > painted // 20:
+            continue
+        return top, left
+    return None
 
 
 def choose_decoy_sources(fruit: str, amount: int) -> list[tuple[str, float]]:
@@ -200,67 +209,56 @@ def choose_decoy_sources(fruit: str, amount: int) -> list[tuple[str, float]]:
     return [(source, brightness) for source, brightness in zip(sources, shades)]
 
 
-def try_place_decoy(
-    background: Image.Image,
-    occupied: bytearray,
-    exclusion: bytes,
-    source: str,
-    brightness: float,
-    mask: Image.Image,
-    hue_counts: list[int],
-    attempts: int,
-) -> bool:
-    """Retry positions for one fixed shape and palette without rerolling them."""
-    colors = get_decoy_palette(source)
-    accents = get_fruit_colors(source)
-    for _ in range(attempts):
-        if place_colored_component(
-            background,
-            occupied,
-            exclusion,
-            colors,
-            accents,
-            brightness,
-            mask,
-            hue_counts,
-        ):
-            return True
-    return False
-
-
 def add_decoy_components(
-    background: Image.Image,
-    occupied: bytearray,
+    background: np.ndarray,
+    occupied: np.ndarray,
     fruit: str,
-    exclusion: bytes,
-    hue_counts: list[int],
+    clearance: np.ndarray,
+    hue_counts: np.ndarray,
     amount: int,
+    rng: np.random.Generator,
 ) -> None:
-    """Place the big distractions before spending pixels on histogram balance."""
+    """Place the big distractions before spending pixels on histogram balance.
+
+    Args:
+        background (np.ndarray): Card RGB pixels, painted in place.
+        occupied (np.ndarray): Card pixels already painted, updated in place.
+        fruit (str): Actual fruit, whose palette decoys never use.
+        clearance (np.ndarray): Card pixels reserved around real fruit.
+        hue_counts (np.ndarray): Vivid pixels per hue bin, updated in place.
+        amount (int): Actual fruit count; decoy counts ignore it.
+        rng (np.random.Generator): This card's NumPy random stream.
+    """
     for source, brightness in choose_decoy_sources(fruit, amount):
-        mask = create_decoy_mask(fruit)
-        if try_place_decoy(
-            background,
-            occupied,
-            exclusion,
-            source,
-            brightness,
-            mask,
-            hue_counts,
-            BACKGROUND_DECOY_PLACEMENT_ATTEMPTS,
-        ):
-            continue
+        mask_image = create_decoy_mask(fruit)
         # Retry this palette rather than replacing rejected rivals with the
         # actual fruit color. Keep the same shape, shade, and fruit clearance.
-        size = BACKGROUND_DECOY_FALLBACK_SIZE
-        mask = mask.resize((size, size), Image.Resampling.NEAREST)
-        try_place_decoy(
-            background,
-            occupied,
-            exclusion,
-            source,
-            brightness,
-            mask,
-            hue_counts,
-            BACKGROUND_DECOY_FALLBACK_ATTEMPTS,
-        )
+        for size, attempts in (
+            (None, BACKGROUND_DECOY_PLACEMENT_ATTEMPTS),
+            (BACKGROUND_DECOY_FALLBACK_SIZE, BACKGROUND_DECOY_FALLBACK_ATTEMPTS),
+        ):
+            if size is not None:
+                mask_image = mask_image.resize((size, size), Image.Resampling.NEAREST)
+            mask = np.asarray(mask_image) > 0
+            position = find_decoy_position(mask, occupied, clearance, attempts)
+            if position is None:
+                continue
+            top, left = position
+            window = (
+                slice(top, top + mask.shape[0]),
+                slice(left, left + mask.shape[1]),
+            )
+            # Texture work happens only after placement succeeds.
+            texture = create_decoy_texture(
+                mask,
+                get_decoy_palette(source),
+                get_fruit_color_array(source),
+                brightness,
+                rng,
+            )
+            # Only newly occupied pixels contribute, preserving the overlap rule.
+            paint = mask & ~occupied[window]
+            background[window][paint] = texture[paint]
+            occupied[window] |= paint
+            hue_counts += count_painted_hues(texture, paint)
+            break

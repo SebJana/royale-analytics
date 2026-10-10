@@ -2,7 +2,7 @@
 
 import random
 
-from ..halli_galli_card import (
+from .constants import (
     CARD_CORNER_RADIUS,
     CARD_HEIGHT,
     CARD_WIDTH,

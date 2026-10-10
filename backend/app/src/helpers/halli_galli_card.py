@@ -1,6 +1,6 @@
 """Central Halli Galli card configuration and generation API.
 
-Tune card appearance with the constants below. ``create_card`` orchestrates
+Tune card appearance in ``halli_galli_rendering.constants``. ``create_card`` orchestrates
 fruit selection/layout, surface artifacts, balanced background colors, and
 card-wide overlays; ``pick_random_card`` selects a supported fruit/count.
 Detailed drawing operations and metadata models live in ``halli_galli_rendering``.
@@ -18,9 +18,9 @@ Generation flow, in execution order:
    Retry individual centers and then whole layouts within fixed limits; if
    exhausted, use the base formation with the already selected styles.
 
-3. Artwork augmentation (``svg``): adjust SVG hue, saturation, and lightness,
-   darken bright colored fills for contrast, and apply the placement transforms.
-   Rasterize the combined transparent foreground. Derive private click boxes
+3. Artwork augmentation (``svg``): scale each fruit's cached raster (rendered
+   once per SVG), adjust its hue, saturation, and lightness, darken bright
+   colored fills for contrast, then flip and rotate it. Composite the transparent foreground. Derive private click boxes
    from the same transformed visible hulls used for placement.
 
 4. Fruit surface artifacts (``artifacts``): scatter fine specks and short
@@ -28,9 +28,9 @@ Generation flow, in execution order:
    fruit colors. Patch area is bounded per fruit; translucency leaves underlying
    detail visible. Clip surface marks to painted fruit so silhouettes survive.
 
-5. Paper background (``background``): create lightly tinted paper with fine
-   grayscale texture. Measure vivid hue bins in the augmented foreground and
-   reserve its painted pixels before placing background distractions.
+5. Paper background (``background``): tint a shared, flipped grayscale paper
+   texture. Measure vivid hue bins in the augmented foreground and reserve its
+   painted pixels before placing background distractions.
 
 6. Large blobs (``decoys``): sample 0-5 connected, shaded fruit-like blobs
    independently of the real count. Use rival palettes, excluding the actual
@@ -41,11 +41,12 @@ Generation flow, in execution order:
 
 7. Balancing clusters and fragments (``background`` / ``masks``): subtract
    foreground and large-blob colors from shared, randomized hue targets, then
-   fill deficits with smaller connected brush walks in shuffled hue order.
-   Accept or reject whole clusters rather than thinning them into loose pixels.
-   Limit nearby cluster contacts to 1-2 per real fruit. Stop at the minimum
-   cluster size or retry budget, leaving small residual deficits instead of
-   tiny finishing fragments. Histogram balance is approximate, not identical.
+   fill deficits in shuffled hue order with connected brush walks, stamped
+   from a self-refreshing shape library at random positions. Accept or reject
+   whole clusters rather than thinning them into loose pixels. Limit the clusters
+   touching each real fruit to its sampled contact limit. Stop at the minimum cluster size or
+   retry budget, leaving small residual deficits instead of tiny finishing
+   fragments. Histogram balance is approximate, not identical.
 
 8. Final overlays and output (``compose_card`` / ``artifacts``): composite fruit
    over paper, then add neutral hollow rings and thick squiggly strokes across
@@ -54,237 +55,26 @@ Generation flow, in execution order:
    private fruit/count/click-box metadata.
 """
 
-from __future__ import annotations
-
 import random
 from io import BytesIO
-from typing import TYPE_CHECKING
 
+import numpy as np
 from PIL import Image
 
-if TYPE_CHECKING:
-    from .halli_galli_rendering.models import FruitImagePosition, HalliGalliCard
+from .halli_galli_rendering.artifacts import add_card_artifacts, add_fruit_artifacts
+from .halli_galli_rendering.assets import get_visible_svg_hull, load_random_fruit_svg
+from .halli_galli_rendering.background import create_noisy_background
+from .halli_galli_rendering.constants import (
+    AVAILABLE_FRUITS,
+    CARD_PNG_COMPRESS_LEVEL,
+    FRUIT_POSITIONS,
+)
+from .halli_galli_rendering.layout import create_fruit_placements
+from .halli_galli_rendering.models import FruitImagePosition, HalliGalliCard
+from .halli_galli_rendering.svg import get_card_mask, render_fruit_foreground
 
-# Stage modules import these constants. Import stages inside the high-level
-# functions so either the API or a stage can be imported first without a cycle.
-
-RGBColor = tuple[int, int, int]
-
-ColorPalette = tuple[RGBColor, ...]
-
-# Keep fruit details readable while varying layout, artwork, and background hues.
-
-# Portrait card at a 1.4:1 height/width ratio. Keep the image small enough to
-# generate quickly while retaining recognizable emoji details at display size.
-CARD_WIDTH = 320
-
-CARD_HEIGHT = 448
-
-# Base SVG viewport; the per-count scales below set the displayed fruit size.
-FRUIT_SIZE = 96
-
-# Fewer fruits have more card space, so they can be noticeably larger.
-FRUIT_SCALE_RANGES = {
-    1: (1.10, 1.35),
-    2: (1.00, 1.25),
-    3: (0.90, 1.18),
-    4: (0.82, 1.04),
-    5: (0.75, 0.93),
-}
-
-# Dense cards use smaller rotation bounds so all randomized layouts fit.
-FRUIT_ROTATION_RANGES = {
-    1: (-28, 28),
-    2: (-24, 24),
-    3: (-20, 20),
-    4: (-14, 14),
-    5: (-10, 10),
-}
-
-# Sparse cards can use stronger position variation; vertical movement is
-# deliberately larger than horizontal movement on every card type.
-FRUIT_POSITION_JITTER = {
-    1: (32, 56),
-    2: (32, 48),
-    3: (28, 40),
-    4: (22, 32),
-    5: (18, 26),
-}
-
-# Shift the base formation as a whole before independently jittering fruits.
-FORMATION_POSITION_SHIFT = {
-    1: (30, 42),
-    2: (28, 38),
-    3: (22, 32),
-    4: (18, 26),
-    5: (14, 20),
-}
-
-# Eight pixels between painted bounds keeps adjacent fruits countable.
-FRUIT_GAP = 8
-
-# Retry individual positions, then the whole formation. Bound both loops so
-# crowded layouts cannot hold up generation indefinitely.
-FRUIT_PLACEMENT_ATTEMPTS = 100
-
-FRUIT_LAYOUT_ATTEMPTS = 50
-
-# The same 16px curve clips the PNG and reserves corner space during placement.
-# There is no drawn card stroke; alpha defines the smooth outer edge.
-CARD_CORNER_RADIUS = 16
-
-# Light paper keeps the emoji visible. Independent RGB values give cards a
-# slight tint without adding another strong fruit-colored background peak.
-BACKGROUND_COLOR_RANGE = (235, 253)
-
-# Mild grayscale texture breaks up flat paper without covering fruit details.
-BACKGROUND_NOISE_STANDARD_DEVIATION = 4
-
-# Longer walks with broad brushes cluster balancing pixels into fewer patches.
-# Keep the hue budgets below unchanged when tuning the size of small marks.
-BACKGROUND_BLOB_STEPS = 48
-
-BACKGROUND_BLOB_RADIUS = 19
-
-# Roughly one in three walks is broader. Mixing sizes avoids one uniform speck
-# size and adds irregular connected background regions for component detectors.
-BACKGROUND_LARGE_BLOB_PROBABILITY = 0.35
-
-BACKGROUND_LARGE_BLOB_STEPS = 90
-
-BACKGROUND_LARGE_BLOB_RADIUS = 29
-
-# Ten-degree hue bins cover the whole hue circle, including red across 0/1.
-BACKGROUND_HUE_BINS = 36
-
-# Approximate vivid-pixel budgets for the dominant SVG fills: red at 0/34/35,
-# orange/yellow at 2/3/4, and purple across 24-28. Unequal budgets reflect the source
-# palette and painted areas, rather than giving every hue the same pixel count.
-# Actual fruit and textured decoy pixels are deducted before filling deficits.
-# These are balancing targets, not a guarantee of identical card histograms.
-# Cover shifted purple shades too, so recoloring does not reveal a grape card.
-# Scale every shared target together to prioritize clear paper over dense noise.
-BACKGROUND_HUE_BUDGET_SCALE = 0.65
-
-BACKGROUND_HUE_TARGETS = {
-    0: 4500,
-    2: 7000,
-    3: 8500,
-    4: 7000,
-    24: 1200,
-    25: 4250,
-    26: 5500,
-    27: 4250,
-    28: 1200,
-    34: 5500,
-    35: 6000,
-}
-
-# Neighboring hue bins need fewer pixels; this broadens the main peaks without
-# spending most of the card on colors that rarely occur in the source artwork.
-BACKGROUND_SIDE_HUE_TARGET = 450
-
-# Count clusters within 5px as contacts. Reject excess clusters whole rather
-# than scattering skipped pixels into a distinctive sparse fringe around fruit.
-BACKGROUND_FRUIT_CONTACT_WIDTH = 11
-
-BACKGROUND_FRUIT_CONTACT_LIMIT = (1, 2)
-
-# Do not finish a hue budget with a tiny fragment of a larger cluster.
-BACKGROUND_MIN_CLUSTER_PIXELS = 24
-
-# A 35px max filter reserves 17px around painted fruit for big decoys only.
-# Small balancing marks can still occupy that space, avoiding a visible halo.
-BACKGROUND_DECOY_CLEARANCE_WIDTH = 35
-
-# Zero through five rival-colored decoys, sampled independently of fruit count.
-# Placement can reject shapes that would crowd the real fruit.
-BACKGROUND_DECOY_COUNT = (0, 5)
-
-# A 100px mask produces lobes comparable to a small fruit instance. Shapes are
-# deliberately irregular so a person can distinguish them from fruit emojis.
-BACKGROUND_DECOY_SIZE = 100
-
-# Vary each blob's brightness, retaining its source hue. Separate shades make
-# multiple decoys less like copies of one flat color patch.
-BACKGROUND_DECOY_SHADES = (0.78, 0.90, 1.02, 1.14)
-
-# Limit normal retries to keep generation bounded. Rejected decoys get a smaller
-# 70px retry with the same clearance so rival palettes survive crowded layouts.
-BACKGROUND_DECOY_PLACEMENT_ATTEMPTS = 70
-
-BACKGROUND_DECOY_FALLBACK_ATTEMPTS = 200
-
-BACKGROUND_DECOY_FALLBACK_SIZE = 70
-
-# Small flecks and a few short streaks alter the painted surface while leaving
-# the fruit silhouette and distinguishing emoji details available to the viewer.
-FRUIT_ARTIFACT_DOTS = 210
-
-FRUIT_ARTIFACT_STREAKS = 4
-
-# Broad translucent discoloration patches cover at most 30% of each fruit's
-# opaque surface. Keep 1-2 patches and the same alpha so marks grow in area
-# while the fruit silhouette and details remain visible underneath.
-FRUIT_ARTIFACT_PATCHES = (1, 2)
-
-FRUIT_ARTIFACT_PATCH_COVERAGE = 0.30
-
-FRUIT_ARTIFACT_PATCH_ALPHA = 150
-
-FRUIT_ARTIFACT_PATCH_ATTEMPTS = 20
-
-# Neutral marks span both paper and fruit without adding a fruit-specific hue.
-# Hollow rings and broad squiggly strokes leave most of the image unobstructed.
-CARD_ARTIFACT_RINGS = (2, 4)
-
-CARD_ARTIFACT_LINES = (2, 3)
-
-CARD_ARTIFACT_LINE_WIDTH = (6, 9)
-
-CARD_ARTIFACT_LINE_AMPLITUDE = (14, 28)
-
-CARD_ARTIFACT_LINE_CYCLES = (2.5, 4.0)
-
-CARD_ARTIFACT_COVERAGE = 0.07
-
-CARD_ARTIFACT_FRUIT_COVERAGE = 0.10
-
-CARD_ARTIFACT_ATTEMPTS = 16
-
-AVAILABLE_FRUITS = ("banana", "grapes", "orange", "strawberry")
-
-# Relative center-coordinates in [0.0, 1.0] for the fruit items
-# (x, y) measured from top-left, based on how many elements are on the card
-# Spread the centers over the portrait area, leaving room for scaling, rotation,
-# and background decoys. Random shifts/jitter keep these from being fixed targets.
-FRUIT_POSITIONS = {
-    1: [
-        (0.50, 0.50),
-    ],
-    2: [
-        (0.50, 0.33),
-        (0.50, 0.67),
-    ],
-    3: [
-        (0.50, 0.25),
-        (0.32, 0.65),
-        (0.68, 0.65),
-    ],
-    4: [
-        (0.32, 0.32),
-        (0.68, 0.32),
-        (0.32, 0.68),
-        (0.68, 0.68),
-    ],
-    5: [
-        (0.30, 0.28),
-        (0.70, 0.28),
-        (0.50, 0.50),
-        (0.30, 0.72),
-        (0.70, 0.72),
-    ],
-}
+# The card pool and the game import the supported cards from here.
+__all__ = ["AVAILABLE_FRUITS", "FRUIT_POSITIONS", "create_card", "pick_random_card"]
 
 
 # High-level generation flow; drawing details remain in the stage modules.
@@ -300,13 +90,12 @@ def compose_card(
     Args:
         background (Image.Image): Tinted card background.
         foreground (Image.Image): Rasterized fruit icons.
+        fruit_positions (list[FruitImagePosition]): Rendered fruit bounds,
+            which cap the overlay coverage per fruit.
 
     Returns:
         bytes: Complete flattened PNG for caching and later encryption.
     """
-
-    from .halli_galli_rendering.artifacts import add_card_artifacts
-    from .halli_galli_rendering.svg import get_card_mask
 
     card = add_card_artifacts(
         Image.alpha_composite(background, foreground), foreground, fruit_positions
@@ -316,47 +105,46 @@ def compose_card(
     card.putalpha(get_card_mask())
     output = BytesIO()
     # Encode in memory for the game/cache. Only external scripts save files.
-    card.save(output, format="PNG")
+    card.save(output, format="PNG", compress_level=CARD_PNG_COMPRESS_LEVEL)
     return output.getvalue()
 
 
 def create_fruit_foreground(
     fruit: str, amount: int
 ) -> tuple[Image.Image, list[FruitImagePosition]]:
-    """Render the fruit layer and keep its final click boxes together."""
-    from .halli_galli_rendering.artifacts import add_fruit_artifacts
-    from .halli_galli_rendering.assets import (
-        get_visible_svg_hull,
-        load_random_fruit_svg,
-    )
-    from .halli_galli_rendering.layout import create_fruit_placements
-    from .halli_galli_rendering.svg import (
-        build_card_svg,
-        create_fruit_element,
-        render_svg_foreground,
-    )
+    """Render the fruit layer and keep its final click boxes together.
 
+    Args:
+        fruit (str): Fruit type to draw.
+        amount (int): Number of fruit icons, a key of FRUIT_POSITIONS.
+
+    Returns:
+        tuple[Image.Image, list[FruitImagePosition]]: The transparent fruit
+            layer with its surface artifacts, and the click box of each fruit.
+    """
     fruit_svgs = [load_random_fruit_svg(fruit) for _ in FRUIT_POSITIONS[amount]]
     visible_hulls = [get_visible_svg_hull(fruit_svg) for fruit_svg in fruit_svgs]
     placements = create_fruit_placements(FRUIT_POSITIONS[amount], amount, visible_hulls)
-    fruit_elements = []
-    fruit_positions = []
-    for fruit_svg, visible_hull, placement in zip(
-        fruit_svgs, visible_hulls, placements
-    ):
-        fruit_elements.append(create_fruit_element(fruit_svg, placement))
-        fruit_positions.append(placement.to_image_position(visible_hull))
-
     # Derive click boxes from the same placements that are rendered. Artifacts
     # stay inside the painted alpha and do not change the target positions.
-    foreground = render_svg_foreground(build_card_svg(fruit_elements))
-    return add_fruit_artifacts(foreground, fruit_positions, fruit), fruit_positions
+    fruit_positions = [
+        placement.to_image_position(visible_hull)
+        for visible_hull, placement in zip(visible_hulls, placements)
+    ]
+    foreground = render_fruit_foreground(fruit_svgs, placements)
+    # Seeded from the standard RNG, so one generator decides the draws of a
+    # card's stages instead of NumPy's global state.
+    rng = np.random.Generator(np.random.PCG64(random.getrandbits(128)))
+    return (
+        add_fruit_artifacts(foreground, fruit_positions, fruit, rng),
+        fruit_positions,
+    )
 
 
 def create_card(fruit: str, amount: int) -> HalliGalliCard | None:
     """Create a PNG card containing ``amount`` of ``fruit``.
 
-    Fruit SVGs are embedded in an intermediate SVG and then turned into a png.
+    Fruit SVGs are rasterized once, then transformed and layered into a PNG.
 
     Args:
         fruit (str): Fruit type to draw on the card.
@@ -366,40 +154,19 @@ def create_card(fruit: str, amount: int) -> HalliGalliCard | None:
         HalliGalliCard | None: Completed PNG and server-side hit boxes, or None
             when the requested fruit/count is unsupported.
     """
-    # Card-generation flow:
-    # 1. Validate the requested fruit/count so only supported cards
-    #    enter the rendering pipeline.
-    # 2. Select different source icons and independently vary their size, flip,
-    #    rotation, placement, and colors. This prevents a card type from having
-    #    one fixed image signature that is easy to classify automatically.
-    # 3. Reject jittered layouts that would overlap, preserving a fair and
-    #    readable card even with the intentionally stronger visual variation.
-    # 4. Add surface artifacts to the icons and fruit-colored blobs to the
-    #    background, then overlay neutral rings and strokes across both layers.
-    # 5. Retain the final painted bounds server-side so click validation can use
-    #    the rendered target location without sending its coordinates to clients.
-    #
-    # The response is a flattened PNG rather than JSON, client-side drawing
-    # instructions, or SVG. Those formats expose semantic details such as the
-    # fruit name, count, source paths, element boundaries, and transforms that
-    # would make programmatic detection/classification much cheaper. PNG sends
-    # only the final pixels, requiring an automated client to interpret the
-    # visual result. A general-purpose multimodal LLM or a specialized computer
-    # vision model can still often identify and count the fruit more reliably
-    # and quickly than a human. This is therefore not a security boundary; it
-    # adds model-building, inference, maintenance, and unforeseen edge-case
-    # hurdles for automation.
+    # The stages are described in the module docstring. The card is sent as a
+    # flattened PNG: JSON, drawing instructions or SVG would expose the fruit,
+    # count, paths and boundaries that make automated classification cheap.
+    # A multimodal LLM or a trained vision model can still count the fruit, so
+    # this raises the cost of automation; it is not a security boundary.
     if fruit not in AVAILABLE_FRUITS:
         return None
     if amount not in FRUIT_POSITIONS:
         return None
 
-    # Stage order is part of seeded generation: keep foreground, background
-    # and card-wide overlays in this order when changing module boundaries.
-    # The same positions feed clearance checks and the returned click boxes.
-    from .halli_galli_rendering.background import create_noisy_background
-    from .halli_galli_rendering.models import HalliGalliCard
-
+    # Keep foreground, background and card-wide overlays in this order: the
+    # background balances the hues the foreground leaves, the overlays cover
+    # both. The same positions feed clearance checks and the click boxes.
     foreground, fruit_positions = create_fruit_foreground(fruit, amount)
     background = create_noisy_background(foreground, fruit, amount, fruit_positions)
     return HalliGalliCard(
