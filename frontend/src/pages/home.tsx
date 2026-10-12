@@ -462,12 +462,6 @@ function HomePage() {
               Search and view analytics for players already being tracked in our
               system.
             </p>
-            {/* TODO Add an "Explore most popular players" button that pages
-            through all tracked players, most profile views in the last 30 days
-            first. Search only shows the best matches for a query, so this is
-            the way to discover players without knowing a name. Needs the
-            backend list from the TODO above GET /players/count in
-            players_tracked.py. */}
             <PlayerSearch
               onSelectPlayer={(player) => {
                 setSelectedPlayerTag(player?.tag ?? "");

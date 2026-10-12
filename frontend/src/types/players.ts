@@ -30,3 +30,19 @@ export type PlayerSearchResponse = {
   // More players match than were returned
   hasMore: boolean;
 };
+
+export type PopularPlayer = {
+  tag: string;
+  name: string | null;
+  // Place in the explore list, 1 is the most viewed
+  rank: number;
+  // Visitors in the last 30 days, rounded by the backend
+  views30d: number;
+};
+
+export type ExplorePage = {
+  // Most viewed first
+  players: PopularPlayer[];
+  // Rank to continue after, null on the last page
+  nextCursor: number | null;
+};

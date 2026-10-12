@@ -42,8 +42,12 @@
 
 /* Dropdown styling. MUI renders the dropdown in a portal outside
    .player-search, so these rules target the paper's own class. */
+/* The page's card tone (a section's 5% white over the page), but opaque, as
+   it floats over other content. The input's corner radius, and a small gap
+   below it like between the page's controls. */
 .player-search-paper.MuiAutocomplete-paper {
-  background-color: var(--bg-dark);
+  margin-top: var(--spacing-xs);
+  background-color: color-mix(in srgb, var(--bg-primary), white 5%);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
   box-shadow: 0 8px 32px var(--shadow-medium);
@@ -123,8 +127,63 @@
   font-style: italic;
 }
 
-/* Recently viewed players, shown while the input is empty. */
-.player-search-recent-header {
+/* Tabs that switch the dropdown between its lists (search, recent, most
+   viewed). They sit above MUI's listbox, inside the paper. */
+/* NOTE Styled as the segmented controls of the player pages
+   (segmentedControl.css): a bordered group on the dark page color, the
+   selected segment tinted. Update both together. */
+.player-search-tabs {
+  display: flex;
+  gap: 2px;
+  margin: var(--spacing-sm);
+  padding: 2px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-primary);
+  cursor: default;
+}
+
+.player-search-tab,
+.player-search-tab:hover {
+  /* Icon above the label: large to hit with a thumb, and still four tabs
+     fit the dropdown's width on a phone. */
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 52px;
+  padding: var(--spacing-xs);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--font-md);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.player-search-tab:hover:not(.is-active) {
+  color: var(--text-primary);
+  background-color: var(--bg-overlay-light);
+}
+
+.player-search-tab.is-active {
+  border-color: var(--color-primary);
+  background-color: rgba(52, 152, 219, 0.15);
+  color: var(--color-primary);
+}
+
+.player-search-tab svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+/* A caption or action row of the shown list, e.g. Clear for recent players. */
+.player-search-list-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -135,18 +194,9 @@
   cursor: default;
 }
 
-/* On the label only: Clear inherits the header's size, also on hover. */
-.player-search-recent-title {
-  font-size: var(--font-xs);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-/* The header and hint sit outside MUI's listbox, so its vertical padding
-   would open a gap between them and the rows they belong to. */
-.player-search-paper:has(.player-search-recent-header)
-  .MuiAutocomplete-listbox {
+/* The tabs, header and hints sit outside MUI's listbox, so its vertical
+   padding would open a gap between them and the rows they belong to. */
+.player-search-paper .MuiAutocomplete-listbox {
   padding-top: 0;
   padding-bottom: 0;
 }
@@ -169,33 +219,101 @@
 
 /* Clear stands alone, so it hovers like the remove buttons beside it. The
    negative margin keeps its text on the header's padding edge. */
-.player-search-recent-header .player-search-text-button {
-  margin: calc(-1 * var(--spacing-xs)) calc(-1 * var(--spacing-sm));
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--radius-sm);
+.player-search-list-header .player-search-text-button {
+  margin: calc(-1 * var(--spacing-sm)) calc(-1 * var(--spacing-md));
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  font-size: var(--font-md);
+  font-weight: var(--font-weight-medium);
 }
 
-.player-search-recent-header .player-search-text-button:hover {
+.player-search-list-header .player-search-text-button:hover {
   background-color: var(--bg-overlay-strong);
   text-decoration: none;
 }
 
-.player-search-recent-remove,
-.player-search-recent-remove:hover {
-  display: flex;
+/* The look comes from CloseButton; this keeps the icon on the row's right
+   padding edge. */
+.player-search-recent-remove {
+  margin: calc(-1 * var(--spacing-xs)) calc(-1 * var(--spacing-sm))
+    calc(-1 * var(--spacing-xs)) 0;
+}
+
+/* Most viewed players: rank, name and tag, views on the right. The top three
+   share the colors of the popular badge on the player page. */
+.player-search-paper .MuiAutocomplete-option.player-search-popular {
+  gap: var(--spacing-md);
+}
+
+.player-search-popular-rank {
   flex: none;
-  padding: var(--spacing-xs);
-  border: none;
-  background: none;
+  min-width: 3ch;
   color: var(--text-secondary);
+  font-weight: var(--font-weight-bold);
 }
 
-.player-search-recent-remove:hover {
-  color: var(--text-primary);
-  background-color: var(--bg-overlay-strong);
+.player-search-popular.is-top .player-search-popular-rank {
+  color: #ffb547;
 }
 
-.player-search-recent-remove svg {
-  width: 18px;
-  height: 18px;
+.player-search-popular-views {
+  flex: none;
+  font-weight: var(--font-weight-medium);
+}
+
+.player-search-popular-views-label {
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-normal);
+}
+
+/* "Show more" is the last row of the popular list, so the arrow keys reach
+   it. Styled as an action, centered and in the link color. */
+.player-search-paper .MuiAutocomplete-option.player-search-show-more {
+  justify-content: center;
+  min-height: 48px;
+  color: var(--color-primary);
+  font-size: var(--font-md);
+  font-weight: var(--font-weight-medium);
+}
+
+/* An empty list's note, laid out like a player row: the same padding and
+   left edge, the icon where a rank sits, the rows' two text sizes. Muted and
+   without hover, so it reads as a note, not as a field to type into. Shown
+   by MUI as the "no options" content, or by the paper when the list only
+   holds the hidden selection. */
+.player-search-paper .MuiAutocomplete-noOptions {
+  padding: 0;
+}
+
+.player-search-empty-state {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: default;
+}
+
+.player-search-empty-state svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  opacity: 0.8;
+}
+
+.player-search-empty-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.player-search-empty-title {
+  font-size: var(--font-md);
+}
+
+.player-search-empty-hint {
+  font-size: var(--font-sm);
+  opacity: 0.8;
 }

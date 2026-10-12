@@ -31,26 +31,10 @@
   gap: var(--spacing-lg);
 }
 
+/* The look comes from CloseButton; this keeps the icon on the title's right
+   edge. */
 .storage-settings-close {
-  display: flex;
-  flex: none;
   margin-right: calc(-1 * var(--spacing-sm));
-  padding: var(--spacing-sm);
-  border: none;
-  border-radius: 999px;
-  background: none;
-  color: var(--text-secondary);
-}
-
-.storage-settings-close:hover {
-  border: none;
-  background-color: var(--bg-overlay-strong);
-  color: var(--text-primary);
-}
-
-.storage-settings-close svg {
-  width: 20px;
-  height: 20px;
 }
 
 .storage-settings-intro {

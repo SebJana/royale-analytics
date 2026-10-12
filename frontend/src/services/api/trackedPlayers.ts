@@ -1,6 +1,10 @@
 import api from "./axios";
 import { validatePlayerTagSyntax } from "../../utils/playerTag";
-import type { PlayerCount, PlayerSearchResponse } from "../../types/players";
+import type {
+  ExplorePage,
+  PlayerCount,
+  PlayerSearchResponse,
+} from "../../types/players";
 
 /**
  * Search tracked players by name or tag, best match first.
@@ -16,6 +20,26 @@ export async function searchTrackedPlayers(
 ): Promise<PlayerSearchResponse> {
   const response = await api.get<PlayerSearchResponse>("/players/search", {
     params: { q: query },
+    signal,
+  });
+  return response.data;
+}
+
+/**
+ * Fetch one page of the most viewed tracked players.
+ *
+ * @param cursor - Last rank of the previous page, 0 for the first
+ * @param limit - Players in the page (the API allows up to 50)
+ * @param signal - Aborts the request when the component unmounts
+ * @returns The players, most viewed first, and the cursor of the next page
+ */
+export async function fetchExplorePlayers(
+  cursor: number,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<ExplorePage> {
+  const response = await api.get<ExplorePage>("/players/explore", {
+    params: { cursor, limit },
     signal,
   });
   return response.data;

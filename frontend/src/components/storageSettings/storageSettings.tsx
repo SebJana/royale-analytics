@@ -6,7 +6,7 @@ import {
   DialogTitle,
   Switch,
 } from "@mui/material";
-import { X } from "lucide-react";
+import { CloseButton } from "../closeButton/closeButton";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStorageConsent } from "../../hooks/useStorageConsent";
 import {
@@ -91,14 +91,11 @@ export function StorageSettings({
       <DialogTitle id="storage-settings-title">
         <span className="storage-settings-title-row">
           Storage settings
-          <button
-            type="button"
+          <CloseButton
             className="storage-settings-close"
-            aria-label="Close"
+            aria-label="Close storage settings"
             onClick={handleClose}
-          >
-            <X aria-hidden="true" />
-          </button>
+          />
         </span>
         <span className="storage-settings-intro">
           Choose what this site may keep in your browser. Nothing is used for
