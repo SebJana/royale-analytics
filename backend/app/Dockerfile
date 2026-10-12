@@ -35,7 +35,9 @@ ENV PYTHONPATH=/app
 # Expose port
 EXPOSE 8000
 
+# Access logging is left to nginx, which drops the end of each address (see
+# frontend/nginx.conf); uvicorn's own log would pair full addresses with URLs.
 # The API is only reachable on the Compose network; nginx replaces forwarded IP headers.
 # Trust that internal boundary so Uvicorn exposes the resolved IP as request.client.host.
-CMD ["sh", "-c", "export CR_API_BOOT_ID=${CR_API_BOOT_ID:-$(cat /proc/sys/kernel/random/uuid)}; exec uvicorn main:app --app-dir /app/src --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"]
+CMD ["sh", "-c", "export CR_API_BOOT_ID=${CR_API_BOOT_ID:-$(cat /proc/sys/kernel/random/uuid)}; exec uvicorn main:app --app-dir /app/src --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*' --no-access-log"]
 

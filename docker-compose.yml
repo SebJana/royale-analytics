@@ -207,13 +207,40 @@ services:
       - card-images:/usr/share/nginx/card-images:ro
     networks:
       - cr-analytics
+    # FRONTEND_BIND=127.0.0.1 on a server behind the Cloudflare tunnel, so
+    # the ports are only reachable from the machine itself. Docker opens
+    # published ports past ufw, so the bind address is what keeps them closed.
     ports:
-      - "80:80"
+      - "${FRONTEND_BIND:-0.0.0.0}:80:80"
       # Optional second public port. Remove this line when only port 80 should be exposed.
       # Swagger also remains public on port 80 until its nginx location is removed.
-      - "8000:80"
+      - "${FRONTEND_BIND:-0.0.0.0}:8000:80"
     depends_on:
       - api
+
+  # Public entry on a server: Cloudflare forwards the domain's requests
+  # through this outbound tunnel to nginx, so no port has to be open. Only
+  # started with COMPOSE_PROFILES=tunnel. The tunnel's public hostname points
+  # at http://frontend:80.
+  cloudflared:
+    image: cloudflare/cloudflared:2025.8.1
+    container_name: cloudflared
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      # Anyone holding the token can run a connector for this tunnel and send
+      # requests with any CF-Connecting-IP. Keep it in .env only. Not
+      # required with ":?": Compose would then refuse to start locally too,
+      # as it interpolates services outside the active profiles as well.
+      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN:-}
+    networks:
+      cr-analytics:
+        # NOTE nginx trusts CF-Connecting-IP only from this address
+        # (set_real_ip_from in frontend/nginx.conf). Update both together.
+        ipv4_address: 172.28.0.250
+    depends_on:
+      - frontend
+    restart: unless-stopped
 
 volumes:
   # Not reconstructible, so Compose never creates or deletes it, not even with
@@ -232,3 +259,8 @@ volumes:
 networks:
   cr-analytics:
     driver: bridge
+    # Fixed, so cloudflared can have a fixed address that nginx trusts.
+    # Changing it needs `docker compose down` once to recreate the network.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
