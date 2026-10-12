@@ -6,6 +6,8 @@ from .battles_read import (
     get_decks_win_percentage,
     get_cards_win_percentage,
     get_daily_stats,
+    split_battle_copies,
+    count_battles_in_ranges,
 )
 from .battles_write import insert_battles
 
@@ -25,6 +27,7 @@ from .players_write import (
     deactivate_tracked_player,
     record_battle_sync,
     record_battle_sync_failure,
+    bump_sync_versions,
     ensure_search_change_index,
 )
 
@@ -51,6 +54,8 @@ __all__ = [
     "get_decks_win_percentage",
     "get_cards_win_percentage",
     "get_daily_stats",
+    "split_battle_copies",
+    "count_battles_in_ranges",
     ## write
     "insert_battles",
     # players
@@ -69,6 +74,7 @@ __all__ = [
     "deactivate_tracked_player",
     "record_battle_sync",
     "record_battle_sync_failure",
+    "bump_sync_versions",
     "ensure_search_change_index",
     # game_modes
     ## read

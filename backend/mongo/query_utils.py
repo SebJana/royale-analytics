@@ -8,14 +8,14 @@ def match_tag_before_datetime_stage(player_tag: str, before_datetime: datetime):
     that happened before a given datetime
 
     Args:
-        player_tag (str): Player tag (e.g., "#YYRJQY28") to match against `referencePlayerTag`.
+        player_tag (str): Player tag (e.g., "#YYRJQY28") to match against `playerTags`.
         before_datetime (datetime.datetime): Beginning of lookup datetime (inclusive).
 
     Returns:
         dict: An aggregation stage of the form:
               {
                 "$match": {
-                    "referencePlayerTag": <player_tag>,
+                    "playerTags": <player_tag>,
                     "battleTime": {"$lt": <end_datetime>}
                 }
               }
@@ -26,7 +26,7 @@ def match_tag_before_datetime_stage(player_tag: str, before_datetime: datetime):
     return {
         # Match the relevant files for the player and the time frame
         "$match": {
-            "referencePlayerTag": player_tag,
+            "playerTags": player_tag,
             "battleTime": {"$lt": before_datetime},
         }
     }
@@ -50,7 +50,7 @@ def match_tag_time_mode_range_stage(
     stage stays a plain range on the indexed battleTime.
 
     Args:
-        player_tag (str): Player tag (e.g., "#YYRJQY28") to match against `referencePlayerTag`.
+        player_tag (str): Player tag (e.g., "#YYRJQY28") to match against `playerTags`.
         start (datetime.datetime): Start of the window (inclusive), timezone-aware.
         end (datetime.datetime): End of the window (exclusive), timezone-aware.
         game_modes: Optional iterable of game mode names; if provided and non-empty,
@@ -63,7 +63,7 @@ def match_tag_time_mode_range_stage(
         dict: An aggregation stage of the form:
               {
                 "$match": {
-                  "referencePlayerTag": <player_tag>,
+                  "playerTags": <player_tag>,
                   "battleTime": { "$gte": <start>, "$lt": <end> },
                   "gameMode": {"$in": <game_modes>} (if game modes isn't empty)
                   "gameMode": {"$nin": <exclude_game_modes>} (if those aren't empty)
@@ -75,7 +75,7 @@ def match_tag_time_mode_range_stage(
     """
 
     match = {
-        "referencePlayerTag": player_tag,
+        "playerTags": player_tag,
         "battleTime": {"$gte": start, "$lt": end},
     }
 
@@ -88,13 +88,99 @@ def match_tag_time_mode_range_stage(
     return {"$match": match}
 
 
-def extract_deck_stage(player_tag: str):
+# Stored battle result values, from sideA's view. Negated for sideB.
+# NOTE Match RESULT_WIN / RESULT_DRAW / RESULT_LOSS in the data scraper's
+# clean.py.
+RESULT_WIN = 1
+RESULT_DRAW = 0
+RESULT_LOSS = -1
+
+
+def is_side_a_expr(player_tag: str) -> dict:
     """
-    Build a MongoDB `$addFields` stage that extracts the given player's deck
+    Build the expression that tells whether `player_tag` is on sideA.
+
+    Args:
+        player_tag (str): A participant of the battle.
+
+    Returns:
+        dict: A boolean aggregation expression.
+
+    Notes: This function is a pure builder and does not execute any database operation
+    """
+
+    return {"$in": [player_tag, "$sideA.tag"]}
+
+
+def perspective_stages(player_tag: str, sides: bool = False) -> list:
+    """
+    Build the stages that turn normalized battles into one player's view.
+
+    A battle is stored once for all participants, as sideA and sideB with
+    the result from sideA's view (normalize_battle in the data scraper's
+    clean.py). These stages set `result` from the player's view and
+    `member`, the player's own entry, for the deck and per player
+    statistics. With `sides`, they give back what a battle log of the player
+    holds: `team` is the player's side with the player first, as the API
+    has it, `opponent` the other one, and sideA and sideB are dropped. Every
+    battle the stages see has to contain the player, which the match on
+    `playerTags` ensures.
+
+    Args:
+        player_tag (str): The player whose view is built.
+        sides (bool): Also build `team` and `opponent`. Only the battle list
+            needs them; building the arrays for every battle made the deck
+            statistics of a player with 3,500 battles about 30% slower when
+            measured.
+
+    Returns:
+        list: Aggregation stages, to insert after the match and, where only
+            a few battles are kept, after the `$limit`.
+
+    Notes: This function is a pure builder and does not execute any database operation
+    """
+
+    is_side_a = is_side_a_expr(player_tag)
+    own_side = {"$cond": [is_side_a, "$sideA", "$sideB"]}
+
+    def players(side, comparison):
+        return {
+            "$filter": {
+                "input": side,
+                "as": "p",
+                "cond": {comparison: ["$$p.tag", player_tag]},
+            }
+        }
+
+    fields = {
+        "result": {"$cond": [is_side_a, "$result", {"$multiply": ["$result", -1]}]},
+        "member": {"$first": players(own_side, "$eq")},
+    }
+    if not sides:
+        return [{"$set": fields}]
+
+    fields["team"] = {
+        "$let": {
+            "vars": {"side": own_side},
+            "in": {
+                "$concatArrays": [
+                    players("$$side", "$eq"),
+                    players("$$side", "$ne"),
+                ]
+            },
+        }
+    }
+    fields["opponent"] = {"$cond": [is_side_a, "$sideB", "$sideA"]}
+    return [{"$set": fields}, {"$unset": ["sideA", "sideB"]}]
+
+
+def extract_deck_stage():
+    """
+    Build a MongoDB `$addFields` stage that extracts the player's deck
     into a normalized `deck` object with the fields `cards` and `support`.
 
-    The team member with `tag == player_tag` is looked up once. Its `cards`
-    array is mapped to:
+    It reads `member`, the player's own entry set by perspective_stages, so
+    teammates are never included. Its `cards` array is mapped to:
       - `id` (card id; may be absent in some logs)
       - `name` (defaults to "UNKNOWN" if missing)
       - `level` (defaults to 1 if missing)
@@ -104,10 +190,6 @@ def extract_deck_stage(player_tag: str):
     An absent, null, or empty `supportCards` becomes `[]`, the "None" tower
     category. Every battle should have a tower, so this is only a fallback
     and never stands for Tower Princess.
-
-    Args:
-        player_tag (str): The player tag used to select the team member whose
-            deck should be extracted. Teammates are never included.
 
     Returns:
         dict: An aggregation pipeline stage:
@@ -121,24 +203,8 @@ def extract_deck_stage(player_tag: str):
         "$addFields": {
             "deck": {
                 "$let": {
-                    "vars": {
-                        # The tracked player's team entry (2v2 has two),
-                        # or {} when no team member matches
-                        "member": {
-                            "$ifNull": [
-                                {
-                                    "$first": {
-                                        "$filter": {
-                                            "input": "$team",
-                                            "as": "m",
-                                            "cond": {"$eq": ["$$m.tag", player_tag]},
-                                        }
-                                    }
-                                },
-                                {},
-                            ]
-                        }
-                    },
+                    # {} when the player has no entry
+                    "vars": {"member": {"$ifNull": ["$member", {}]}},
                     "in": {
                         "cards": {
                             "$map": {

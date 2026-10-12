@@ -25,6 +25,7 @@ from helpers.json_response import (
 )
 from redis_service import build_redis_key
 from mongo import (
+    count_battles_in_ranges,
     get_last_battles,
     get_decks_win_percentage,
     get_cards_win_percentage,
@@ -75,6 +76,16 @@ async def get_player_profile(
     # Royale API requests.
     try:
         stored = await get_stored_profile(mongo_conn, player_tag)
+        # Battles are stored for every participant, so a player has some on
+        # record from before it was tracked, or from a tracking gap, that
+        # came from other tracked players. The frontend notes them.
+        ranges = [player.passive_range] + [
+            gap["passiveRange"] for gap in player.tracking_gaps
+        ]
+        known = [r for r in ranges if r is not None]
+        counts = iter(await count_battles_in_ranges(mongo_conn, player_tag, known))
+        # None where the period was recorded before its own battles were
+        passive = [next(counts) if r is not None else None for r in ranges]
     except Exception:
         raise HTTPException(
             status_code=500, detail=f"Failed to fetch the profile of {player_tag}"
@@ -100,7 +111,15 @@ async def get_player_profile(
             "battlesSyncedAt": player.last_battles_sync_at,
             "profileSyncedAt": stored.get("syncedAt"),
             "trackedSince": player.tracked_since,
-            "trackingGaps": player.tracking_gaps,
+            # Noted by the frontend under "Tracked since"
+            "battlesBeforeTracking": passive[0],
+            "trackingGaps": [
+                {
+                    **{k: v for k, v in gap.items() if k != "passiveRange"},
+                    "passiveBattles": count,
+                }
+                for gap, count in zip(player.tracking_gaps, passive[1:])
+            ],
         },
     }
 

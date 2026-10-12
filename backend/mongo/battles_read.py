@@ -5,9 +5,26 @@ from .query_utils import (
     match_tag_time_mode_range_stage,
     extract_deck_stage,
     deck_card_filter_stages,
+    perspective_stages,
+    is_side_a_expr,
+    RESULT_WIN,
+    RESULT_DRAW,
+    RESULT_LOSS,
 )
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Iterable
+
+# The battle logs of two participants can report the same battle one second
+# apart. Observed in about 1% of the battles found in two logs, in every
+# mode, and never by more than one second (October 2026, about 59,000 such
+# battles); the API documents neither. The _id holds the time, so it cannot
+# catch those copies; split_battle_copies finds them instead: the same
+# participants with the same decks within this window are one battle. The
+# decks keep duel rounds apart, which the cleaner stores one second apart per
+# round, so a shifted log would otherwise pair round 1 of one copy with
+# round 2 of the other. Two seconds leave a margin; two real battles of the
+# same players with the same decks are minutes apart.
+BATTLE_COPY_WINDOW = timedelta(seconds=2)
 
 
 async def get_battles_count(conn: MongoConn) -> int:
@@ -52,6 +69,139 @@ async def print_first_battles(conn: MongoConn, limit: int = 5):
         print(f"[DB] [ERROR] fetching collection info: {e}")
 
 
+def _battle_copy_key(battle: dict) -> tuple:
+    # Every participant with their deck. Duel rounds of the same players are
+    # one second apart, but each round is played with other decks.
+    return tuple(
+        sorted(
+            (player.get("tag"), player.get("deckKey"))
+            for player in battle["sideA"] + battle["sideB"]
+        )
+    )
+
+
+async def split_battle_copies(conn: MongoConn, battles: list) -> tuple[list, list]:
+    """
+    Separates new battles from copies of battles that are already stored.
+
+    Every participant's log holds the same battle, and two logs can disagree
+    on its time by a second, so the _id alone does not find every copy. A
+    battle is a copy if a stored battle, or an earlier one of the same list,
+    has the same participants with the same decks within BATTLE_COPY_WINDOW.
+    One indexed range per battle, on the first participant's tag.
+
+    Args:
+        conn (MongoConn): Active connection to the MongoDB database.
+        battles (list): Normalized battles (normalize_battle in the data
+            scraper's clean.py).
+
+    Returns:
+        tuple[list, list]: The new battles, in their order, and the copies as
+            (battle, stored or earlier battle) pairs. A stored battle only
+            holds the fields the comparison reads.
+
+    Raises:
+        Exception: If the lookup fails.
+    """
+
+    try:
+        await ensure_connected(conn)
+        if not battles:
+            return [], []
+
+        query = {
+            "$or": [
+                {
+                    "playerTags": battle["playerTags"][0],
+                    "battleTime": {
+                        "$gte": battle["battleTime"] - BATTLE_COPY_WINDOW,
+                        "$lte": battle["battleTime"] + BATTLE_COPY_WINDOW,
+                    },
+                }
+                for battle in battles
+            ]
+        }
+        known: dict[tuple, list] = {}
+        # Only what the comparison reads, not the cards of every battle
+        projection = {
+            "battleTime": 1,
+            "sideA.tag": 1,
+            "sideA.deckKey": 1,
+            "sideB.tag": 1,
+            "sideB.deckKey": 1,
+        }
+        async for doc in conn.db.battles.find(query, projection):
+            known.setdefault(_battle_copy_key(doc), []).append(doc)
+
+        new_battles, copies = [], []
+        for battle in battles:
+            candidates = known.setdefault(_battle_copy_key(battle), [])
+            original = next(
+                (
+                    other
+                    for other in candidates
+                    if abs(other["battleTime"] - battle["battleTime"])
+                    <= BATTLE_COPY_WINDOW
+                ),
+                None,
+            )
+            if original is None:
+                new_battles.append(battle)
+                candidates.append(battle)
+            else:
+                copies.append((battle, original))
+        return new_battles, copies
+
+    except Exception as e:
+        print(f"[DB] [ERROR] looking up stored battle copies: {e}")
+        raise
+
+
+async def count_battles_in_ranges(
+    conn: MongoConn, player_tag: str, ranges: list[tuple]
+) -> list[int]:
+    """
+    Counts a player's stored battles in each of several time ranges.
+
+    Used for the battles that only came from other tracked players: those
+    before the player was tracked, or during a tracking gap, older than its
+    own log reached (ownBattlesFrom, see insert_tracked_player). Counted
+    from what is still stored, so the numbers follow any removal of old
+    battles.
+
+    Args:
+        conn (MongoConn): Active connection to the MongoDB database.
+        player_tag (str): The player's tag.
+        ranges (list[tuple]): (start, end) pairs of naive UTC datetimes,
+            start inclusive, end exclusive, None for open.
+
+    Returns:
+        list[int]: One count per range, in their order.
+
+    Raises:
+        Exception: If a count fails.
+    """
+
+    async def count(start, end):
+        battle_time = {}
+        if start is not None:
+            battle_time["$gte"] = start
+        if end is not None:
+            battle_time["$lt"] = end
+        query = {"playerTags": player_tag}
+        if battle_time:
+            query["battleTime"] = battle_time
+        # One range on the playerTags index, no document is loaded
+        return await conn.db.battles.count_documents(query)
+
+    try:
+        await ensure_connected(conn)
+        return [await count(start, end) for start, end in ranges]
+    except Exception as e:
+        print(f"[DB] [ERROR] counting the battles of {player_tag}: {e}")
+        raise
+
+
 async def get_last_battles(
     conn: MongoConn, player_tag: str, before_datetime: datetime, limit: int = 20
 ):
@@ -85,6 +235,10 @@ async def get_last_battles(
             # Last N matches before specified battleTime
             {"$sort": {"battleTime": -1}},
             {"$limit": limit},
+            # After the limit, so only the returned battles are turned
+            *perspective_stages(player_tag, sides=True),
+            # Only the statistics group by it
+            {"$unset": ["team.deckKey", "opponent.deckKey"]},
             {
                 "$facet": {
                     "battles": [
@@ -92,7 +246,27 @@ async def get_last_battles(
                             "$project": {
                                 "_id": 0,
                                 "battleTime": 1,
-                                "gameResult": 1,
+                                # NOTE Match gameResult in the frontend's
+                                # types/lastBattles.ts.
+                                "gameResult": {
+                                    "$switch": {
+                                        "branches": [
+                                            {
+                                                "case": {
+                                                    "$eq": ["$result", RESULT_WIN]
+                                                },
+                                                "then": "Victory",
+                                            },
+                                            {
+                                                "case": {
+                                                    "$eq": ["$result", RESULT_LOSS]
+                                                },
+                                                "then": "Defeat",
+                                            },
+                                        ],
+                                        "default": "Draw",
+                                    }
+                                },
                                 "gameMode": 1,
                                 "team": 1,
                                 "opponent": 1,
@@ -207,6 +381,7 @@ async def get_decks_win_percentage(
             match_tag_time_mode_range_stage(
                 player_tag, start, end, game_modes, exclude_game_modes
             ),
+            *perspective_stages(player_tag),
             # TODO The query scales with battles, not decks: every matched
             # battle document is loaded for the grouping, even when only the
             # sort or min_battles changed.
@@ -216,19 +391,26 @@ async def get_decks_win_percentage(
             # If re-sorts of capped results get heavy, cache the grouped decks
             # of a filter context in Redis and sort, filter and cap them in
             # the API, so a re-sort skips Mongo (about 7 MB at 10k decks).
+            # TODO also long term, again, evaluate wether and how to aggregate
+            # older entries (per deck, per season, daily or a combination of all
+            # those for current and future use cases). Check first after tracking
+            # for a while, what that would do in terms of reduction and storage savings.
+            # Also evaluate if drafts or modes with no decks, "weird decks" like Clan Boat
+            # Battle should be dropped altogether after a certain timespan. Also for
+            # inactive players possibly keep longer, just clamp(MAX_GAMES, TIMEFRAME).
             {
                 "$group": {
-                    # The deck key the data scraper stores per battle
+                    # The deck key the data scraper stores per participant
                     # (build_deck_key in clean.py): cards and tower troop,
                     # without levels or names, so neither splits a deck.
                     # Grouping on one string skips extracting and sorting
                     # every battle's cards, about 5-8x (ish) faster.
-                    "_id": "$deckKey",
-                    # One battle's team, for the names on display
-                    "team": {"$first": "$team"},
+                    "_id": "$member.deckKey",
+                    # One battle's entry of the player, for the names on display
+                    "member": {"$first": "$member"},
                     "battleCount": {"$sum": 1},
                     "wins": {
-                        "$sum": {"$cond": [{"$eq": ["$gameResult", "Victory"]}, 1, 0]}
+                        "$sum": {"$cond": [{"$eq": ["$result", RESULT_WIN]}, 1, 0]}
                     },
                     "firstSeen": {"$min": "$battleTime"},
                     "lastSeen": {"$max": "$battleTime"},
@@ -252,7 +434,7 @@ async def get_decks_win_percentage(
                         },
                         {"$sort": sort},
                         {"$limit": limit},
-                        extract_deck_stage(player_tag),
+                        extract_deck_stage(),
                         {
                             "$project": {
                                 "_id": 0,
@@ -368,7 +550,8 @@ async def get_cards_win_percentage(
             match_tag_time_mode_range_stage(
                 player_tag, start, end, game_modes, exclude_game_modes
             ),
-            extract_deck_stage(player_tag),
+            *perspective_stages(player_tag),
+            extract_deck_stage(),
             {
                 "$facet": {
                     "cards": [
@@ -384,7 +567,7 @@ async def get_cards_win_percentage(
                                 "wins": {
                                     "$sum": {
                                         "$cond": [
-                                            {"$eq": ["$gameResult", "Victory"]},
+                                            {"$eq": ["$result", RESULT_WIN]},
                                             1,
                                             0,
                                         ]
@@ -439,7 +622,7 @@ async def get_cards_win_percentage(
                                 "wins": {
                                     "$sum": {
                                         "$cond": [
-                                            {"$eq": ["$gameResult", "Victory"]},
+                                            {"$eq": ["$result", RESULT_WIN]},
                                             1,
                                             0,
                                         ]
@@ -537,12 +720,14 @@ async def get_daily_stats(
         await ensure_connected(conn)
         check_valid_time_range(start, end)
 
+        is_side_a = is_side_a_expr(player_tag)
         pipeline = [
             # The UTC window & mode filter
             match_tag_time_mode_range_stage(
                 player_tag, start, end, game_modes, exclude_game_modes
             ),
-            #  derive local day, normalize tags, crowns, flags
+            *perspective_stages(player_tag),
+            #  derive local day, crowns, flags
             {
                 "$addFields": {
                     "day": {
@@ -552,87 +737,50 @@ async def get_daily_stats(
                             "timezone": timezone,
                         }
                     },
-                    # extract team tags
-                    "teamTags": {
-                        "$map": {
-                            "input": {"$ifNull": ["$team", []]},
-                            "as": "t",
-                            "in": "$$t.tag",
-                        }
-                    },
-                    # crowns per side: take MAX across players (avoids 2v2 double-count)
+                    # crowns per side: take MAX across players (avoids 2v2
+                    # double-count). Read from the sides directly, building
+                    # team and opponent for every battle costs more.
                     "crownsForSafe": {
-                        "$reduce": {
-                            "input": {
-                                "$map": {
-                                    "input": {"$ifNull": ["$team", []]},
-                                    "as": "t",
-                                    "in": {"$ifNull": ["$$t.crowns", 0]},
+                        "$ifNull": [
+                            {
+                                "$max": {
+                                    "$cond": [
+                                        is_side_a,
+                                        "$sideA.crowns",
+                                        "$sideB.crowns",
+                                    ]
                                 }
                             },
-                            "initialValue": 0,
-                            "in": {
-                                "$cond": [
-                                    {"$gt": ["$$this", "$$value"]},
-                                    "$$this",
-                                    "$$value",
-                                ]
-                            },
-                        }
+                            0,
+                        ]
                     },
                     "crownsAgainstSafe": {
-                        "$reduce": {
-                            "input": {
-                                "$map": {
-                                    "input": {"$ifNull": ["$opponent", []]},
-                                    "as": "o",
-                                    "in": {"$ifNull": ["$$o.crowns", 0]},
+                        "$ifNull": [
+                            {
+                                "$max": {
+                                    "$cond": [
+                                        is_side_a,
+                                        "$sideB.crowns",
+                                        "$sideA.crowns",
+                                    ]
                                 }
                             },
-                            "initialValue": 0,
-                            "in": {
-                                "$cond": [
-                                    {"$gt": ["$$this", "$$value"]},
-                                    "$$this",
-                                    "$$value",
-                                ]
-                            },
-                        }
-                    },
-                    "isWin": {"$cond": [{"$eq": ["$gameResult", "Victory"]}, 1, 0]},
-                    "isLoss": {"$cond": [{"$eq": ["$gameResult", "Defeat"]}, 1, 0]},
-                    "isDraw": {"$cond": [{"$eq": ["$gameResult", "Draw"]}, 1, 0]},
-                }
-            },
-            #  Stage B: compute index of reference player (now fields exist)
-            {
-                "$addFields": {
-                    "refIdx": {"$indexOfArray": ["$teamTags", "$referencePlayerTag"]}
-                }
-            },
-            #  Stage C: extract 'player' safely using refIdx
-            {
-                "$addFields": {
-                    "me": {
-                        "$cond": [
-                            {"$gte": ["$refIdx", 0]},
-                            {"$arrayElemAt": [{"$ifNull": ["$team", []]}, "$refIdx"]},
-                            None,
+                            0,
                         ]
-                    }
-                }
-            },
-            #  Stage D: cast leaked elixir (no $exists inside agg expr)
-            {
-                "$addFields": {
+                    },
+                    "isWin": {"$cond": [{"$eq": ["$result", RESULT_WIN]}, 1, 0]},
+                    "isLoss": {"$cond": [{"$eq": ["$result", RESULT_LOSS]}, 1, 0]},
+                    "isDraw": {"$cond": [{"$eq": ["$result", RESULT_DRAW]}, 1, 0]},
+                    # Only the player's own leaked elixir, never a teammate's
+                    # (no $exists inside agg expr)
                     "elixirLeakedSafe": {
                         "$convert": {
-                            "input": "$me.elixirLeaked",
+                            "input": "$member.elixirLeaked",
                             "to": "double",
                             "onError": 0,
                             "onNull": 0,
                         }
-                    }
+                    },
                 }
             },
             #  Group per local day

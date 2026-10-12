@@ -1,136 +1,17 @@
 {
-    "_id": "68a2100b7f02d8610129c78d",
+    "_id": "ObjectId(68a13e8f0de238daadd8e373)",
     "type": "trail",
-    "referencePlayerTag": "#YYRJQY28",
-    "gameResult": "Defeat",
     "battleTime": "ISODate(2025-08-17T02:29:35Z)",
     "arena": "Legendary Arena",
     "gameMode": "TeamVsTeam",
-    "team": [
-        {
-            "tag": "#YYRJQY28",
-            "name": "sebi",
-            "crowns": 0,
-            "kingTowerHitPoints": 5789,
-            "princessTowersHitPoints": [
-                2494
-            ],
-            "cards": [
-                {
-                    "name": "Furnace",
-                    "id": 27000010,
-                    "level": 11,
-                    "evolutionLevel": 1
-                },
-                {
-                    "name": "Tesla",
-                    "id": 27000006,
-                    "level": 11,
-                    "evolutionLevel": 1
-                },
-                {
-                    "name": "Little Prince",
-                    "id": 26000093,
-                    "level": 11
-                },
-                {
-                    "name": "Poison",
-                    "id": 28000009,
-                    "level": 11
-                },
-                {
-                    "name": "Miner",
-                    "id": 26000032,
-                    "level": 11
-                },
-                {
-                    "name": "The Log",
-                    "id": 28000011,
-                    "level": 11
-                },
-                {
-                    "name": "Skeletons",
-                    "id": 26000010,
-                    "level": 11
-                },
-                {
-                    "name": "Berserker",
-                    "id": 26000102,
-                    "level": 11
-                }
-            ],
-            "supportCards": [
-                {
-                    "name": "Tower Princess",
-                    "id": 159000000,
-                    "level": 11
-                }
-            ],
-            "elixirLeaked": 0.95
-        },
-        {
-            "tag": "#YQQYGJ82",
-            "name": "Royal Gamer",
-            "crowns": 0,
-            "kingTowerHitPoints": 5789,
-            "princessTowersHitPoints": [
-                2494
-            ],
-            "cards": [
-                {
-                    "name": "Cannon",
-                    "id": 27000000,
-                    "level": 11,
-                    "evolutionLevel": 1
-                },
-                {
-                    "name": "Zap",
-                    "id": 28000008,
-                    "level": 11,
-                    "evolutionLevel": 1
-                },
-                {
-                    "name": "Spirit Empress",
-                    "id": 28000025,
-                    "level": 11
-                },
-                {
-                    "name": "Goblin Curse",
-                    "id": 28000024,
-                    "level": 11
-                },
-                {
-                    "name": "Golden Knight",
-                    "id": 26000074,
-                    "level": 11
-                },
-                {
-                    "name": "Miner",
-                    "id": 26000032,
-                    "level": 11
-                },
-                {
-                    "name": "Ice Spirit",
-                    "id": 26000030,
-                    "level": 11
-                },
-                {
-                    "name": "Spear Goblins",
-                    "id": 26000019,
-                    "level": 11
-                }
-            ],
-            "supportCards": [
-                {
-                    "name": "Tower Princess",
-                    "id": 159000000,
-                    "level": 11
-                }
-            ],
-            "elixirLeaked": 4.97
-        }
+    "playerTags": [
+        "#80J0YU9YQ",
+        "#U2UUCULP9",
+        "#YQQYGJ82",
+        "#YYRJQY28"
     ],
-    "opponent": [
+    "result": 1,
+    "sideA": [
         {
             "tag": "#80J0YU9YQ",
             "name": "Richi-090",
@@ -191,7 +72,8 @@
                     "level": 11
                 }
             ],
-            "elixirLeaked": 0.92
+            "elixirLeaked": 0.92,
+            "deckKey": "26000005-0,26000024-1,26000061-0,26000084-0,26000102-0,27000010-1,28000000-0,28000011-0|159000001"
         },
         {
             "tag": "#U2UUCULP9",
@@ -253,7 +135,134 @@
                     "level": 11
                 }
             ],
-            "elixirLeaked": 7.57
+            "elixirLeaked": 7.57,
+            "deckKey": "26000004-0,26000006-0,26000023-0,26000035-1,26000063-1,28000005-0,28000012-0,28000015-0|159000000"
+        }
+    ],
+    "sideB": [
+        {
+            "tag": "#YQQYGJ82",
+            "name": "Royal Gamer",
+            "crowns": 0,
+            "kingTowerHitPoints": 5789,
+            "princessTowersHitPoints": [
+                2494
+            ],
+            "cards": [
+                {
+                    "name": "Cannon",
+                    "id": 27000000,
+                    "level": 11,
+                    "evolutionLevel": 1
+                },
+                {
+                    "name": "Zap",
+                    "id": 28000008,
+                    "level": 11,
+                    "evolutionLevel": 1
+                },
+                {
+                    "name": "Spirit Empress",
+                    "id": 28000025,
+                    "level": 11
+                },
+                {
+                    "name": "Goblin Curse",
+                    "id": 28000024,
+                    "level": 11
+                },
+                {
+                    "name": "Golden Knight",
+                    "id": 26000074,
+                    "level": 11
+                },
+                {
+                    "name": "Miner",
+                    "id": 26000032,
+                    "level": 11
+                },
+                {
+                    "name": "Ice Spirit",
+                    "id": 26000030,
+                    "level": 11
+                },
+                {
+                    "name": "Spear Goblins",
+                    "id": 26000019,
+                    "level": 11
+                }
+            ],
+            "supportCards": [
+                {
+                    "name": "Tower Princess",
+                    "id": 159000000,
+                    "level": 11
+                }
+            ],
+            "elixirLeaked": 4.97,
+            "deckKey": "26000019-0,26000030-0,26000032-0,26000074-0,27000000-1,28000008-1,28000024-0,28000025-0|159000000"
+        },
+        {
+            "tag": "#YYRJQY28",
+            "name": "sebi",
+            "crowns": 0,
+            "kingTowerHitPoints": 5789,
+            "princessTowersHitPoints": [
+                2494
+            ],
+            "cards": [
+                {
+                    "name": "Furnace",
+                    "id": 27000010,
+                    "level": 11,
+                    "evolutionLevel": 1
+                },
+                {
+                    "name": "Tesla",
+                    "id": 27000006,
+                    "level": 11,
+                    "evolutionLevel": 1
+                },
+                {
+                    "name": "Little Prince",
+                    "id": 26000093,
+                    "level": 11
+                },
+                {
+                    "name": "Poison",
+                    "id": 28000009,
+                    "level": 11
+                },
+                {
+                    "name": "Miner",
+                    "id": 26000032,
+                    "level": 11
+                },
+                {
+                    "name": "The Log",
+                    "id": 28000011,
+                    "level": 11
+                },
+                {
+                    "name": "Skeletons",
+                    "id": 26000010,
+                    "level": 11
+                },
+                {
+                    "name": "Berserker",
+                    "id": 26000102,
+                    "level": 11
+                }
+            ],
+            "supportCards": [
+                {
+                    "name": "Tower Princess",
+                    "id": 159000000,
+                    "level": 11
+                }
+            ],
+            "elixirLeaked": 0.95,
+            "deckKey": "26000010-0,26000032-0,26000093-0,26000102-0,27000006-1,27000010-1,28000009-0,28000011-0|159000000"
         }
     ]
 }

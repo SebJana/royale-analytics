@@ -305,8 +305,10 @@ class Settings:
 
     # Cache TTL (Time To Live) in seconds
     # Player statistics are keyed by the player's syncVersion, which changes
-    # whenever the data scraper stores new battles for that player. Cached data is
-    # therefore always as up-to-date as the most recently scraped data in MongoDB.
+    # whenever the data scraper stores new battles for that player, also those
+    # stored by another participant's sync. Cached data is therefore as
+    # up-to-date as the most recently scraped data in MongoDB, except after a
+    # failed version bump (bump_sync_versions), which only the TTL repairs.
     # Keep TTL still in the minutes to hours range as fallback, and for data
     # without a per-player version (total battle count)
 

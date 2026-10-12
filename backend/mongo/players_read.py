@@ -234,6 +234,7 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
     Returns:
         dict | None: {"syncVersion": int, "firstSyncPending": bool,
             "lastBattlesSyncAt": datetime | None, "insertedAt": str | None,
+            "ownBattlesFrom": datetime | None | "unknown",
             "playerName": str | None, "trackingGaps": list[dict]} if the
             player is tracked, otherwise
             None. firstSyncPending stays True until the data scraper finished
@@ -253,6 +254,7 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
                 "syncVersion": 1,
                 "lastBattlesSyncAt": 1,
                 "insertedAt": 1,
+                "ownBattlesFrom": 1,
                 "playerName": 1,
                 "trackingGaps": 1,
             },
@@ -265,6 +267,8 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
             "firstSyncPending": doc.get("lastBattlesSyncAt") is None,
             "lastBattlesSyncAt": doc.get("lastBattlesSyncAt"),
             "insertedAt": doc.get("insertedAt"),
+            # Absent for players tracked before it was recorded
+            "ownBattlesFrom": doc.get("ownBattlesFrom", "unknown"),
             "playerName": doc.get("playerName"),
             "trackingGaps": _tracking_gaps(doc),
         }

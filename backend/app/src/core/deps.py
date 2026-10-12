@@ -115,7 +115,12 @@ class TrackedPlayer:
     first_sync_pending is True from tracking until the first battle sync ends.
     last_battles_sync_at is when the scraper last checked the battle log (naive
     UTC), whether or not it found new battles. tracked_since is the date the
-    player was first tracked (YYYY-MM-DD), None if unknown. tracking_gaps
+    player was first tracked (YYYY-MM-DD), None if unknown.
+    passive_range is the (start, end) time range of the battles on record
+    from before the player was tracked, which came from other tracked
+    players, None if unknown (tracked before this was recorded). Each
+    tracking gap has the same as "passiveRange" for the untracked period.
+    tracking_gaps
     lists untracked periods long enough to have lost battles, as
     {"from", "to"} dates (YYYY-MM-DD) and their length in whole "hours".
     """
@@ -126,6 +131,7 @@ class TrackedPlayer:
     first_sync_pending: bool
     last_battles_sync_at: datetime | None
     tracked_since: str | None
+    passive_range: tuple | None
     tracking_gaps: list[dict]
 
 
@@ -183,8 +189,21 @@ async def require_tracked_player(
         last_battles_sync_at=state["lastBattlesSyncAt"],
         # insertedAt is stored as "YYYY-MM-DD HH-MM-SS"; the date is enough
         tracked_since=str(state["insertedAt"])[:10] if state["insertedAt"] else None,
+        passive_range=_passive_range(None, state["ownBattlesFrom"]),
         tracking_gaps=_relevant_tracking_gaps(state["trackingGaps"]),
     )
+
+
+def _passive_range(start, own_battles_from) -> tuple | None:
+    """The range of passive battles before an ownBattlesFrom value.
+
+    None (pending first sync) leaves the end open: no own battle is stored
+    yet. Absent ("unknown" from the read, or no key on a gap) is unknown.
+    """
+
+    if own_battles_from == "unknown":
+        return None
+    return (start, own_battles_from)
 
 
 def _relevant_tracking_gaps(gaps: list[dict]) -> list[dict]:
@@ -208,6 +227,12 @@ def _relevant_tracking_gaps(gaps: list[dict]) -> list[dict]:
                     "to": gap["to"][:10],
                     # A gap within one day is described by its length instead
                     "hours": max(1, round(seconds / 3600)),
+                    # Battles from the untracked period older than the first
+                    # own log after it; gaps from before it was recorded have
+                    # no ownBattlesFrom
+                    "passiveRange": _passive_range(
+                        start, gap.get("ownBattlesFrom", "unknown")
+                    ),
                 }
             )
     return relevant

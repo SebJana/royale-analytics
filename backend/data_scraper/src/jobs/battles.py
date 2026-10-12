@@ -25,6 +25,7 @@ from intervals import (
 from jobs.common import JobResult, pool_level_result
 from mongo import (
     MongoConn,
+    bump_sync_versions,
     deactivate_tracked_player,
     get_player_sync_state,
     insert_battles,
@@ -193,7 +194,7 @@ async def sync_player_battles(
             mode_store.add(battle["gameMode"])
 
     # Only battles after the watermark are new. Without this filter nearly
-    # every insert would be a duplicate rejected by the unique index.
+    # every battle would be looked up and skipped as a stored copy.
     # NOTE Assumes the battle log never adds a battle older than one already
     # fetched. A battle that appears late, with a battleTime at or before the
     # watermark, is skipped for good.
@@ -204,6 +205,19 @@ async def sync_player_battles(
         if last_battle_time is None or battle["battleTime"] > last_battle_time
     ]
     inserted = await insert_battles(mongo_conn, new_battles)
+    # The stored battles are also battles of their other participants, whose
+    # cached statistics would otherwise miss them. A failure here fails the
+    # sync, and its retry finds the battles stored, so those caches only
+    # catch up when their TTL ends.
+    await bump_sync_versions(
+        mongo_conn,
+        (
+            tag
+            for battle in inserted
+            for tag in battle["playerTags"]
+            if tag != player_tag
+        ),
+    )
 
     # Activity and the cache version follow the battles past the watermark,
     # not the insert count. If a previous attempt inserted them and then
@@ -229,13 +243,19 @@ async def sync_player_battles(
         get_player_name(new_battles, player_tag=player_tag) if new_battles else None
     )
     await record_battle_sync(
-        mongo_conn, player_tag, newest, player_name, new_count, interval
+        mongo_conn,
+        player_tag,
+        newest,
+        player_name,
+        new_count,
+        interval,
+        oldest_battle_time=min(battle["battleTime"] for battle in cleaned),
     )
 
     # Mongo stores the planned interval; only the due time is spread.
     return JobResult(
         "synced",
         scheduled_battle_delay(interval, lateness_s, first_sync),
-        inserted,
+        len(inserted),
         possible_gap,
     )

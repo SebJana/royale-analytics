@@ -69,6 +69,14 @@ async def insert_tracked_player(
     - If the player doesn't exist: create with active=True.
     - If the player exists: set active=True again (reactivate).
 
+    A new player is stored with ownBattlesFrom = None, and a reactivated one
+    gets it on its new tracking gap. The first sync after that sets it to the
+    oldest battle of the player's own log (record_battle_sync). Battles
+    stored before it, or during the gap before it, came from other tracked
+    players the player played with or against, and are only a part of what
+    it played then (count_battles_in_ranges). A time rather than a count, so
+    the number follows the stored battles once old ones are removed.
+
     Args:
         conn (MongoConn): Active MongoDB connection instance.
         player_tag (str): The unique tag of the player (e.g., "#YYRJQY28").
@@ -101,7 +109,14 @@ async def insert_tracked_player(
                         "trackingGaps": {
                             "$concatArrays": [
                                 {"$ifNull": ["$trackingGaps", []]},
-                                [{"from": "$deactivatedAt", "to": now}],
+                                [
+                                    {
+                                        "from": "$deactivatedAt",
+                                        "to": now,
+                                        # Set by the next sync with battles
+                                        "ownBattlesFrom": None,
+                                    }
+                                ],
                             ]
                         },
                     }
@@ -134,6 +149,8 @@ async def insert_tracked_player(
                     "insertedAt": now,
                     "playerName": player_name,
                     "syncVersion": 0,
+                    # Set by the first sync with battles
+                    "ownBattlesFrom": None,
                 },
                 # Also bumped for an already tracked player, which is harmless:
                 # the search re-reads the player and finds nothing changed.
@@ -201,12 +218,15 @@ async def record_battle_sync(
     player_name: str | None,
     new_battle_count: int,
     interval_s: float | None = None,
+    oldest_battle_time: datetime | None = None,
 ):
     """
     Stores the outcome of a successful battle sync on the player document.
 
-    syncVersion is only incremented when the sync found new battles. Cached
-    statistics of a player without new battles therefore stay valid.
+    syncVersion is only incremented when the sync found new battles, or when
+    another participant's sync stored battles of the player
+    (bump_sync_versions). Cached statistics of a player without new battles
+    therefore stay valid.
 
     Args:
         conn (MongoConn): Active MongoDB connection instance.
@@ -221,6 +241,10 @@ async def record_battle_sync(
         interval_s (float | None): Seconds until the player's next battle sync.
             Stored so the next interval can grow from it, and so a rebuilt
             schedule keeps the player's rhythm.
+        oldest_battle_time (datetime | None): battleTime of the oldest battle
+            in the fetched battle log, None if the log was empty. Fills a
+            pending (None) ownBattlesFrom of the player and of its newest
+            tracking gap, see insert_tracked_player.
 
     Raises:
         Exception: Any exception that occurs during the database update operation.
@@ -246,11 +270,13 @@ async def record_battle_sync(
             # the same player overlap after an expired claim. It skips a
             # missing field, so the first sync stores the new time.
             fields["lastBattleTime"] = {"$max": ["$lastBattleTime", newest_battle_time]}
+        if oldest_battle_time is not None:
+            fields.update(own_battles_fields(oldest_battle_time))
         # TODO Keep a roughly accurate stored battle count per tracked player
         # (e.g. battleCount), so pages and the explore list need no count over
         # the battles collection. Not per insert: either $inc it here by the
         # sync's new battles (one write per sync, already batched), or let a
-        # periodic job recount from the referencePlayerTag index. The $inc
+        # periodic job recount from the playerTags index. The $inc
         # drifts, e.g. when two overlapping syncs after an expired claim both
         # count the same battles, or when battles are removed later, so it
         # could be combined with a rare recount. "Somewhat accurate" is
@@ -266,6 +292,102 @@ async def record_battle_sync(
 
     except Exception as e:
         print(f"[DB] [ERROR] recording the battle sync of {player_tag}", e)
+        raise
+
+
+def own_battles_fields(oldest_battle_time: datetime) -> dict:
+    """
+    Pipeline $set fields that fill pending ownBattlesFrom values.
+
+    Only None means pending. An absent field (players and gaps from before
+    it was recorded) stays absent: the oldest battle of a later log would
+    declare all older battles passive. A set time is never moved. Only the
+    newest gap can be the one the player just returned from.
+
+    Args:
+        oldest_battle_time (datetime): Oldest battle of the fetched log.
+
+    Returns:
+        dict: Fields for the $set stage of record_battle_sync.
+    """
+
+    def filled(value):
+        # "$..." of an absent field evaluates to missing, so $set leaves it out
+        return {
+            "$cond": [{"$eq": [{"$type": value}, "null"]}, oldest_battle_time, value]
+        }
+
+    last = {"$subtract": [{"$size": "$trackingGaps"}, 1]}
+    return {
+        "ownBattlesFrom": filled("$ownBattlesFrom"),
+        "trackingGaps": {
+            "$cond": [
+                {"$isArray": "$trackingGaps"},
+                {
+                    "$map": {
+                        "input": {"$range": [0, {"$size": "$trackingGaps"}]},
+                        "as": "i",
+                        "in": {
+                            "$let": {
+                                "vars": {
+                                    "gap": {"$arrayElemAt": ["$trackingGaps", "$$i"]}
+                                },
+                                "in": {
+                                    "$cond": [
+                                        {"$eq": ["$$i", last]},
+                                        {
+                                            "$mergeObjects": [
+                                                "$$gap",
+                                                {
+                                                    "ownBattlesFrom": filled(
+                                                        "$$gap.ownBattlesFrom"
+                                                    )
+                                                },
+                                            ]
+                                        },
+                                        "$$gap",
+                                    ]
+                                },
+                            }
+                        },
+                    }
+                },
+                "$trackingGaps",
+            ]
+        },
+    }
+
+
+async def bump_sync_versions(conn: MongoConn, player_tags) -> None:
+    """
+    Increments syncVersion of players whose battles another sync stored.
+
+    A battle is stored once for all participants, so one player's sync can
+    add battles of another tracked player, e.g. from before that player was
+    tracked or past an overflow of its own log. Its own sync never sees
+    those as new, so without this the cached statistics would keep missing
+    them until their TTL ends. Tags without a player document are skipped.
+
+    Args:
+        conn (MongoConn): Active MongoDB connection instance.
+        player_tags (Iterable[str]): Tags of the other participants of the
+            newly stored battles.
+
+    Raises:
+        Exception: Any exception that occurs during the database update operation.
+    """
+
+    tags = list(set(player_tags))
+    if not tags:
+        return
+    try:
+        await ensure_connected(conn)
+        # $inc starts a missing syncVersion at 1, like record_battle_sync
+        await conn.db.players.update_many(
+            {"playerTag": {"$in": tags}}, {"$inc": {"syncVersion": 1}}
+        )
+    except Exception as e:
+        print(f"[DB] [ERROR] bumping the sync versions of {len(tags)} players", e)
         raise
 
 

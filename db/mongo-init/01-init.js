@@ -18,18 +18,24 @@ db.players.createIndex({ playerTag: 1 }, { unique: true, name: "tag_unique" });
 // read. NOTE The API also creates this index at startup, for databases that
 // existed before it; keep the name in sync with ensure_search_change_index.
 print(`[init] creating index on 'player' collection for 'searchChangedAt'`);
-db.players.createIndex({ searchChangedAt: 1 }, { name: "searchChangedAt_index" });
+db.players.createIndex(
+  { searchChangedAt: 1 },
+  { name: "searchChangedAt_index" },
+);
 
 print(`[init] creating index on 'game_modes' collection for unique 'name'`);
 db.game_modes.createIndex({ name: 1 }, { unique: true, name: "name_unique" });
 
 print(
-  `[init] creating index on 'battles' collection for 'battleTime' and 'referencePlayerTag'`,
+  `[init] creating index on 'battles' collection for 'playerTags' and 'battleTime'`,
 );
 
+// One document per battle for all participants (normalize_battle in the data
+// scraper's clean.py). Multikey, so a lookup of any one participant is still
+// one bounded scan sorted by time. Not unique: the _id deduplicates.
 db.battles.createIndex(
-  { referencePlayerTag: 1, battleTime: -1 },
-  { unique: true, name: "referencePlayerTag_battleTime_index" },
+  { playerTags: 1, battleTime: -1 },
+  { name: "playerTags_battleTime_index" },
 );
 
 print(
@@ -39,6 +45,6 @@ print(
 // Mode-filtered stats seek one time range per selected mode instead of
 // fetching and discarding every other mode's battles.
 db.battles.createIndex(
-  { referencePlayerTag: 1, gameMode: 1, battleTime: -1 },
-  { name: "referencePlayerTag_gameMode_time_index" },
+  { playerTags: 1, gameMode: 1, battleTime: -1 },
+  { name: "playerTags_gameMode_time_index" },
 );
