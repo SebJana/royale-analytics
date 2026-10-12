@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ChevronUp } from "lucide-react";
+import { ChevronUp, Info } from "lucide-react";
+import { AppTooltip } from "../tooltip/tooltip";
 import type { Player } from "../../types/player";
 import { formatNumber, round } from "../../utils/number";
 import { formatDateForInput, formatTimeAgo } from "../../utils/datetime";
@@ -100,6 +101,19 @@ function useNow(intervalMs: number): number {
   return now;
 }
 
+/**
+ * The note after an untracked period on the battles found for it.
+ *
+ * @param count - Battles found through other tracked players, null or
+ *   undefined when the period predates that record
+ * @returns e.g. " (799 on record)", empty when unknown
+ */
+function passiveCountSuffix(count: number | null | undefined): string {
+  if (count == null) return "";
+  if (count === 0) return " (none on record)";
+  return ` (${count.toLocaleString()} on record)`;
+}
+
 export function PlayerInfo({
   player,
 }: Readonly<{
@@ -141,6 +155,11 @@ export function PlayerInfo({
     player?.battleCount > 0
       ? round((player?.wins / player?.battleCount) * 100, 1)
       : 0;
+
+  // Only shown when there is something to say about an untracked period
+  const hasTrackingHistory =
+    !!player?.syncInfo?.battlesBeforeTracking ||
+    !!player?.syncInfo?.trackingGaps?.length;
 
   return (
     <div className="player-info-component-container">
@@ -228,19 +247,49 @@ export function PlayerInfo({
                     </span>
                   </div>
                 )}
-                {player?.syncInfo?.trackingGaps?.map((gap) => (
-                  <p
-                    key={`${gap.from}-${gap.to}`}
-                    className="player-info-component-gap-hint"
-                  >
-                    {gap.from === gap.to
-                      ? `Not tracked on ${gap.from} for ${gap.hours} h`
-                      : `Not tracked ${gap.from} – ${gap.to}`}
-                    , battles from then may be missing
-                  </p>
-                ))}
               </div>
             </div>
+
+            {/* Between the two sections, so it follows Account Information on
+                narrow screens; wide screens place it below both (CSS). A line
+                of text like the sync hint, so one period or many both read
+                naturally and nothing competes with the statistics. */}
+            {hasTrackingHistory && player?.syncInfo && (
+              <p className="player-info-component-tracking-hint">
+                <span className="player-info-component-tracking-hint-label">
+                  Not tracked
+                  <AppTooltip
+                    title="Battles from these periods may be missing. Those on record were found through other tracked players they played with or against."
+                    tapToShow
+                  >
+                    <span
+                      className="player-info-component-tracking-hint-icon"
+                      aria-label="About untracked periods"
+                      tabIndex={0}
+                    >
+                      <Info size={16} />
+                    </span>
+                  </AppTooltip>
+                </span>
+                {!!player.syncInfo.battlesBeforeTracking && (
+                  <span className="player-info-component-tracking-hint-period">
+                    before {player.syncInfo.trackedSince}
+                    {passiveCountSuffix(player.syncInfo.battlesBeforeTracking)}
+                  </span>
+                )}
+                {player.syncInfo.trackingGaps?.map((gap) => (
+                  <span
+                    key={`${gap.from}-${gap.to}`}
+                    className="player-info-component-tracking-hint-period"
+                  >
+                    {gap.from === gap.to
+                      ? `${gap.from}, ${gap.hours} h`
+                      : `${gap.from} – ${gap.to}`}
+                    {passiveCountSuffix(gap.passiveBattles)}
+                  </span>
+                ))}
+              </p>
+            )}
 
             <div className="player-info-component-battle-stats-section">
               <h3>Battle Statistics</h3>

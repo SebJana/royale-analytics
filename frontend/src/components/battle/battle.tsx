@@ -116,7 +116,9 @@ export const BattleComponent = memo(function BattleComponent({
                   <Link
                     to={`/player/${encodeURIComponent(playerTag)}/decks`}
                     className="battle-component-deck-link"
-                    title="Show this deck's statistics"
+                    // Its cards have tooltips of their own, a second one for
+                    // the whole deck would open together with theirs
+                    aria-label="Show this deck's statistics"
                     onClick={() => onOwnDeckOpen(battle, t)}
                     // A middle click opens a new tab without a click event,
                     // and that tab reads the filters as well

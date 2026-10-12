@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from "react";
-import Tooltip from "@mui/material/Tooltip";
+import { AppTooltip } from "../tooltip/tooltip";
 import type { Card, CardMeta } from "../../types/cards";
 import {
   getCardVariantName,
@@ -113,8 +113,7 @@ export const CardComponent = memo(function CardComponent({
   return (
     <div className={`card-component-card${matched ? " is-matched" : ""}`}>
       {showTooltip ? (
-        <Tooltip
-          arrow
+        <AppTooltip
           // Let the tooltip close as soon as the pointer leaves the card.
           disableInteractive
           placement="auto"
@@ -140,7 +139,7 @@ export const CardComponent = memo(function CardComponent({
           }
         >
           {cardContent}
-        </Tooltip>
+        </AppTooltip>
       ) : (
         cardContent
       )}

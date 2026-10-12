@@ -14,6 +14,7 @@ import { round } from "../../utils/number";
 import { Copy } from "lucide-react";
 import rareOutlineImg from "../../assets/cards/rareOutline.png";
 import "./deck.css";
+import { AppTooltip } from "../tooltip/tooltip";
 
 /**
  * Calculates the average elixir cost of a given deck.
@@ -293,19 +294,23 @@ export const DeckComponent = memo(function DeckComponent({
       >
         <div className="deck-component-stats">
           <div className="deck-component-stat-item">
-            <p className="deck-component-stat-value" title={unknownCostTitle}>
-              {deck.length === 0 ? "—" : costsKnown ? roundedAvgElixir : "?"}
-            </p>
+            <AppTooltip title={unknownCostTitle ?? ""} tapToShow>
+              <p className="deck-component-stat-value">
+                {deck.length === 0 ? "—" : costsKnown ? roundedAvgElixir : "?"}
+              </p>
+            </AppTooltip>
             <p className="deck-component-stat-label">Avg Elixir</p>
           </div>
           <div className="deck-component-stat-item">
-            <p className="deck-component-stat-value" title={unknownCostTitle}>
-              {deck.length === 0
-                ? "—"
-                : costsKnown
-                  ? roundedFourCardCycle
-                  : "?"}
-            </p>
+            <AppTooltip title={unknownCostTitle ?? ""} tapToShow>
+              <p className="deck-component-stat-value">
+                {deck.length === 0
+                  ? "—"
+                  : costsKnown
+                    ? roundedFourCardCycle
+                    : "?"}
+              </p>
+            </AppTooltip>
             <p className="deck-component-stat-label">4-Card Cycle</p>
           </div>
           {/* Only display leaked elixir if it was passed into the component*/}

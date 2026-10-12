@@ -1,5 +1,5 @@
 import "./statCard.css";
-import Tooltip from "@mui/material/Tooltip";
+import { AppTooltip } from "../tooltip/tooltip";
 import type { ReactNode } from "react";
 import { formatNumber } from "../../utils/number";
 
@@ -25,10 +25,11 @@ export function StatCard({
   );
 
   return tooltip ? (
-    <Tooltip
-      arrow
+    <AppTooltip
       placement="top"
       title={tooltip}
+      // The card only explains a number, so a tap shows the explanation
+      tapToShow
       slotProps={{
         popper: {
           modifiers: [
@@ -40,7 +41,7 @@ export function StatCard({
       }}
     >
       {card}
-    </Tooltip>
+    </AppTooltip>
   ) : (
     card
   );

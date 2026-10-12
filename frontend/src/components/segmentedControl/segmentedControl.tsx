@@ -1,5 +1,5 @@
 import { useId } from "react";
-import Tooltip from "@mui/material/Tooltip";
+import { AppTooltip } from "../tooltip/tooltip";
 import "./segmentedControl.css";
 
 export type SegmentedOption<T extends string> = {
@@ -79,13 +79,7 @@ export function SegmentedControl<T extends string>({
           {title}
         </span>
       )}
-      {tooltip ? (
-        <Tooltip arrow title={tooltip}>
-          {group}
-        </Tooltip>
-      ) : (
-        group
-      )}
+      {tooltip ? <AppTooltip title={tooltip}>{group}</AppTooltip> : group}
       {hint && (
         <span className="segmented-control-hint">
           {options.map((option) => (

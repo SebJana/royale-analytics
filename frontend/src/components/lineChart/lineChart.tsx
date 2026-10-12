@@ -12,6 +12,7 @@ import {
 import { Line } from "react-chartjs-2";
 import type { ChartData, Plugin, TooltipItem } from "chart.js";
 import { useLayoutEffect, useRef, useState } from "react";
+import { TOOLTIP_STYLE } from "../tooltip/tooltipStyle";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const toUtcDay = (date: string) => Date.parse(`${date}T00:00:00Z`) / DAY_MS;
@@ -343,13 +344,24 @@ export function LineChart({
           pointStyle: "circle",
         },
       },
+      // The site's tooltip look (TOOLTIP_STYLE), the border in the line color
       tooltip: {
-        backgroundColor: "rgba(0, 0, 0, 0.8)",
-        titleColor: "#ffffff",
-        bodyColor: "#ffffff",
-        borderColor: config.datasets[0]?.color || "#ffffff",
+        backgroundColor: TOOLTIP_STYLE.background,
+        titleColor: TOOLTIP_STYLE.color,
+        bodyColor: TOOLTIP_STYLE.color,
+        titleFont: {
+          family: TOOLTIP_STYLE.fontFamily,
+          size: TOOLTIP_STYLE.fontSizePx,
+          weight: "bold" as const,
+        },
+        bodyFont: {
+          family: TOOLTIP_STYLE.fontFamily,
+          size: TOOLTIP_STYLE.fontSizePx,
+        },
+        padding: { x: TOOLTIP_STYLE.paddingX, y: TOOLTIP_STYLE.paddingY },
+        borderColor: config.datasets[0]?.color || TOOLTIP_STYLE.color,
         borderWidth: 1,
-        cornerRadius: 8,
+        cornerRadius: TOOLTIP_STYLE.radiusPx,
         displayColors: true,
         caretPadding: 10,
         callbacks: {

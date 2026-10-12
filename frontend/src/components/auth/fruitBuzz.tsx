@@ -58,6 +58,7 @@ import {
 import "./fruitBuzz.css";
 import { AuthActionButton } from "./authActionButton";
 import { useAuthCooldown } from "../../hooks/useAuthCooldown";
+import { AppTooltip } from "../tooltip/tooltip";
 
 type Phase =
   | "loading"
@@ -871,23 +872,24 @@ export function FruitBuzz({
                 phase === "settling" ||
                 phase === "advancing" ||
                 (phase === "animating" && !gameEnded)) && (
-                <Button
-                  className="buzz-pause-button"
-                  variant={pauseAfterRound ? "contained" : "outlined"}
-                  aria-label={pauseLabel}
-                  title={pauseLabel}
-                  aria-pressed={pauseAfterRound}
-                  onClick={() => {
-                    pauseAfterRoundRef.current = !pauseAfterRoundRef.current;
-                    setPauseAfterRound(pauseAfterRoundRef.current);
-                  }}
-                >
-                  {pauseAfterRound ? (
-                    <Play size={20} fill="currentColor" aria-hidden="true" />
-                  ) : (
-                    <Pause size={20} fill="currentColor" aria-hidden="true" />
-                  )}
-                </Button>
+                <AppTooltip title={pauseLabel}>
+                  <Button
+                    className="buzz-pause-button"
+                    variant={pauseAfterRound ? "contained" : "outlined"}
+                    aria-label={pauseLabel}
+                    aria-pressed={pauseAfterRound}
+                    onClick={() => {
+                      pauseAfterRoundRef.current = !pauseAfterRoundRef.current;
+                      setPauseAfterRound(pauseAfterRoundRef.current);
+                    }}
+                  >
+                    {pauseAfterRound ? (
+                      <Play size={20} fill="currentColor" aria-hidden="true" />
+                    ) : (
+                      <Pause size={20} fill="currentColor" aria-hidden="true" />
+                    )}
+                  </Button>
+                </AppTooltip>
               )}
             </div>
           </div>
@@ -1002,15 +1004,20 @@ export function FruitBuzz({
                 {phase === "round_ready" && (
                   <>
                     <h4>Paused</h4>
-                    <Button
-                      variant="contained"
-                      size="large"
-                      aria-label="Resume game"
-                      title="Resume game"
-                      onClick={() => beginRef.current()}
-                    >
-                      <Play size={24} fill="currentColor" aria-hidden="true" />
-                    </Button>
+                    <AppTooltip title="Resume game">
+                      <Button
+                        variant="contained"
+                        size="large"
+                        aria-label="Resume game"
+                        onClick={() => beginRef.current()}
+                      >
+                        <Play
+                          size={24}
+                          fill="currentColor"
+                          aria-hidden="true"
+                        />
+                      </Button>
+                    </AppTooltip>
                   </>
                 )}
                 {phase === "won" && (

@@ -24,6 +24,7 @@ import {
 } from "../../utils/getCardMetaFields";
 import rareOutlineImg from "../../assets/cards/rareOutline.png";
 import "./cards.css";
+import { AppTooltip } from "../../components/tooltip/tooltip";
 
 /**
  * Title of a card tile, e.g. "Evolution Knight".
@@ -69,9 +70,10 @@ function CardStatTile({
   const title = cardTitle(stat.card, cards);
   return (
     <div className="card-item">
-      <h3 className="card-item-title" title={title}>
-        {title}
-      </h3>
+      {/* The title is cut off when long; the tooltip shows it in full */}
+      <AppTooltip title={title} tapToShow>
+        <h3 className="card-item-title">{title}</h3>
+      </AppTooltip>
       <div className="card-item-visual">
         {stat.card.id === NO_SUPPORT_ID ? (
           // Battles without tower data. Not a card, so no art lookup.

@@ -6,6 +6,7 @@ import {
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { FilterSearch } from "../filterSearch/filterSearch";
 import "./gameModeFilter.css";
+import { AppTooltip } from "../tooltip/tooltip";
 
 // Bonbons shown while the section is collapsed. More would push the stats
 // down on a phone; the rest is counted and shown on expanding.
@@ -165,16 +166,16 @@ export function GameModeFilter({
         >
           {/* Clicking a bonbon removes it immediately; there is no separate delete state. */}
           {visibleOptions.map((option) => (
-            <button
-              key={option.display}
-              type="button"
-              className="game-mode-filter-bonbon"
-              onClick={() => removeOption(option)}
-              aria-label={`Remove ${option.display}`}
-              title={`Remove ${option.display}`}
-            >
-              {option.display}
-            </button>
+            <AppTooltip key={option.display} title={`Remove ${option.display}`}>
+              <button
+                type="button"
+                className="game-mode-filter-bonbon"
+                onClick={() => removeOption(option)}
+                aria-label={`Remove ${option.display}`}
+              >
+                {option.display}
+              </button>
+            </AppTooltip>
           ))}
           {hiddenOptionCount > 0 && (
             <button
@@ -243,15 +244,18 @@ export function GameModeFilter({
               />
 
               <div className="game-mode-filter-actions">
-                <button
-                  type="button"
-                  className="game-mode-filter-action-button game-mode-filter-select-all"
-                  onClick={selectAllModes}
-                  disabled={allModesSelected || options.length === 0}
-                  title="Select all game modes, including search results not shown"
-                >
-                  Select all
-                </button>
+                <AppTooltip title="Select all game modes, including search results not shown">
+                  <span>
+                    <button
+                      type="button"
+                      className="game-mode-filter-action-button game-mode-filter-select-all"
+                      onClick={selectAllModes}
+                      disabled={allModesSelected || options.length === 0}
+                    >
+                      Select all
+                    </button>
+                  </span>
+                </AppTooltip>
               </div>
 
               <div

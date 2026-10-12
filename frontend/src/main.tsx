@@ -7,7 +7,9 @@ import {
   persistQueryClientSave,
 } from "@tanstack/react-query-persist-client";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { AuthProvider } from "./hooks/useAuth";
+import { TOOLTIP_STYLE } from "./components/tooltip/tooltipStyle";
 import {
   NECESSARY_QUERY_META,
   PREFERENCE_QUERY_META,
@@ -16,6 +18,31 @@ import {
 } from "./utils/storage";
 import "./index.css";
 import App from "./App.tsx";
+
+// One look for every MUI tooltip; the Chart.js tooltips read the same
+// TOOLTIP_STYLE. Only tooltips are themed, every other component keeps the
+// MUI defaults it had without a theme.
+const theme = createTheme({
+  components: {
+    MuiTooltip: {
+      styleOverrides: {
+        tooltip: {
+          backgroundColor: TOOLTIP_STYLE.background,
+          color: TOOLTIP_STYLE.color,
+          fontFamily: TOOLTIP_STYLE.fontFamily,
+          fontSize: `${TOOLTIP_STYLE.fontSizePx}px`,
+          lineHeight: TOOLTIP_STYLE.lineHeight,
+          padding: `${TOOLTIP_STYLE.paddingY}px ${TOOLTIP_STYLE.paddingX}px`,
+          borderRadius: TOOLTIP_STYLE.radiusPx,
+          maxWidth: TOOLTIP_STYLE.maxWidthPx,
+        },
+        arrow: {
+          color: TOOLTIP_STYLE.background,
+        },
+      },
+    },
+  },
+});
 
 const day = 24 * 60 * 60 * 1000;
 const min = 60 * 1000;
@@ -83,9 +110,11 @@ createRoot(document.getElementById("root")!).render(
           dehydrateOptions,
         }}
       >
-        <AuthProvider>
-          <App />
-        </AuthProvider>
+        <ThemeProvider theme={theme}>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </ThemeProvider>
       </PersistQueryClientProvider>
     </BrowserRouter>
   </StrictMode>,

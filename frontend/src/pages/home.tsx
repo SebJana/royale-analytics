@@ -33,6 +33,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import axios from "axios";
 import { StatCard } from "../components/statCard/statCard";
 import "./home.css";
+import { AppTooltip } from "../components/tooltip/tooltip";
 
 function getErrorMessage(error: unknown): string {
   if (
@@ -520,22 +521,26 @@ function HomePage() {
           >
             <h2 className="section-header">
               Remove Tracked Player
-              <span
-                className={`untrack-auth-status${isAuthenticated ? " is-unlocked" : ""}`}
-                role="img"
-                aria-label={
-                  isAuthenticated ? "Verified" : "Verification required"
-                }
+              <AppTooltip
                 title={isAuthenticated ? "Verified" : "Verification required"}
+                tapToShow
               >
-                <span className="untrack-auth-icon" aria-hidden="true">
-                  {isAuthenticated ? (
-                    <LockKeyholeOpen size={24} />
-                  ) : (
-                    <LockKeyhole size={24} />
-                  )}
+                <span
+                  className={`untrack-auth-status${isAuthenticated ? " is-unlocked" : ""}`}
+                  role="img"
+                  aria-label={
+                    isAuthenticated ? "Verified" : "Verification required"
+                  }
+                >
+                  <span className="untrack-auth-icon" aria-hidden="true">
+                    {isAuthenticated ? (
+                      <LockKeyholeOpen size={24} />
+                    ) : (
+                      <LockKeyhole size={24} />
+                    )}
+                  </span>
                 </span>
-              </span>
+              </AppTooltip>
             </h2>
             <p className="section-description">
               {isAuthenticated

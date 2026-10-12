@@ -10,6 +10,7 @@ import type { Season } from "../../types/seasons";
 import { ChevronUp } from "lucide-react";
 import { SegmentedControl } from "../segmentedControl/segmentedControl";
 import "./startEndDateFilter.css";
+import { AppTooltip } from "../tooltip/tooltip";
 
 // DateRangeOption represents either a preset date range or custom selection
 type DateRangeOption = {
@@ -173,20 +174,20 @@ export function StartEndDateFilter({
         {isSeasonMode ? (
           <div className="start-end-date-filter-component-tags">
             {seasons.map((season) => (
-              <button
-                key={season.id}
-                type="button"
-                title={formatSeasonDates(season)}
-                className={`start-end-date-filter-component-tag ${
-                  selectedSeason === season.id ? "is-selected" : ""
-                }`}
-                onClick={() => handleSeasonClick(season)}
-              >
-                <span className="start-end-date-filter-component-tag-text">
-                  {formatSeasonLabel(season.id)}
-                  {season.isCurrent ? " (current)" : ""}
-                </span>
-              </button>
+              <AppTooltip key={season.id} title={formatSeasonDates(season)}>
+                <button
+                  type="button"
+                  className={`start-end-date-filter-component-tag ${
+                    selectedSeason === season.id ? "is-selected" : ""
+                  }`}
+                  onClick={() => handleSeasonClick(season)}
+                >
+                  <span className="start-end-date-filter-component-tag-text">
+                    {formatSeasonLabel(season.id)}
+                    {season.isCurrent ? " (current)" : ""}
+                  </span>
+                </button>
+              </AppTooltip>
             ))}
             {selectedSeason !== null && !isListedSeason && (
               <button

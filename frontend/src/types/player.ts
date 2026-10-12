@@ -30,7 +30,18 @@ export type Player = {
     profileSyncedAt: string | null;
     // Date the player was first tracked (YYYY-MM-DD)
     trackedSince: string | null;
+    // Stored battles from before trackedSince, recorded through other tracked
+    // players they played with or against. Only a part of what was played.
+    // null when unknown (tracked before this was recorded).
+    battlesBeforeTracking?: number | null;
     // Periods the player was untracked, long enough to have missed battles
-    trackingGaps?: { from: string; to: string; hours: number }[];
+    // passiveBattles: battles of the period recorded through other tracked
+    // players, as battlesBeforeTracking
+    trackingGaps?: {
+      from: string;
+      to: string;
+      hours: number;
+      passiveBattles?: number | null;
+    }[];
   };
 };

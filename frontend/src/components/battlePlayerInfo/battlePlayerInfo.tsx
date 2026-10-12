@@ -6,6 +6,7 @@ import { CopyableTag } from "../copyableTag/copyableTag";
 import { useTrackedState } from "../../hooks/useTrackedState";
 import { addPlayerPath } from "../../utils/playerTag";
 import "./battlePlayerInfo.css";
+import { AppTooltip } from "../tooltip/tooltip";
 
 // A mouse has to rest this long on a player before the tracked state is
 // asked, so sweeping across the battle list sends no request per player.
@@ -96,34 +97,39 @@ export function BattlePlayerInfo({
         onClick={lookUp}
       >
         {data?.tracked ? (
-          <Link
-            to={`/player/${encodeURIComponent(data.tag)}/battles`}
-            className="battle-player-info-link"
-            title="Tracked: show this player's battles"
-          >
-            {shownName}
-            <UserCheck className="battle-player-info-icon" aria-hidden="true" />
-            <span className="battle-player-info-hint">(tracked)</span>
-          </Link>
+          <AppTooltip title="Tracked: show this player's battles">
+            <Link
+              to={`/player/${encodeURIComponent(data.tag)}/battles`}
+              className="battle-player-info-link"
+            >
+              {shownName}
+              <UserCheck
+                className="battle-player-info-icon"
+                aria-hidden="true"
+              />
+              <span className="battle-player-info-hint">(tracked)</span>
+            </Link>
+          </AppTooltip>
         ) : (
           <>
             {shownName}
             {data && !data.tracked && (
               // Only fills in the add form: adding spends a Clash Royale
               // request and is limited per client, so it stays a choice.
-              <Link
-                to={addPlayerPath(data.tag)}
-                className="battle-player-info-add"
-                title="Not tracked: add this player"
-              >
-                <UserPlus
-                  className="battle-player-info-icon"
-                  aria-hidden="true"
-                />
-                <span className="battle-player-info-hint">
-                  Not tracked, add this player
-                </span>
-              </Link>
+              <AppTooltip title="Not tracked: add this player">
+                <Link
+                  to={addPlayerPath(data.tag)}
+                  className="battle-player-info-add"
+                >
+                  <UserPlus
+                    className="battle-player-info-icon"
+                    aria-hidden="true"
+                  />
+                  <span className="battle-player-info-hint">
+                    Not tracked, add this player
+                  </span>
+                </Link>
+              </AppTooltip>
             )}
           </>
         )}

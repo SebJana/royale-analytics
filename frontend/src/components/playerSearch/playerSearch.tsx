@@ -19,6 +19,7 @@ import { StorageSettingsContext } from "../../contexts/StorageSettingsContext";
 import type { PlayerSearchResult } from "../../types/players";
 import { normalizePlayerTag } from "../../utils/playerTag";
 import "./playerSearch.css";
+import { AppTooltip } from "../tooltip/tooltip";
 
 type Player = { tag: string; name: string };
 // A typed tag the search did not return. Offered as an option, so a player
@@ -227,19 +228,20 @@ export function PlayerSearch({
                     primary={option.name || option.tag}
                     secondary={option.tag}
                   />
-                  <button
-                    type="button"
-                    className="player-search-recent-remove"
-                    aria-label={`Remove ${playerLabel(option)} from recently viewed`}
-                    title="Remove"
-                    onClick={(event) => {
-                      // Removing must not also select the player.
-                      event.stopPropagation();
-                      forgetRecent(option.tag);
-                    }}
-                  >
-                    <X aria-hidden="true" />
-                  </button>
+                  <AppTooltip title="Remove">
+                    <button
+                      type="button"
+                      className="player-search-recent-remove"
+                      aria-label={`Remove ${playerLabel(option)} from recently viewed`}
+                      onClick={(event) => {
+                        // Removing must not also select the player.
+                        event.stopPropagation();
+                        forgetRecent(option.tag);
+                      }}
+                    >
+                      <X aria-hidden="true" />
+                    </button>
+                  </AppTooltip>
                 </ListItem>
               );
             }

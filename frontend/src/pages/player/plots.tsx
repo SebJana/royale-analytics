@@ -3,7 +3,7 @@ import type { DailyStats } from "../../types/dailyStats";
 import { useDailyStats } from "../../hooks/useDailyStats";
 import { usePageLoadingState } from "../../hooks/usePageLoadingState";
 import CircularProgress from "@mui/material/CircularProgress";
-import Tooltip from "@mui/material/Tooltip";
+import { AppTooltip } from "../../components/tooltip/tooltip";
 import { useGameModes } from "../../hooks/useGameModes";
 import { getCurrentFilterState } from "../../utils/filter";
 import { getTimeRange } from "../../utils/seasons";
@@ -55,8 +55,7 @@ function PlotPanel({
           role="group"
           aria-label={`${config.title} date hierarchy`}
         >
-          <Tooltip
-            arrow
+          <AppTooltip
             title={
               previousLevel ? `Drill up to ${previousLevel}` : "Already at year"
             }
@@ -71,12 +70,11 @@ function PlotPanel({
                 <ArrowUp size={18} />
               </button>
             </span>
-          </Tooltip>
+          </AppTooltip>
           <span className="plots-drill-level" aria-live="polite">
             {dateLevel.charAt(0).toUpperCase() + dateLevel.slice(1)}
           </span>
-          <Tooltip
-            arrow
+          <AppTooltip
             title={nextLevel ? `Drill down to ${nextLevel}` : "Already at day"}
           >
             <span className="plots-drill-button-wrap">
@@ -89,7 +87,7 @@ function PlotPanel({
                 <ArrowDown size={18} />
               </button>
             </span>
-          </Tooltip>
+          </AppTooltip>
         </div>
         <SegmentedControl
           ariaLabel="Date spacing"

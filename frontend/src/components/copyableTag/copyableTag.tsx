@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { copyToClipboard } from "../../utils/clipboard";
 import "./copyableTag.css";
+import { AppTooltip } from "../tooltip/tooltip";
 
 // How long the check mark confirms a copy
 const COPIED_FEEDBACK_MS = 1500;
@@ -29,22 +30,23 @@ export function CopyableTag({
   };
 
   return (
-    <button
-      type="button"
-      className={`copyable-tag${className ? ` ${className}` : ""}`}
-      onClick={handleCopy}
-      title={copied ? "Copied" : "Copy tag"}
-    >
-      {tag}
-      {copied ? (
-        <Check className="copyable-tag-icon is-copied" aria-hidden="true" />
-      ) : (
-        <Copy className="copyable-tag-icon" aria-hidden="true" />
-      )}
-      {/* Announces the copy to screen readers, which do not see the icon */}
-      <span className="copyable-tag-status" aria-live="polite">
-        {copied ? "Copied" : ""}
-      </span>
-    </button>
+    <AppTooltip title={copied ? "Copied" : "Copy tag"}>
+      <button
+        type="button"
+        className={`copyable-tag${className ? ` ${className}` : ""}`}
+        onClick={handleCopy}
+      >
+        {tag}
+        {copied ? (
+          <Check className="copyable-tag-icon is-copied" aria-hidden="true" />
+        ) : (
+          <Copy className="copyable-tag-icon" aria-hidden="true" />
+        )}
+        {/* Announces the copy to screen readers, which do not see the icon */}
+        <span className="copyable-tag-status" aria-live="polite">
+          {copied ? "Copied" : ""}
+        </span>
+      </button>
+    </AppTooltip>
   );
 }
