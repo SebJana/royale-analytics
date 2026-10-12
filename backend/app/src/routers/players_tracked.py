@@ -28,12 +28,14 @@ from mongo import (
     deactivate_tracked_player,
     get_players_count,
     check_player_tracked,
+    get_explore_page,
     save_player_profile,
 )
 from scrape_schedule import CAPACITY_MAX_AGE_S, read_capacity
 from player_search import SearchIndexNotReady
 from core.settings import settings
 from helpers.token_budget import refund_token
+from helpers.profile_views import round_view_count
 
 router = APIRouter(prefix="/players", tags=["Tracked Players"])
 
@@ -94,13 +96,54 @@ async def ensure_tracking_capacity(
         )
 
 
-# TODO Add a paged list behind an "Explore most popular players" button on the
-# home page: all tracked players, most profile views in the last 30 days
-# first, with a cursor on (views, playerTag) and a page size limit. Needs the
-# view counts from the TODO in players_details.py, kept per day so a 30 day
-# window can be summed (e.g. a playerViews collection of {playerTag, day,
-# count} with a TTL index on day). Never return every player in one
-# response; search covers finding a known player.
+# The player search on the home page shows it as its Popular list.
+# NOTE Keep this above any future GET "/{player_tag}" route, like /search.
+@router.get(
+    "/explore",
+    dependencies=[Depends(RateLimiter(times=60, seconds=60))],
+    responses={
+        422: {"description": "Cursor or limit out of range"},
+        429: {"description": "Too many requests from this client"},
+        500: {"description": "Explore list lookup failed"},
+    },
+)
+async def explore_players(
+    mongo_conn: DbConn,
+    cursor: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[
+        int, Query(ge=1, le=settings.EXPLORE_PAGE_SIZE_MAX)
+    ] = settings.EXPLORE_PAGE_SIZE,
+):
+    """Most viewed tracked players of the last 30 days, most viewed first.
+
+    The data scraper ranks the players every few hours (exploreRank). The
+    cursor is the last rank of the previous page, and counts are rounded, so
+    exact view counts never leave the API. Never returns every player in one
+    response; search covers finding a known player.
+    """
+
+    try:
+        # One extra player reveals whether another page exists.
+        players = await get_explore_page(mongo_conn, cursor, limit + 1)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail="Failed to fetch the explore list"
+        ) from e
+    page = players[:limit]
+    return {
+        "players": [
+            {
+                "tag": p["playerTag"],
+                "name": p.get("playerName"),
+                "rank": p["exploreRank"],
+                "views30d": round_view_count(p.get("views30d", 0)),
+            }
+            for p in page
+        ],
+        "nextCursor": page[-1]["exploreRank"] if len(players) > limit else None,
+    }
+
+
 @router.get(
     "/count",
     responses={500: {"description": "Tracked player count lookup failed"}},

@@ -1,12 +1,14 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request, Response
 from fastapi_limiter.depends import RateLimiter
 from typing import Literal, Optional, List
 from datetime import datetime
+from redis.exceptions import RedisError
 
 from core.deps import (
     DbConn,
     RedConn,
     TrackedPlayerDep,
+    ViewsConn,
     require_tracked_player,
 )
 from core.settings import settings
@@ -17,7 +19,13 @@ from helpers.validate import (
     validate_deck_card_filter,
     ParamsRequestError,
 )
-from models.schema import BetweenRequest, BattlesRequest, DeckCardFilterRequest
+from models.schema import (
+    BetweenRequest,
+    BattlesRequest,
+    DeckCardFilterRequest,
+    ProfileViewRequest,
+)
+from helpers.profile_views import count_view, issue_view_ticket, round_view_count
 from helpers.json_response import (
     cache_json_response,
     get_cached_response,
@@ -31,6 +39,7 @@ from mongo import (
     get_cards_win_percentage,
     get_daily_stats,
     get_player_profile as get_stored_profile,
+    record_profile_view,
 )
 
 # TODO: Add consistent rate limits to all player data routes (profile, battles,
@@ -43,18 +52,8 @@ router = APIRouter(
 )
 
 
-# TODO Count views per player to know which tracked players are viewed
-# regularly. This route is the per page view signal: the other player routes
-# fire several times per view. Exclude the frontend's polling during a first
-# sync. Store the counts in Mongo, not redis-cache: that cache evicts under
-# memory pressure. E.g. $inc viewCount and set lastViewedAt on the player
-# document, which the scraper already reads for its sync state, without
-# delaying the response. The counts could later shorten the sync intervals of
-# viewed players and lengthen those of players nobody opens. The explore list
-# (TODO above /players/count in players_tracked.py) ranks by views in the
-# last 30 days, so keep the counts per day as well; a single running total
-# cannot be windowed. Parking players near capacity (TODO above
-# ensure_tracking_capacity in players_tracked.py) ranks by the same counts.
+# TODO The view counts (view routes below) could shorten the sync intervals
+# of viewed players and lengthen those of players nobody opens.
 @router.get(
     "/{player_tag}/profile",
     # The profile is a database lookup now, so the limit only guards against
@@ -103,10 +102,22 @@ async def get_player_profile(
                 "name": player.name,
             },
         )
+    # Only the top of the explore list gets a badge, with a rounded count:
+    # exact counts would show anyone faking views which attempts landed.
+    popularity = None
+    if (
+        player.explore_rank is not None
+        and player.explore_rank <= settings.POPULAR_TOP_X
+    ):
+        popularity = {
+            "rank": player.explore_rank,
+            "views30d": round_view_count(player.views_30d),
+        }
     # The sync times tell the frontend how current the shown data is. Battles
     # are checked every few minutes, the profile daily to weekly.
     return {
         **stored["profile"],
+        "popularity": popularity,
         "syncInfo": {
             "battlesSyncedAt": player.last_battles_sync_at,
             "profileSyncedAt": stored.get("syncedAt"),
@@ -122,6 +133,78 @@ async def get_player_profile(
             ],
         },
     }
+
+
+# One ticket per page load (useProfileView in the frontend). Not part of the
+# profile response, which the browser caches: a cached ticket would be spent
+# or expired on the next visit.
+@router.get(
+    "/{player_tag}/view-ticket",
+    dependencies=[Depends(RateLimiter(times=30, seconds=60))],
+    responses={
+        403: {"description": "Invalid or untracked player"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
+        503: {"description": "View counting unavailable"},
+    },
+)
+async def get_view_ticket(
+    player_tag: str, request: Request, response: Response, views_conn: ViewsConn
+):
+    try:
+        ticket = await issue_view_ticket(views_conn, request, player_tag)
+    except RedisError as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "VIEWS_UNAVAILABLE",
+                "message": "View counting is unavailable",
+            },
+        ) from e
+    response.headers["Cache-Control"] = "no-store"
+    return {"ticket": ticket}
+
+
+# Always 204 for a tracked player, whether the view counted or not: a client
+# faking views cannot tell which attempts worked. Nothing here logs the
+# client address or visitor id with the tag (docs/profile-views.md).
+@router.post(
+    "/{player_tag}/view",
+    status_code=204,
+    dependencies=[Depends(RateLimiter(times=30, seconds=60))],
+    responses={
+        403: {"description": "Invalid or untracked player"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
+    },
+)
+async def record_view(
+    player_tag: str,
+    body: ProfileViewRequest,
+    request: Request,
+    views_conn: ViewsConn,
+    mongo_conn: DbConn,
+):
+    # Without the unique index, two first views of a day could create two
+    # buckets and the index could never be built (see
+    # ensure_player_views_indexes). Checked before Redis, so no visitor's
+    # allowance is spent.
+    if not getattr(request.app.state, "views_indexes_ready", False):
+        return Response(status_code=204)
+    try:
+        counted = await count_view(views_conn, request, player_tag, body.ticket)
+    except RedisError as e:
+        # A full views Redis (noeviction) only stops counting
+        print(f"[WARNING] Profile view not counted, views Redis failed: {e}")
+        return Response(status_code=204)
+    if counted is None:
+        return Response(status_code=204)
+    try:
+        await record_profile_view(
+            mongo_conn, player_tag, counted.day, counted.new_visitor
+        )
+    except Exception:
+        # Logged by the helper; a lost view is not worth an error page
+        pass
+    return Response(status_code=204)
 
 
 @router.get(

@@ -23,6 +23,12 @@ export type Player = {
     name: string;
   };
   badges?: Badge[];
+  // Only set for the most viewed players (top of the explore list). The
+  // count is rounded by the backend and covers the last 30 days.
+  popularity?: {
+    rank: number;
+    views30d: number;
+  } | null;
   // When the backend last refreshed the shown data (UTC, null until the
   // first sync). Not part of the Clash Royale profile itself.
   syncInfo?: {

@@ -166,6 +166,26 @@ export function StorageSettings({
           />
         </section>
 
+        {/* Not browser storage, so no entry in STORED_ITEMS and no switch: the
+        server counts views on legitimate interest, from the request's IP.
+        NOTE Matches the privacy notes in docs/profile-views.md and the
+        retention of the daily salt (VIEWS_DAY_TTL in the API settings). */}
+        <section className="storage-settings-category">
+          <header className="storage-settings-category-header">
+            <div>
+              <h3>Profile view counts</h3>
+              <p>Counted on our server, nothing is saved in your browser.</p>
+            </div>
+          </header>
+          <p className="storage-settings-summary">
+            When you open a player, your IP address is combined with a value
+            that changes every day and turned into a one-way hash, kept for
+            about a day (at most 25 hours) to count each visitor once. Only the
+            number of views per player and day is stored, which ranks the most
+            viewed players.
+          </p>
+        </section>
+
         <section className="storage-settings-delete-section">
           <div>
             <h3>Delete all data</h3>

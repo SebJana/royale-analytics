@@ -84,6 +84,13 @@ class CaptchaAnswerRequest(BaseModel):
     )
 
 
+class ProfileViewRequest(BaseModel):
+    # A view ticket is a short JWT, a few hundred characters
+    ticket: str = Field(
+        ..., max_length=1024, description="Ticket from the view-ticket route"
+    )
+
+
 class FruitBuzzStartRequest(BaseModel):
     # Ids are UUIDs (36 characters)
     calibration_id: str = Field(

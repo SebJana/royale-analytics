@@ -235,9 +235,9 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
         dict | None: {"syncVersion": int, "firstSyncPending": bool,
             "lastBattlesSyncAt": datetime | None, "insertedAt": str | None,
             "ownBattlesFrom": datetime | None | "unknown",
-            "playerName": str | None, "trackingGaps": list[dict]} if the
-            player is tracked, otherwise
-            None. firstSyncPending stays True until the data scraper finished
+            "playerName": str | None, "trackingGaps": list[dict],
+            "exploreRank": int | None, "views30d": int} if the player is
+            tracked, otherwise None. firstSyncPending stays True until the data scraper finished
             the player's first battle sync. trackingGaps holds the untracked
             periods as {"from", "to"} timestamp strings.
 
@@ -257,6 +257,8 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
                 "ownBattlesFrom": 1,
                 "playerName": 1,
                 "trackingGaps": 1,
+                "exploreRank": 1,
+                "views30d": 1,
             },
         )
 
@@ -271,6 +273,8 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
             "ownBattlesFrom": doc.get("ownBattlesFrom", "unknown"),
             "playerName": doc.get("playerName"),
             "trackingGaps": _tracking_gaps(doc),
+            "exploreRank": doc.get("exploreRank"),
+            "views30d": doc.get("views30d", 0),
         }
 
     except Exception as e:
@@ -362,4 +366,48 @@ async def get_tracked_players_sync_times(conn: MongoConn):
 
     except Exception as e:
         print(f"[DB] [ERROR] trying to fetch the tracked players sync times: {e}")
+        raise
+
+
+async def get_explore_page(conn: MongoConn, after_rank: int, limit: int) -> list[dict]:
+    """
+    Retrieves one page of the explore list, most viewed players first.
+
+    Pages follow exploreRank, which the ranking job writes, so the cursor is
+    a rank and no exact view count is needed to continue a page.
+
+    Args:
+        conn (MongoConn): Active connection to the mongo database
+        after_rank (int): Last rank of the previous page, 0 for the first
+        limit (int): Maximum number of players in the page
+
+    Returns:
+        list: {"playerTag", "playerName", "exploreRank", "views30d"} dicts
+
+    Raises:
+        Exception: If fetching the players fails
+    """
+
+    try:
+        await ensure_connected(conn)
+        cursor = (
+            conn.db.players.find(
+                # A player untracked since the last ranking keeps its rank
+                # until the next one, so active is checked here as well.
+                {"exploreRank": {"$gt": after_rank}, "active": True},
+                {
+                    "_id": 0,
+                    "playerTag": 1,
+                    "playerName": 1,
+                    "exploreRank": 1,
+                    "views30d": 1,
+                },
+            )
+            .sort("exploreRank", 1)
+            .limit(limit)
+        )
+        return [doc async for doc in cursor]
+
+    except Exception as e:
+        print(f"[DB] [ERROR] trying to fetch the explore page after {after_rank}: {e}")
         raise

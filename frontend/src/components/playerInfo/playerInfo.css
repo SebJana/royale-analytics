@@ -39,7 +39,47 @@
 }
 
 .player-info-component-clan,
-.player-info-component-arena,
+.player-info-component-arena {
+  font-size: var(--font-md);
+  margin: var(--spacing-xs) 0;
+  color: var(--text-secondary);
+}
+
+/* Only the most viewed players have it, so it stands out from the plain
+   stats below the name. */
+.player-info-component-popularity-badge {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 0 0 var(--spacing-sm) 0;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid rgba(255, 149, 0, 0.45);
+  border-radius: 999px;
+  background: rgba(255, 149, 0, 0.12);
+  font-size: var(--font-sm);
+  cursor: default;
+}
+
+.player-info-component-popularity-badge.is-top {
+  border-color: rgba(255, 196, 0, 0.8);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 149, 0, 0.28),
+    rgba(255, 196, 0, 0.16)
+  );
+  box-shadow: 0 0 12px rgba(255, 149, 0, 0.25);
+}
+
+.player-info-component-popularity-rank {
+  color: #ffb547;
+  font-weight: var(--font-weight-bold);
+}
+
+.player-info-component-popularity-views {
+  color: var(--text-secondary);
+}
+
 .player-info-component-trophies {
   font-size: var(--font-lg);
   margin: var(--spacing-xs) 0;

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ChevronUp, Info } from "lucide-react";
 import { AppTooltip } from "../tooltip/tooltip";
 import type { Player } from "../../types/player";
-import { formatNumber, round } from "../../utils/number";
+import { formatCompactNumber, formatNumber, round } from "../../utils/number";
 import { formatDateForInput, formatTimeAgo } from "../../utils/datetime";
 import { readPreference, writePreference } from "../../utils/storage";
 import { StatCard } from "../statCard/statCard";
@@ -166,6 +166,28 @@ export function PlayerInfo({
       <div className="player-info-component-header">
         <div className="player-info-component-basic-info">
           <h1 className="player-info-component-name">{player?.name}</h1>
+          {player?.popularity && (
+            // NOTE: "30 days" matches VIEWS_WINDOW_DAYS in the data
+            // scraper's settings. The count is rounded by the backend.
+            <AppTooltip
+              title="Rank among all tracked players by visitors in the last 30 days."
+              tapToShow
+            >
+              <span
+                className={`player-info-component-popularity-badge${
+                  player.popularity.rank <= 3 ? " is-top" : ""
+                }`}
+              >
+                <span className="player-info-component-popularity-rank">
+                  🔥 #{player.popularity.rank} most viewed
+                </span>
+                <span className="player-info-component-popularity-views">
+                  {formatCompactNumber(player.popularity.views30d)} views · 30
+                  days
+                </span>
+              </span>
+            </AppTooltip>
+          )}
           <p className="player-info-component-tag">{player?.tag}</p>
           <p className="player-info-component-clan">
             🛡️ {player?.clan?.name ?? "No Clan"}

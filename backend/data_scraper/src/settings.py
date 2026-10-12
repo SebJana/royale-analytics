@@ -154,6 +154,29 @@ class Settings:
     # refreshes. Bounds how long the API reads Mongo after an eviction.
     CARDS_CACHE_CHECK_INTERVAL: float = 10 * 60  # 10 minutes
 
+    # Explore ranking from the profile views (jobs/views.py)
+    # How often the windowed counts and the explore ranks are recomputed. A
+    # 30 day window barely moves within hours.
+    VIEWS_RANKING_INTERVAL: float = 6 * 60 * 60  # 6 hours
+    # Retry delay if a ranking failed
+    VIEWS_RANKING_RETRY_DELAY: float = 10 * 60  # 10 minutes
+    # Days of views the explore list and parking rank by, today included.
+    # NOTE The frontend labels the counts "30 days". Update both together.
+    VIEWS_WINDOW_DAYS: int = 30
+    # NOTE The daily buckets are kept for PLAYER_VIEWS_RETENTION_S in
+    # backend/mongo/player_views_write.py, which has to cover this window.
+    # Fewest views in the window to appear in the explore list, so a handful
+    # of views does not list a player.
+    EXPLORE_MIN_VIEWS: int = 5
+    # A player's views today count as a spike (logged only) past this factor
+    # times its daily average on the earlier days of the window, and only from
+    # this many views, so a player going from 1 to 6 views stays quiet.
+    VIEWS_SPIKE_FACTOR: float = 5
+    VIEWS_SPIKE_MIN: int = 20
+    # Earlier days with views a player needs before today is compared with
+    # them. A newly tracked or newly found player has no baseline yet.
+    VIEWS_SPIKE_MIN_DAYS: int = 3
+
     # Self-hosted card images (see card_images.py)
     # Shared volume the image sets are written to; nginx serves it read-only.
     CARD_IMAGES_DIR: str = os.getenv("CARD_IMAGES_DIR", "/data/card-images")

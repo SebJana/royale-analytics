@@ -15,6 +15,10 @@ class Settings:
     # Pre-rendered Fruit Buzz cards and CAPTCHAs. Only the media worker
     # renders and adds them; the API takes them and never renders an image.
     MEDIA_REDIS_HOST: str = "redis-media"
+    # Profile view counting (helpers/profile_views.py): the daily salt and the
+    # short-lived visit state. Not evicted, so an eviction never counts a visit
+    # twice (a restart still does, see helpers/profile_views.py).
+    VIEWS_REDIS_HOST: str = "redis-views"
     REDIS_PORT: int = 6379
 
     # The app's key pool starts at most one request per second on each key.
@@ -373,6 +377,44 @@ class Settings:
     # Retry delay while the first index build has not succeeded, also sent
     # as Retry-After with the 503 search responses in the meantime.
     SEARCH_BUILD_RETRY_S: int = 30  # seconds
+
+    # Profile views
+    # A view ticket is only good for views of the player it was issued for,
+    # within this time after it was fetched.
+    VIEW_TICKET_EXPIRES_IN: int = 10  # minutes
+    # A ticket only counts once it is this old, so a view needs a page that
+    # stayed open instead of two requests sent back to back.
+    # NOTE The frontend waits a little longer (VIEW_DWELL_MS in
+    # src/hooks/useProfileView.ts). Update both together, if needed.
+    VIEW_TICKET_MIN_AGE_S: int = 3  # seconds
+    # Views of the same player by the same visitor within this time are one
+    # visit.
+    # NOTE Has to stay above VIEW_TICKET_EXPIRES_IN: the open visit is what
+    # stops a ticket from counting twice (helpers/profile_views.py).
+    VIEW_VISIT_TTL: int = 30 * 60  # 30 minutes
+    # Counted visits of one visitor (IP prefix) to one player per UTC day. A
+    # tab coming back all day, or a script, adds at most this many.
+    VIEWS_MAX_PER_IP_PLAYER_DAY: int = 3
+    # New visitors to one player per network (IPv4 /24, IPv6 /48) per UTC
+    # day. The addresses of one rented range then count like a few visitors
+    # instead of 254. A campus behind one range is undercounted the same way,
+    # which is fine for an indication of popularity.
+    VIEWS_MAX_VISITORS_PER_NETWORK_PLAYER_DAY: int = 3
+    # Counted visits of one visitor across all players per UTC day. Far above
+    # what a person opens, while a script spreading views over many players
+    # stops here.
+    VIEWS_MAX_PER_IP_DAY: int = 60
+    # Lifetime of the daily salt and the daily caps. Past the day itself, so
+    # a ticket issued just before midnight UTC still finds its salt.
+    VIEWS_DAY_TTL: int = 25 * 60 * 60  # 25 hours
+    # Retry delay while the view count indexes cannot be created. Views are not
+    # counted until they exist (helpers/profile_views.py).
+    VIEWS_INDEX_RETRY_S: int = 5 * 60  # 5 minutes
+    # Players per page of the explore list by default, and at most
+    EXPLORE_PAGE_SIZE: int = 25
+    EXPLORE_PAGE_SIZE_MAX: int = 50
+    # Players up to this explore rank get the popular badge on their profile
+    POPULAR_TOP_X: int = 100
 
     # Get set both in current and ahead version of the cache, and therefore not invalidated with every cycle
     CACHE_TTL_CAPTCHA_CHALLENGE: int = (

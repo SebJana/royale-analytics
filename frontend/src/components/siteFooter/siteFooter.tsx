@@ -13,7 +13,8 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       {/* TODO Add links to a privacy policy (Datenschutzerklärung/Privacy Policy, covering
-      server logs and IP-based rate limits too + hosting on whatever
+      server logs, IP-based rate limits and the hashed IPs of the profile view
+      counts (docs/profile-views.md) too + hosting on whatever
       platform it is hosted + possible third party deps (fonts))
       and an Impressum/Contact (§ 5 DDG) before the site goes public. */}
       <button

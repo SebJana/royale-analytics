@@ -14,6 +14,7 @@ import {
   removeRecentPlayer,
 } from "../../hooks/useRecentPlayers";
 import { normalizePlayerTag } from "../../utils/playerTag";
+import { useProfileView } from "../../hooks/useProfileView";
 import { clearBattlesView } from "../../utils/battlesView";
 import Lottie from "lottie-react";
 import emptyBox from "../../assets/animations/emptyBox.json";
@@ -73,6 +74,8 @@ export default function PlayerLayout() {
   useEffect(() => {
     if (viewedTag) recordRecentPlayer({ tag: viewedTag, name: viewedName });
   }, [viewedTag, viewedName]);
+  // Once per player page, for the explore ranking and the popular badge
+  useProfileView(viewedTag);
 
   // The battles position only serves switching between this player's pages.
   // Leaving the player (home, another player) drops it.

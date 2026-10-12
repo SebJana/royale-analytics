@@ -57,6 +57,15 @@ def get_media_redis(request: Request) -> RedisConn:
     return r
 
 
+def get_views_redis(request: Request) -> RedisConn:
+    """Return the store for profile view counting (helpers/profile_views.py)."""
+
+    r = getattr(request.app.state, "views_redis", None)
+    if r is None:
+        raise HTTPException(status_code=500, detail="Views Redis not initialized")
+    return r
+
+
 # Dependency that returns the Cr API client
 def get_cr_api(request: Request) -> ClashRoyaleAPI:
     api = getattr(request.app.state, "cr_api", None)
@@ -102,6 +111,7 @@ DbConn = Annotated[MongoConn, Depends(get_mongo)]
 RedConn = Annotated[CacheRedisConn, Depends(get_redis)]
 AuthStateConn = Annotated[RedisConn, Depends(get_auth_state_redis)]
 MediaConn = Annotated[RedisConn, Depends(get_media_redis)]
+ViewsConn = Annotated[RedisConn, Depends(get_views_redis)]
 Schedules = Annotated[ScrapeSchedules, Depends(get_scrape_schedules)]
 PlayerSearch = Annotated[PlayerSearchService, Depends(get_player_search)]
 
@@ -123,6 +133,9 @@ class TrackedPlayer:
     tracking_gaps
     lists untracked periods long enough to have lost battles, as
     {"from", "to"} dates (YYYY-MM-DD) and their length in whole "hours".
+    explore_rank is the player's place in the explore list (1 is the most
+    viewed), None if unranked. views_30d are its counted views in the
+    ranking window, as of the last ranking.
     """
 
     tag: str
@@ -133,6 +146,8 @@ class TrackedPlayer:
     tracked_since: str | None
     passive_range: tuple | None
     tracking_gaps: list[dict]
+    explore_rank: int | None
+    views_30d: int
 
 
 # Dependency that ensures the given player tag is active in the players collection
@@ -191,6 +206,8 @@ async def require_tracked_player(
         tracked_since=str(state["insertedAt"])[:10] if state["insertedAt"] else None,
         passive_range=_passive_range(None, state["ownBattlesFrom"]),
         tracking_gaps=_relevant_tracking_gaps(state["trackingGaps"]),
+        explore_rank=state["exploreRank"],
+        views_30d=state["views30d"],
     )
 
 

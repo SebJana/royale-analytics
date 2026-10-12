@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 import uuid
 from enum import StrEnum
@@ -12,9 +12,14 @@ class AvailableTokenTypes(StrEnum):
     SECURITY = "security"
     WORD_GUESS = "word_guess"
     REMOVE_PLAYER_TOKEN = "remove_player_token"
+    # Proves a profile page fetched it a few seconds earlier
+    # (helpers/profile_views.py)
+    PROFILE_VIEW = "profile_view"
 
 
-def create_access_token(type: str, expires_minutes: int = 30):
+def create_access_token(
+    type: str, expires_minutes: int = 30, claims: dict | None = None
+):
     """
     Create a JWT token with admin scope and expiration time.
 
@@ -25,13 +30,17 @@ def create_access_token(type: str, expires_minutes: int = 30):
         type (str): The type/role the token should be and enable.
         expires_minutes (int, optional): Token expiration time in minutes.
             Defaults to 30 minutes; callers pass their type's lifetime.
+        claims (dict | None, optional): Further claims to sign along. They
+            cannot replace the standard ones (sub, type, jti, exp).
 
     Returns:
         str: Encoded JWT token string that can be used for admin authentication.
     """
-    expire = datetime.now() + timedelta(minutes=expires_minutes)
+    # Aware, so the expiry is right on hosts whose clock is not UTC too.
+    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
 
     payload = {
+        **(claims or {}),
         "sub": "admin",
         "type": type,
         "jti": str(uuid.uuid4()),

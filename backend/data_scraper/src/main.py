@@ -2,7 +2,7 @@
 
 Battle syncs and profile refreshes run continuously per player (see worker.py).
 The other loops run on their own timers: reconciliation with capacity planning,
-game mode flushes, card refreshes, and monitoring.
+game mode flushes, card refreshes, the explore ranking, and monitoring.
 """
 
 import asyncio
@@ -19,6 +19,7 @@ from clash_royale_api import ClashRoyaleAPI
 from game_modes import UniqueGameModes
 from intervals import battle_demand, min_profile_interval, profile_demand
 from jobs.cards import cards_loop
+from jobs.views import views_ranking_loop
 from log import setup_logging
 from metrics import (
     Metrics,
@@ -382,13 +383,15 @@ async def main():
         # ends on cancellation; Docker's restart policy covers anything else.
         # NOTE Claims let several scraper processes share the workers, but the
         # card and game mode loops are the only writers of their cache keys
-        # (and the card loop of the card image volume) and have no leader
-        # election. Run one scraper process, or move these
-        # loops behind a Redis lock before scaling out.
+        # (and the card loop of the card image volume), the views loop of the
+        # explore ranking, and none of them has leader election. Run one
+        # scraper process, or move these loops behind a Redis lock before
+        # scaling out.
         async with asyncio.TaskGroup() as tg:
             tg.create_task(reconcile_loop(battles, profiles, mongo_conn, pool, metrics))
             tg.create_task(game_modes_loop(mode_store, mongo_conn, redis_conn))
             tg.create_task(cards_loop(cr_api, mongo_conn, redis_conn))
+            tg.create_task(views_ranking_loop(mongo_conn))
             tg.create_task(
                 monitoring_loop(metrics, battles, profiles, pool, mongo_conn)
             )

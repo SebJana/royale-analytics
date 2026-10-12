@@ -21,6 +21,7 @@ from .players_read import (
     get_tracked_player_cache_state,
     get_player_sync_state,
     get_tracked_players_sync_times,
+    get_explore_page,
 )
 from .players_write import (
     insert_tracked_player,
@@ -29,7 +30,15 @@ from .players_write import (
     record_battle_sync_failure,
     bump_sync_versions,
     ensure_search_change_index,
+    write_view_ranking,
 )
+
+from .player_views_read import (
+    sum_player_views,
+    get_player_view_baselines,
+    get_player_views_on,
+)
+from .player_views_write import ensure_player_views_indexes, record_profile_view
 
 from .game_modes_write import insert_game_modes
 from .game_modes_read import get_game_modes
@@ -69,6 +78,7 @@ __all__ = [
     "get_tracked_player_cache_state",
     "get_player_sync_state",
     "get_tracked_players_sync_times",
+    "get_explore_page",
     ## write
     "insert_tracked_player",
     "deactivate_tracked_player",
@@ -76,6 +86,15 @@ __all__ = [
     "record_battle_sync_failure",
     "bump_sync_versions",
     "ensure_search_change_index",
+    "write_view_ranking",
+    # player_views
+    ## read
+    "sum_player_views",
+    "get_player_view_baselines",
+    "get_player_views_on",
+    ## write
+    "ensure_player_views_indexes",
+    "record_profile_view",
     # game_modes
     ## read
     "get_game_modes",

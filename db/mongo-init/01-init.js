@@ -48,3 +48,24 @@ db.battles.createIndex(
   { playerTags: 1, gameMode: 1, battleTime: -1 },
   { name: "playerTags_gameMode_time_index" },
 );
+
+// Profile views per player and UTC day, and the explore ranking built from
+// them. NOTE The data scraper also creates these at startup, for databases
+// that existed before them; keep names and the TTL in sync with
+// ensure_player_views_indexes and PLAYER_VIEWS_RETENTION_S (35 days).
+print(`[init] creating indexes for 'player_views' and the explore ranking`);
+db.player_views.createIndex(
+  { playerTag: 1, day: 1 },
+  { unique: true, name: "playerTag_day_unique" },
+);
+db.player_views.createIndex(
+  { day: 1 },
+  { expireAfterSeconds: 35 * 24 * 60 * 60, name: "day_ttl" },
+);
+db.players.createIndex(
+  { exploreRank: 1 },
+  {
+    name: "exploreRank_index",
+    partialFilterExpression: { exploreRank: { $exists: true } },
+  },
+);

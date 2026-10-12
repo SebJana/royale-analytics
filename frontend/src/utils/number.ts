@@ -48,3 +48,16 @@ const NUMBER_LOCALE = "en-US";
 export function formatNumber(num: number): string {
   return num.toLocaleString(NUMBER_LOCALE);
 }
+
+/**
+ * Formats a count compactly, e.g. 950 as "950", 1200 as "1.2k", 3400000 as
+ * "3.4M".
+ *
+ * @param num - The count to format
+ * @returns The formatted count
+ */
+export function formatCompactNumber(num: number): string {
+  if (num >= 1_000_000) return `${round(num / 1_000_000, 1)}M`;
+  if (num >= 1_000) return `${round(num / 1_000, 1)}k`;
+  return String(num);
+}

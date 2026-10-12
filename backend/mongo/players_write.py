@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from pymongo import ReturnDocument
+from pymongo import ReturnDocument, UpdateMany, UpdateOne
 from .connection import MongoConn
 from .validation_utils import ensure_connected
 
@@ -443,3 +443,100 @@ async def record_battle_sync_failure(
     except Exception as e:
         print(f"[DB] [ERROR] recording the failed sync of {player_tag}", e)
         raise
+
+
+# Writes per bulk_write call of the ranking, so one call stays well below
+# Mongo's message size limit.
+RANKING_BATCH_SIZE = 1000
+
+
+async def write_view_ranking(
+    conn: MongoConn, views: dict[str, int], min_views: int
+) -> int:
+    """
+    Stores the windowed view counts and the explore ranking on the players.
+
+    Every viewed player gets views30d. A player without views in the window
+    goes back to 0. exploreRank then numbers the active players with at least
+    min_views by views, most first, tag as the tiebreaker, leaving out
+    players with exploreHidden. Everyone else loses the field. The ranking
+    job is the only writer of both fields.
+
+    Args:
+        conn (MongoConn): Active MongoDB connection instance.
+        views (dict[str, int]): Player tag mapped to its daily visitors summed
+            over the window.
+        min_views (int): Fewest of those to be ranked.
+
+    Returns:
+        int: Number of ranked players.
+
+    Raises:
+        Exception: Any exception that occurs during the database operations.
+    """
+
+    try:
+        await ensure_connected(conn)
+        players = conn.db.players
+
+        previous = [
+            doc["playerTag"]
+            async for doc in players.find(
+                {"views30d": {"$gt": 0}}, {"_id": 0, "playerTag": 1}
+            )
+        ]
+        ops = [
+            UpdateOne({"playerTag": tag}, {"$set": {"views30d": count}})
+            for tag, count in views.items()
+        ]
+        dropped = [tag for tag in previous if tag not in views]
+        if dropped:
+            ops.append(
+                UpdateMany({"playerTag": {"$in": dropped}}, {"$set": {"views30d": 0}})
+            )
+        await _bulk_write_batches(players, ops)
+
+        ranked = [
+            doc["playerTag"]
+            async for doc in players.find(
+                {
+                    "active": True,
+                    "views30d": {"$gte": min_views},
+                    "exploreHidden": {"$ne": True},
+                },
+                {"_id": 0, "playerTag": 1},
+            ).sort([("views30d", -1), ("playerTag", 1)])
+        ]
+        ranked_tags = set(ranked)
+        unranked = [
+            doc["playerTag"]
+            async for doc in players.find(
+                {"exploreRank": {"$exists": True}}, {"_id": 0, "playerTag": 1}
+            )
+            if doc["playerTag"] not in ranked_tags
+        ]
+        ops = [
+            UpdateOne({"playerTag": tag}, {"$set": {"exploreRank": rank}})
+            for rank, tag in enumerate(ranked, start=1)
+        ]
+        if unranked:
+            ops.append(
+                UpdateMany(
+                    {"playerTag": {"$in": unranked}}, {"$unset": {"exploreRank": ""}}
+                )
+            )
+        await _bulk_write_batches(players, ops)
+        return len(ranked)
+
+    except Exception as e:
+        print(f"[DB] [ERROR] writing the view ranking: {e}")
+        raise
+
+
+async def _bulk_write_batches(collection, ops: list) -> None:
+    """Run unordered bulk writes in batches of RANKING_BATCH_SIZE."""
+
+    for start in range(0, len(ops), RANKING_BATCH_SIZE):
+        await collection.bulk_write(
+            ops[start : start + RANKING_BATCH_SIZE], ordered=False
+        )

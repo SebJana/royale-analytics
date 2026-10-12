@@ -129,6 +129,27 @@ services:
     networks:
       - cr-analytics
 
+  # Profile view counting: the daily salt, view tickets, open visits and the
+  # per-IP caps (backend/app/src/helpers/profile_views.py). noeviction: an
+  # evicted visit or cap would count the same visitor again. Not persisted,
+  # so a restart drops the salt and every visitor hash with it. Full means
+  # views are not counted until keys expire; nothing else depends on it.
+  redis-views:
+    image: redis:8.0-alpine
+    container_name: redis-views
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      --appendonly no
+      --save ""
+      --maxmemory 64mb
+      --maxmemory-policy noeviction
+    tmpfs:
+      - /data
+    restart: unless-stopped
+    networks:
+      - cr-analytics
+
   # Pre-rendered Fruit Buzz cards and CAPTCHAs, written only by media-worker.
   # Reconstructible, so nothing is persisted. noeviction: an evicted card
   # could break a running game; the pool sizes and render caps bound memory
@@ -181,6 +202,7 @@ services:
       - redis-key-store
       - redis-rate-limit
       - redis-media
+      - redis-views
     env_file:
       - .env
     environment:

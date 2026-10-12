@@ -44,6 +44,7 @@ from core.route_timing import (
 from mongo import MongoConn
 from player_search import PlayerSearchService
 from helpers.ip_utils import rate_limit_key_func
+from helpers.profile_views import create_views_indexes, retry_views_indexes
 
 # NOTE time response from Clash Royale/MongoDB is in UTC so frontend needs conversion logic
 # both for the query parameter time but also the times the user gets back, which needs to be displayed in their local time
@@ -167,6 +168,21 @@ async def lifespan(app: FastAPI):
     await retry_async(auth_state_redis.connect, name="auth state Redis")
     app.state.auth_state_redis = auth_state_redis
 
+    # Profile view counting keeps its salt and visit state apart from the
+    # evicting caches, so an eviction never counts a visitor twice. Optional:
+    # without it the API still starts and only counts no views (the view
+    # routes catch RedisError); the client reconnects on its next command.
+    views_redis = RedisConn(
+        host=settings.VIEWS_REDIS_HOST,
+        port=settings.REDIS_PORT,
+        password=settings.REDIS_PASSWORD,
+    )
+    try:
+        await views_redis.connect()
+    except Exception as e:
+        print(f"[WARNING] Views Redis unreachable, views are not counted: {e}")
+    app.state.views_redis = views_redis
+
     # Retry MongoDB
     mongo_conn = MongoConn(
         app_name=settings.MONGO_CLIENT_NAME,
@@ -174,6 +190,16 @@ async def lifespan(app: FastAPI):
     )
     await retry_async(mongo_conn.connect, name="MongoDB")
     app.state.mongo = mongo_conn
+
+    # Views are only counted once the unique index exists, see
+    # ensure_player_views_indexes. A failure leaves the API serving with
+    # counting off, and a background task keeps trying.
+    app.state.views_indexes_ready = await create_views_indexes(mongo_conn)
+    views_indexes_task = None
+    if not app.state.views_indexes_ready:
+        views_indexes_task = asyncio.create_task(
+            retry_views_indexes(app.state, mongo_conn)
+        )
 
     # Loaded or built before serving, so the first visitors can already
     # search. A failed build does not stop startup; search answers 503 until
@@ -220,6 +246,10 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     # Before the key store closes: cancelling writes the last partial minute.
+    if views_indexes_task is not None:
+        views_indexes_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await views_indexes_task
     route_timing_task.cancel()
     with suppress(asyncio.CancelledError):
         await route_timing_task
@@ -230,6 +260,7 @@ async def lifespan(app: FastAPI):
     await redis_conn.close()
     await media_redis.close()
     await auth_state_redis.close()
+    await views_redis.close()
     await rate_limit_redis.aclose()
 
 
