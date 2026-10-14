@@ -14,7 +14,11 @@ import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
 import type { DateLevel } from "../../types/chart";
 import { LineChart } from "../../components/lineChart/lineChart";
 import { PlayerError } from "../../components/playerError/playerError";
-import { buildPlotConfig, PLOT_DEFINITIONS } from "../../utils/plotConfig";
+import {
+  buildPlotConfig,
+  PLOT_DEFINITIONS,
+  summarizePlot,
+} from "../../utils/plotConfig";
 import type { PlotDefinition } from "../../utils/plotConfig";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { FilterContainer } from "../../components/filterContainer/filterContainer";
@@ -41,8 +45,10 @@ function PlotPanel({
   const [dateSpacing, setDateSpacing] = useState<DateSpacing>("recorded");
   const levelIndex = DATE_LEVELS.indexOf(dateLevel);
   const config = buildPlotConfig(definition, stats, dateLevel);
+  const summary = summarizePlot(definition, stats);
   const previousLevel = DATE_LEVELS[levelIndex - 1];
   const nextLevel = DATE_LEVELS[levelIndex + 1];
+  const Icon = definition.icon;
 
   return (
     <section
@@ -104,9 +110,28 @@ function PlotPanel({
           }
         />
       </div>
-      <h2 className="plot-title" id={`plot-${definition.id}-title`}>
-        {config.title}
-      </h2>
+      <div className="plot-heading">
+        {/* Solid tile with a hard shadow, the stickers' look without their
+            loudness */}
+        <span
+          className="plot-title-icon"
+          style={{ backgroundColor: definition.series[0].color }}
+          aria-hidden="true"
+        >
+          <Icon size={18} strokeWidth={2.5} />
+        </span>
+        <h2 className="plot-title" id={`plot-${definition.id}-title`}>
+          {config.title}
+        </h2>
+        <span className="plot-title-summary">
+          {summary.map((s, i) => (
+            <span key={s.label}>
+              {i > 0 && <span className="plot-title-summary-vs"> vs </span>}
+              <span style={{ color: s.color }}>{s.value}</span>
+            </span>
+          ))}
+        </span>
+      </div>
       <LineChart
         className="plot-canvas"
         config={config}

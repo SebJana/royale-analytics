@@ -1,5 +1,8 @@
+import { Crown, Droplet, Swords, Trophy } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { ChartConfig, DateLevel } from "../types/chart";
 import type { DailyStats, Days } from "../types/dailyStats";
+import { formatNumber, round } from "./number";
 
 type NumericDayField = Exclude<keyof Days, "date">;
 
@@ -25,6 +28,9 @@ export type PlotSeries = {
 export type PlotDefinition = {
   id: string;
   title: string;
+  icon: LucideIcon;
+  // Formats a series' value over the whole period for the title
+  format: (value: number) => string;
   yAxisTitle: string;
   series: PlotSeries[];
   showLegend?: boolean;
@@ -34,7 +40,9 @@ export type PlotDefinition = {
 export const PLOT_DEFINITIONS: PlotDefinition[] = [
   {
     id: "winRate",
-    title: "🏆 Win Rate Performance",
+    title: "Win Rate Performance",
+    icon: Trophy,
+    format: (value) => `${round(value, 1)}%`,
     yAxisTitle: "Win Rate (%)",
     series: [
       {
@@ -52,7 +60,9 @@ export const PLOT_DEFINITIONS: PlotDefinition[] = [
   },
   {
     id: "battles",
-    title: "⚔️ Battle Activity",
+    title: "Battle Activity",
+    icon: Swords,
+    format: (value) => formatNumber(value),
     yAxisTitle: "Number of Battles",
     series: [
       {
@@ -64,7 +74,9 @@ export const PLOT_DEFINITIONS: PlotDefinition[] = [
   },
   {
     id: "crowns",
-    title: "👑 Crowns For vs. Crowns Against",
+    title: "Crowns For vs. Crowns Against",
+    icon: Crown,
+    format: (value) => formatNumber(value),
     yAxisTitle: "Crowns",
     showLegend: true,
     series: [
@@ -82,7 +94,9 @@ export const PLOT_DEFINITIONS: PlotDefinition[] = [
   },
   {
     id: "leakedElixir",
-    title: "🩸 Average Leaked Elixir per Battle",
+    title: "Average Leaked Elixir per Battle",
+    icon: Droplet,
+    format: (value) => `${round(value, 2)} per battle`,
     yAxisTitle: "Leaked Elixir",
     series: [
       {
@@ -142,6 +156,27 @@ function metricValue(
     return metric.zeroDenominator === "numerator" ? numerator : 0;
   }
   return (numerator / denominator) * (metric.multiplier ?? 1);
+}
+
+/**
+ * Each series' value over the whole period, e.g. the win rate of all shown
+ * battles, for the plot's title.
+ *
+ * @param definition - The plot
+ * @param stats - The daily statistics of the period
+ * @returns The formatted value and color of each series
+ */
+export function summarizePlot(
+  definition: PlotDefinition,
+  stats: DailyStats,
+): { label: string; color: string; value: string }[] {
+  const rows = stats.daily_statistics.daily;
+  return definition.series.map((series) => ({
+    label: series.label,
+    color: series.color,
+    // Any level but "day" divides summed totals, which a period needs
+    value: definition.format(metricValue(rows, series.metric, "year")),
+  }));
 }
 
 export function buildPlotConfig(

@@ -90,15 +90,49 @@
   height: 380px;
 }
 
+/* Icon tile, title and the period's figure on one centered line; the
+   figure wraps below on narrow screens. */
+.plot-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs) var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
 .plot-title {
   margin: 0;
-  padding: var(--spacing-sm) var(--spacing-md);
   color: #e0e0e0;
   font-size: 18px;
   font-weight: var(--font-weight-bold);
   line-height: 1.3;
   text-align: center;
   overflow-wrap: anywhere;
+}
+
+.plot-title-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+  color: #16181d;
+}
+
+.plot-title-summary {
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.plot-title-summary-vs {
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-normal);
 }
 
 .stat-chart:hover {
