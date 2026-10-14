@@ -27,6 +27,10 @@ export type LastBattles = {
     latestBattleTime: string;
     earliestBattleTime: string;
   };
-  // Set while a just-tracked player's first battle sync has not finished
+  // Set while a just-tracked player's first battle sync has not finished,
+  // also when battles stored by other players' syncs are already shown
   first_sync_pending?: boolean;
+  // Whether the page starts with the player's newest stored battle, so a
+  // streak running into it is still going (as of the last sync).
+  includes_newest_battle?: boolean;
 };

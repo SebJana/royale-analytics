@@ -46,6 +46,8 @@ export const BattleComponent = memo(function BattleComponent({
   playerTag,
   onOwnDeckOpen,
   kingLevel,
+  id,
+  highlighted = false,
 }: Readonly<{
   battle: Battle;
   cards: CardMeta[];
@@ -57,6 +59,10 @@ export const BattleComponent = memo(function BattleComponent({
   kingLevel?: number;
   // Runs before the decks page opens, e.g. to store the deck's filters
   onOwnDeckOpen?: (battle: Battle, player: Player) => void;
+  // Anchor for jumping to this battle, e.g. from the form strip
+  id?: string;
+  // Flashes the card once, to show where a jump landed
+  highlighted?: boolean;
 }>) {
   const ownTag = playerTag ? normalizePlayerTag(playerTag) : null;
   const isOwnPlayer = (player: Player) =>
@@ -121,7 +127,10 @@ export const BattleComponent = memo(function BattleComponent({
   ].filter(Boolean);
 
   return (
-    <div className="battle-component-container">
+    <div
+      id={id}
+      className={`battle-component-container${highlighted ? " is-jump-target" : ""}`}
+    >
       <div className="battle-component-header">
         <div className="battle-component-header-left">
           <div

@@ -13,6 +13,7 @@ import { usePlayerBattlesInfinite } from "../../hooks/useLastBattles";
 import { usePageLoadingState } from "../../hooks/usePageLoadingState";
 import { BattleComponent } from "../../components/battle/battle";
 import { PlayerError } from "../../components/playerError/playerError";
+import { RecentForm } from "../../components/recentForm/recentForm";
 import { kingLevelTimeline } from "../../utils/towers";
 import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
 import {
@@ -25,6 +26,10 @@ import { readBattlesView, writeBattlesView } from "../../utils/battlesView";
 import type { Battle, Player } from "../../types/lastBattles";
 import CircularProgress from "@mui/material/CircularProgress";
 import "./battles.css";
+
+// Element id of the battle at an index of the list, the target of the form
+// strip's jumps
+const battleAnchorId = (index: number) => `battle-${index}`;
 
 /**
  * PlayerBattles Component
@@ -226,6 +231,58 @@ export default function PlayerBattles() {
     isInitialLoad,
   ]);
 
+  // The battle a bar of the form strip jumped to, flashed once on arrival
+  const [jumpTarget, setJumpTarget] = useState<number | null>(null);
+  useEffect(() => {
+    if (jumpTarget === null) return;
+    const timer = window.setTimeout(() => setJumpTarget(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [jumpTarget]);
+
+  /**
+   * Scrolls to a battle of the list, clear of the sticky player navigation.
+   * @param index - The battle's index in battlesList
+   */
+  const scrollToBattle = useCallback((index: number) => {
+    const card = document.getElementById(battleAnchorId(index));
+    if (!card) return;
+    // Measured, since its height changes with the screen width (layout.css).
+    // The pinned form strip shows there too once the jump has scrolled.
+    const nav = document.querySelector(".player-nav-container");
+    const pinnedStrip = document.querySelector(".recent-form-pinned");
+    const offset =
+      (nav?.getBoundingClientRect().height ?? 0) +
+      (pinnedStrip?.getBoundingClientRect().height ?? 0) +
+      16;
+    const top = card.getBoundingClientRect().top + window.scrollY - offset;
+    window.scrollTo({
+      top,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+    // Flashes on arrival, a long smooth scroll would otherwise use up most of
+    // it. The timer covers browsers without scrollend. Cleared first, so a
+    // repeated jump flashes again.
+    setJumpTarget(null);
+    let flashed = false;
+    const flash = () => {
+      if (flashed) return;
+      flashed = true;
+      window.removeEventListener("scrollend", flash);
+      window.clearTimeout(fallback);
+      setJumpTarget(index);
+    };
+    window.addEventListener("scrollend", flash, { once: true });
+    const fallback = window.setTimeout(flash, 1500);
+    // Already there (or clamped at the page end): no scroll, no scrollend
+    const maxScroll =
+      document.documentElement.scrollHeight - window.innerHeight;
+    if (Math.abs(Math.min(Math.max(top, 0), maxScroll) - window.scrollY) < 1) {
+      requestAnimationFrame(flash);
+    }
+  }, []);
+
   /**
    * Validates if a date string represents a valid date
    * @param dateString - The date string to validate
@@ -321,6 +378,20 @@ export default function PlayerBattles() {
     setBeforeDate(getTodayDateTime());
   };
 
+  const firstPage = battles?.pages[0]?.last_battles.battles ?? [];
+  const renderBattle = (b: Battle, i: number) => (
+    <BattleComponent
+      key={`${b.battleTime}-${playerTag}-${i}`} // More stable unique ID
+      battle={b}
+      cards={cards ?? []} // fall back to empty list, if cards don't exist
+      playerTag={playerTag}
+      onOwnDeckOpen={handleOwnDeckOpen}
+      kingLevel={kingLevels[i]}
+      id={battleAnchorId(i)}
+      highlighted={i === jumpTarget}
+    />
+  );
+
   if (isCardsError || isBattlesError) {
     return (
       <PlayerError
@@ -381,16 +452,24 @@ export default function PlayerBattles() {
             {/* Show battles if there is any data to display */}
             {battlesList.length > 0 && (
               <>
-                {battlesList.map((b, i) => (
-                  <BattleComponent
-                    key={`${b.battleTime}-${playerTag}-${i}`} // More stable unique ID
-                    battle={b}
-                    cards={cards ?? []} // fall back to empty list, if cards don't exist
-                    playerTag={playerTag}
-                    onOwnDeckOpen={handleOwnDeckOpen}
-                    kingLevel={kingLevels[i]}
+                {/* The form's pinned strip is sticky within this wrapper,
+                    so it stays only while the battles it shows do */}
+                <div>
+                  {/* Only the first page, so the record does not shift while
+                      scrolling loads more. Being the first page, its indices
+                      are battlesList's too. */}
+                  <RecentForm
+                    battles={firstPage}
+                    beforeDate={appliedBeforeDate}
+                    onSelect={scrollToBattle}
+                    battleElementId={battleAnchorId}
+                    ongoing={battles?.pages[0]?.includes_newest_battle === true}
                   />
-                ))}
+                  {battlesList.slice(0, firstPage.length).map(renderBattle)}
+                </div>
+                {battlesList
+                  .slice(firstPage.length)
+                  .map((b, i) => renderBattle(b, firstPage.length + i))}
 
                 {/* Infinite Scroll Trigger - Hidden element that triggers loading when visible.
                     Gone at the loading cap too: nothing loads there anymore, and the

@@ -1,0 +1,340 @@
+/* On the battle card surface, so it reads as part of the list */
+.recent-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md) var(--spacing-2xl);
+  margin-bottom: var(--spacing-xl);
+  padding: var(--spacing-md) var(--spacing-xl);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-dark);
+  font-variant-numeric: tabular-nums;
+  /* The battles page centers its text on narrow screens */
+  text-align: left;
+}
+
+.recent-form-summary {
+  display: grid;
+  grid-template-areas:
+    "title title"
+    "figures streak";
+  align-items: center;
+  column-gap: var(--spacing-xl);
+  row-gap: 2px;
+}
+
+.recent-form-title {
+  grid-area: title;
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+}
+
+/* One grid for both figures: the values share a row and a baseline despite
+   their different sizes, and the labels share the row below. */
+.recent-form-figures {
+  grid-area: figures;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: auto auto;
+  align-items: baseline;
+  /* Each label sits centered under its figure */
+  justify-items: center;
+  justify-content: start;
+  column-gap: var(--spacing-xl);
+}
+
+.recent-form-figure {
+  display: contents;
+}
+
+.recent-form-label {
+  color: var(--text-secondary);
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Same size for both figures, so they read as one line. The colors set
+   the record apart. */
+.recent-form-record {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: var(--font-3xl);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.1;
+}
+
+.recent-form-rate {
+  color: var(--text-primary);
+  font-size: var(--font-3xl);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.1;
+}
+
+.recent-form-separator {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-normal);
+}
+
+/* Only the placement, the look comes from the shared Sticker */
+.recent-form-streak {
+  grid-area: streak;
+  justify-self: start;
+}
+
+/* NOTE Result colors match the badges in battle.css. */
+.recent-form-win {
+  color: var(--color-info);
+}
+
+.recent-form-loss {
+  color: var(--color-error);
+}
+
+.recent-form-draw {
+  color: var(--color-neutral);
+}
+
+/* Grows with the row up to a cap, so wide screens do not stretch the bars
+   flat. Gets a row of its own on narrow screens. */
+.recent-form-strip-slot {
+  flex: 1 1 280px;
+  max-width: 600px;
+  min-width: 0;
+}
+
+/* Each bar's button spans its whole column, gap included, so a tap anywhere
+   in the column counts, not only on the colored half. The strip reaches half
+   a gap past its slot on both sides, which keeps the outer bars flush with
+   it. */
+.recent-form-strip {
+  --strip-gap: 5px;
+  position: relative;
+  display: flex;
+  height: 64px;
+  margin: 0 calc(var(--strip-gap) / -2);
+  padding: 0;
+  list-style: none;
+}
+
+/* The line wins rise above and losses drop below */
+.recent-form-strip::before {
+  content: "";
+  position: absolute;
+  inset: 50% calc(var(--strip-gap) / 2) auto;
+  height: 1px;
+  background: var(--border-medium);
+}
+
+/* The bars are buttons for the keyboard; their list items step aside so the
+   bars stay the strip's flex items */
+.recent-form-strip > li {
+  display: contents;
+}
+
+.recent-form-tick,
+.recent-form-tick:hover {
+  position: relative;
+  flex: 1 1 0;
+  min-width: calc(4px + var(--strip-gap));
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  cursor: default;
+  /* Instead of the global button "all": a transitioned visibility kept the
+     card's hidden strip on screen, and size changes would trail the morph */
+  transition: opacity var(--transition-fast);
+}
+
+/* The bar itself */
+.recent-form-tick::after {
+  content: "";
+  position: absolute;
+  inset-inline: calc(var(--strip-gap) / 2);
+  height: calc(50% - 3px);
+  border-radius: var(--tick-radius, 4px);
+  background-color: var(--tick-color);
+  transition: filter var(--transition-fast);
+}
+
+.recent-form-strip.is-selectable .recent-form-tick {
+  cursor: pointer;
+}
+
+.recent-form-tick:focus {
+  outline: none;
+}
+
+/* On the bar, the column around it is invisible */
+.recent-form-tick:focus-visible::after {
+  outline: 2px solid var(--border-active);
+  outline-offset: 2px;
+}
+
+.recent-form-tick.is-victory {
+  --tick-color: var(--color-info);
+}
+
+.recent-form-tick.is-victory::after {
+  top: 0;
+}
+
+.recent-form-tick.is-defeat {
+  --tick-color: var(--color-error);
+}
+
+.recent-form-tick.is-defeat::after {
+  bottom: 0;
+}
+
+.recent-form-tick.is-draw {
+  --tick-color: var(--color-neutral);
+}
+
+.recent-form-tick.is-draw::after {
+  top: 50%;
+  height: var(--tick-draw, 8px);
+  transform: translateY(-50%);
+}
+
+/* Only the bar lights up. The browser's tap highlight would cover the
+   whole column, which is invisible otherwise. */
+.recent-form-tick {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.recent-form-tick:hover::after,
+.recent-form-tick:active::after {
+  filter: brightness(1.25);
+}
+
+/* On phones the card stacks: title and streak share the top row, then the
+   figures, then the strip at full width. */
+@media (max-width: 480px) {
+  .recent-form {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "title streak"
+      "figures figures"
+      "strip strip";
+    row-gap: var(--spacing-sm);
+  }
+
+  .recent-form-summary {
+    display: contents;
+  }
+
+  .recent-form-streak {
+    justify-self: end;
+  }
+
+  .recent-form-strip-slot {
+    grid-area: strip;
+    max-width: none;
+  }
+
+  /* Wider bars for a thumb. Set for both strips, so the pinned copy's bars
+     stay in line with the card's through the morph. */
+  .recent-form-strip {
+    --strip-gap: 3px;
+  }
+}
+
+/* The copy below the player navigation. The negative margin cancels its
+   height, so the list does not move for it. Sticky within the wrapper of the
+   strip's battles (battles.tsx), it scrolls away after the last of them.
+
+   NOTE recentForm.tsx writes the --morph-* variables on every scroll frame,
+   from the card's strip (--morph 0) to the compact strip (--morph 1), and
+   keeps PINNED_PADDING and COMPACT_STRIP in line with the values here. The
+   box keeps its compact height throughout: the strip overflows it while
+   still card sized, which keeps the jump offset in battles.tsx stable. */
+.recent-form-pinned {
+  --pinned-strip-height: 24px;
+  --pinned-padding: var(--spacing-xs);
+  position: sticky;
+  /* Below the navigation, whose menu opens over it */
+  z-index: calc(var(--z-sticky) - 1);
+  /* The height includes padding and border, which the margin cancels */
+  box-sizing: border-box;
+  height: calc(var(--pinned-strip-height) + 2 * var(--pinned-padding) + 1px);
+  margin-bottom: calc(
+    -1 * (var(--pinned-strip-height) + 2 * var(--pinned-padding) + 1px)
+  );
+  padding: var(--pinned-padding) 0;
+  /* Clear at the start, so the card shows through around its strip */
+  border-bottom: 1px solid
+    color-mix(
+      in srgb,
+      var(--border-light) calc(var(--morph, 1) * 100%),
+      transparent
+    );
+  background-color: color-mix(
+    in srgb,
+    var(--bg-primary) calc(var(--morph, 1) * 100%),
+    transparent
+  );
+  /* No transition: the copy has to replace the card's strip in the same
+     frame, or both would show or neither */
+  visibility: hidden;
+}
+
+.recent-form-pinned.is-pinned {
+  visibility: visible;
+}
+
+.recent-form.is-strip-pinned .recent-form-strip-slot {
+  visibility: hidden;
+}
+
+.recent-form-pinned .recent-form-strip {
+  /* Half a gap past the card's strip on both sides, like the card's */
+  width: calc(var(--morph-width, 100%) + var(--strip-gap));
+  height: var(--morph-height, var(--pinned-strip-height));
+  margin-left: calc(var(--morph-left, 0px) - var(--strip-gap) / 2);
+}
+
+/* A horizontal drag scrubs through the battles (FormStrip), a vertical one
+   still scrolls the page. A long press would select or open the callout. */
+.recent-form-pinned .recent-form-strip {
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Has to stay one line to fit above the pinned strip (BattleTooltipText) */
+.recent-form-tooltip-text {
+  white-space: nowrap;
+}
+
+/* Only for the scrub tooltip, which its bar places */
+.recent-form-scrub-anchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.recent-form-pinned .recent-form-tick {
+  --tick-radius: var(--morph-radius, 2px);
+  --tick-draw: var(--morph-draw, 4px);
+}
+
+/* The battle being read stays at full strength, the rest steps back. Eased
+   in with the morph, so the card's strip does not fade while it changes. */
+.recent-form-strip.has-current .recent-form-tick:not(.is-current) {
+  opacity: calc(1 - 0.65 * var(--morph, 1));
+}
+
+/* After the base rule above, which it overrides */
+@media (max-width: 480px) {
+  /* The compact strip is otherwise too short to tap */
+  .recent-form-pinned {
+    --pinned-strip-height: 32px;
+  }
+}

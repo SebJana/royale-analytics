@@ -4,6 +4,28 @@
   margin-bottom: var(--spacing-xl);
 }
 
+/* Reached from a bar of the form strip: shows which card the jump landed on */
+.battle-component-container.is-jump-target {
+  animation: battle-jump-target-glow 1600ms ease-out;
+}
+
+@keyframes battle-jump-target-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  40% {
+    box-shadow: 0 0 0 3px var(--border-active);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battle-component-container.is-jump-target {
+    animation: none;
+    outline: 2px solid var(--border-active);
+  }
+}
+
 .battle-component-header {
   display: flex;
   align-items: center;
