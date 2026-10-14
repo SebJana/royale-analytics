@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query, Request, Response
 from fastapi_limiter.depends import RateLimiter
 from typing import Literal, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from redis.exceptions import RedisError
 
 from core.deps import (
@@ -229,7 +229,9 @@ async def last_battles(
         # Either use:
         # 1) the specified before datetime
         # 2) the current datetime, which equals the last req.limit battles, the last N battles
-        cutoff = req.before or datetime.now()
+        # Naive UTC like the stored battleTime; datetime.now() would be the
+        # host's local time, hours off outside a UTC container.
+        cutoff = req.before or datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Without an explicit cutoff the result is "the latest N battles". It
         # only changes with a new sync version, so the key must not contain
