@@ -9,6 +9,9 @@ const min = 60_000;
 // Poll interval while a player has no profile snapshot yet. Only players
 // inserted without the API (e.g. in bulk), until the scraper's first refresh.
 const notSyncedPollInterval = 30_000;
+// Poll interval of a synced profile on an open page, the same as the sync
+// version poll (useSyncVersionRefresh.ts). The route only reads the database.
+const profileRefreshInterval = 2 * min;
 
 /**
  * Read the backend error code of a failed profile request, if any.
@@ -49,6 +52,10 @@ export function usePlayerProfile(playerTag: string) {
         return firstSyncPollInterval(query.state.dataUpdateCount);
       if (getProfileErrorCode(query.state.error) === "PROFILE_NOT_SYNCED")
         return notSyncedPollInterval;
+      // Profile snapshots and battle checks without new battles leave the
+      // syncVersion as it is, so an open page refreshes the name, clan and
+      // "Battles updated" hint on its own
+      if (query.state.data) return profileRefreshInterval;
       return false;
     },
     retry: (failureCount, error) =>

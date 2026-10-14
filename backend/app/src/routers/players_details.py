@@ -120,6 +120,10 @@ async def get_player_profile(
         "popularity": popularity,
         "syncInfo": {
             "battlesSyncedAt": player.last_battles_sync_at,
+            # Rises with every sync that stores battles of the player. The
+            # frontend refetches its cached battles and statistics computed
+            # at an older version (their syncVersion field).
+            "syncVersion": player.sync_version,
             "profileSyncedAt": stored.get("syncedAt"),
             "trackedSince": player.tracked_since,
             # Noted by the frontend under "Tracked since"
@@ -133,6 +137,22 @@ async def get_player_profile(
             ],
         },
     }
+
+
+# Polled by an open player page to notice new battles (useSyncVersionRefresh
+# in the frontend). The router's tracked check already read the version, so
+# this costs one lookup and no query of its own, where the profile would also
+# count battles.
+@router.get(
+    "/{player_tag}/sync-version",
+    dependencies=[Depends(RateLimiter(times=30, seconds=60))],
+    responses={
+        403: {"description": "Invalid or untracked player"},
+        429: {"description": "Rate limit exceeded, see Retry-After"},
+    },
+)
+async def get_sync_version(player: TrackedPlayerDep):
+    return json_response({"syncVersion": player.sync_version})
 
 
 # One ticket per page load (useProfileView in the frontend). Not part of the
@@ -270,6 +290,7 @@ async def last_battles(
                     "last_battles": battles,
                     "first_sync_pending": True,
                     "includes_newest_battle": False,
+                    "syncVersion": player.sync_version,
                 }
             )
 
@@ -296,6 +317,9 @@ async def last_battles(
                 "player_tag": player_tag,
                 "last_battles": battles,
                 "includes_newest_battle": includes_newest,
+                # The version the cache key holds, so the frontend can tell a
+                # stale copy of its own (see the profile's syncInfo)
+                "syncVersion": player.sync_version,
             },
             ttl=settings.CACHE_TTL_BATTLES,
         )
@@ -414,6 +438,7 @@ async def deck_percentage_stats(
                 "game_modes": validated_game_modes,
                 "exclude_game_modes": excluded_game_modes,
                 "deck_statistics": decks,
+                "syncVersion": player.sync_version,
             },
             ttl=settings.CACHE_TTL_DECK_STATS,
         )
@@ -500,6 +525,7 @@ async def card_percentage_stats(
                 "game_modes": validated_game_modes,
                 "exclude_game_modes": excluded_game_modes,
                 "card_statistics": cards,
+                "syncVersion": player.sync_version,
             },
             ttl=settings.CACHE_TTL_CARD_STATS,
         )
@@ -589,6 +615,7 @@ async def daily_player_statistics(
                 "game_modes": validated_game_modes,
                 "exclude_game_modes": excluded_game_modes,
                 "daily_statistics": stats,
+                "syncVersion": player.sync_version,
             },
             ttl=settings.CACHE_TTL_PLAYER_BATTLE_STATS,
         )

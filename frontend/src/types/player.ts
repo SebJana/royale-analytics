@@ -33,6 +33,9 @@ export type Player = {
   // first sync). Not part of the Clash Royale profile itself.
   syncInfo?: {
     battlesSyncedAt: string | null;
+    // Rises with every sync that stores battles of the player
+    // (see useSyncVersionRefresh)
+    syncVersion?: number;
     profileSyncedAt: string | null;
     // Date the player was first tracked (YYYY-MM-DD)
     trackedSince: string | null;

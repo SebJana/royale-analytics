@@ -10,6 +10,9 @@ export type CardStats = {
     // Tower troops, id 0 (NO_SUPPORT_ID) for battles without tower data
     supportCards: Cards[];
   };
+  // The player's sync version the response was computed at (see
+  // useSyncVersionRefresh)
+  syncVersion?: number;
 };
 
 type Cards = {

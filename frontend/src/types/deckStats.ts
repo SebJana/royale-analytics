@@ -15,6 +15,9 @@ export type DeckStats = {
     // DECK_STATS_LIMIT (250). Fewer than deckCount means decks were left out.
     decks: Deck[];
   };
+  // The player's sync version the response was computed at (see
+  // useSyncVersionRefresh)
+  syncVersion?: number;
 };
 
 // Deck order the backend sorts by before it caps the list. Usage rate orders

@@ -33,4 +33,7 @@ export type LastBattles = {
   // Whether the page starts with the player's newest stored battle, so a
   // streak running into it is still going (as of the last sync).
   includes_newest_battle?: boolean;
+  // The player's sync version the response was computed at (see
+  // useSyncVersionRefresh)
+  syncVersion?: number;
 };

@@ -84,10 +84,16 @@ export function usePlayerBattlesInfinite(
     wasFirstSyncPending.current = firstSyncPending;
   }, [firstSyncPending, playerTag, queryClient]);
 
-  // Force reset to first page when data becomes stale to prevent mass API calls
+  // Stale battles with older pages loaded start over from the first page
+  // when the battles page opens, since a refetch costs a request per page.
+  // Checked once per opening: battles going stale while they are read keep
+  // their pages, so the reader keeps their place.
+  const checkedKey = useRef<typeof queryKey | null>(null);
   useEffect(() => {
+    if (checkedKey.current === queryKey) return;
+    checkedKey.current = queryKey;
     if (q.isStale && q.data?.pages && q.data.pages.length > 1) {
-      queryClient.resetQueries({ queryKey });
+      queryClient.resetQueries({ queryKey, exact: true });
     }
   }, [q.isStale, q.data, queryClient, queryKey]);
 

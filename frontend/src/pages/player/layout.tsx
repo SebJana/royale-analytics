@@ -15,6 +15,7 @@ import {
 } from "../../hooks/useRecentPlayers";
 import { normalizePlayerTag } from "../../utils/playerTag";
 import { useProfileView } from "../../hooks/useProfileView";
+import { useSyncVersionRefresh } from "../../hooks/useSyncVersionRefresh";
 import { clearBattlesView } from "../../utils/battlesView";
 import Lottie from "lottie-react";
 import emptyBox from "../../assets/animations/emptyBox.json";
@@ -49,6 +50,8 @@ export default function PlayerLayout() {
     isError: isPlayerError,
     error: playerError,
   } = usePlayerProfile(playerTag ?? "");
+  // The pages' cached battles and statistics follow the profile's version
+  useSyncVersionRefresh(playerTag ?? "", player?.syncInfo?.syncVersion);
 
   // The profile comes from the database, so a failure means the player is
   // unknown, has no profile snapshot yet, or the backend has a problem.

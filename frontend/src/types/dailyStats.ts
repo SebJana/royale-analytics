@@ -6,6 +6,9 @@ export type DailyStats = {
     totalBattles: number;
     daily: Days[];
   };
+  // The player's sync version the response was computed at (see
+  // useSyncVersionRefresh)
+  syncVersion?: number;
 };
 
 export type Days = {
