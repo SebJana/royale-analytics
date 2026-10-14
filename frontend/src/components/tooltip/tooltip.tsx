@@ -63,8 +63,14 @@ export function AppTooltip({
     },
   });
 
+  // Listens for taps elsewhere only while open: closed, it would still hold
+  // three document listeners, which add up over a long battle list
   return (
-    <ClickAwayListener onClickAway={() => setOpen(false)}>
+    <ClickAwayListener
+      onClickAway={() => setOpen(false)}
+      mouseEvent={open ? "onClick" : false}
+      touchEvent={open ? "onTouchEnd" : false}
+    >
       <Tooltip
         arrow={arrow}
         {...props}
