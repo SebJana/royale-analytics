@@ -18,26 +18,21 @@ import type { CloseCall } from "../../utils/towers";
 import "./battle.css";
 
 /**
- * Why a battle was close, from the page player's side, e.g. "Your Royal Chef
- * tower was left at 67 HP. Losing it would have tied the game." It states
- * what remained and what losing it meant, not how many hits that was: the
- * attack damage is not known.
+ * What made a battle close, from the page player's side, e.g. "Your Royal
+ * Chef tower only had 67 HP (2%) left."
  */
 function closeCallText(call: CloseCall, won: boolean): string {
   const owner = won ? "Your" : "Their";
-  const hp = call.towers.map((t) => `${formatNumber(t.hp ?? 0)} HP`);
-  const single = call.towers.length === 1;
-  const towers = single
-    ? `${owner} ${call.towers[0].name} was left at ${hp[0]}.`
-    : `${owner} last ${call.towers.length} crown towers were left at ${hp.join(" and ")}.`;
-  const loss = single ? "Losing it" : "Losing them";
-  const result =
-    call.outcome === "tied"
-      ? "tied the game"
-      : won
-        ? "lost the game"
-        : "won you the game";
-  return `${towers} ${loss} would have ${result}.`;
+  // At least 1%, a tower with HP left never reads as 0%
+  const hp = call.towers.map(
+    (t) =>
+      `${formatNumber(t.hp ?? 0)} HP (${Math.max(1, Math.round((t.ratio ?? 0) * 100))}%)`,
+  );
+  const towers =
+    call.towers.length === 1
+      ? `${owner} ${call.towers[0].name}`
+      : `${owner} last ${call.towers.length} crown towers`;
+  return `${towers} only had ${hp.join(" and ")} left.`;
 }
 
 export const BattleComponent = memo(function BattleComponent({

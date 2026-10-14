@@ -486,11 +486,9 @@ export function getBattleTowers(
 }
 
 export type CloseCall = {
-  // The winner's nearly destroyed towers that decided it, weakest first
+  // The winner's nearly destroyed towers that decided it, weakest first.
+  // Their hp and ratio are known (isNearlyDown).
   towers: Tower[];
-  // What losing them would have done: the King Tower falling loses the
-  // game, the crown towers falling tie it
-  outcome: "lost" | "tied";
 };
 
 function isNearlyDown(tower: Tower): boolean {
@@ -514,8 +512,7 @@ function isNearlyDown(tower: Tower): boolean {
  *
  * @param battle - The battle, seen from the team's side
  * @param towers - The battle's towers (see getBattleTowers)
- * @returns The towers and what they would have changed, or null if the
- *   battle was not close
+ * @returns The nearly destroyed towers, or null if the battle was not close
  */
 export function getCloseCall(
   battle: Battle,
@@ -529,14 +526,14 @@ export function getCloseCall(
     : battle.opponent[0].crowns - battle.team[0].crowns;
 
   if (isNearlyDown(winner.king)) {
-    return { towers: [winner.king], outcome: "lost" };
+    return { towers: [winner.king] };
   }
   const needed = winner.crowns
     .filter((t) => t.hp !== null && t.hp > 0)
     .sort((a, b) => (a.ratio ?? 1) - (b.ratio ?? 1))
     .slice(0, lead);
   if (lead >= 1 && needed.length === lead && needed.every(isNearlyDown)) {
-    return { towers: needed, outcome: "tied" };
+    return { towers: needed };
   }
   return null;
 }
