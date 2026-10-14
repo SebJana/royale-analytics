@@ -164,6 +164,25 @@ function drawGroupRow(
   ctx.restore();
 }
 
+// Room between the legend and the plot, in pixels. Chart.js has no option
+// for it, so the legend reports a taller box after measuring itself.
+const LEGEND_GAP = 16;
+
+const legendGap: Plugin<"line"> = {
+  id: "legendGap",
+  // Runs after the legend plugin's own beforeInit, which creates the legend
+  beforeInit(chart) {
+    const legend = chart.legend;
+    if (!legend) return;
+    const fit = legend.fit.bind(legend);
+    legend.fit = () => {
+      fit();
+      // A hidden legend measures 0 and needs no gap
+      if (legend.height > 0) legend.height += LEGEND_GAP;
+    };
+  },
+};
+
 export function LineChart({
   config,
   className,
@@ -261,7 +280,8 @@ export function LineChart({
                   : undefined,
             }
           : undefined,
-        tension: config.labels.length > 100 ? 0 : 0.2,
+        // Straight segments, so a line never overshoots between two values.
+        tension: 0,
         // Dense plots keep the line and hover targets without drawing every marker.
         pointRadius:
           config.labels.length > 250 ? 0 : config.labels.length > 60 ? 3 : 6,
@@ -457,7 +477,7 @@ export function LineChart({
         key={chartKey}
         data={data}
         options={options}
-        plugins={[hierarchyAxis]}
+        plugins={[hierarchyAxis, legendGap]}
       />
     </div>
   );
