@@ -124,7 +124,9 @@ class TrackedPlayer:
     player. Cache keys built with it are invalidated per player, not globally.
     first_sync_pending is True from tracking until the first battle sync ends.
     last_battles_sync_at is when the scraper last checked the battle log (naive
-    UTC), whether or not it found new battles. tracked_since is the date the
+    UTC), whether or not it found new battles. last_battle_time is the newest
+    battle the player's own syncs found (naive UTC), None before the first.
+    Battles stored by other players' syncs can be newer. tracked_since is the date the
     player was first tracked (YYYY-MM-DD), None if unknown.
     passive_range is the (start, end) time range of the battles on record
     from before the player was tracked, which came from other tracked
@@ -143,6 +145,7 @@ class TrackedPlayer:
     sync_version: int
     first_sync_pending: bool
     last_battles_sync_at: datetime | None
+    last_battle_time: datetime | None
     tracked_since: str | None
     passive_range: tuple | None
     tracking_gaps: list[dict]
@@ -202,6 +205,7 @@ async def require_tracked_player(
         sync_version=state["syncVersion"],
         first_sync_pending=state["firstSyncPending"],
         last_battles_sync_at=state["lastBattlesSyncAt"],
+        last_battle_time=state["lastBattleTime"],
         # insertedAt is stored as "YYYY-MM-DD HH-MM-SS"; the date is enough
         tracked_since=str(state["insertedAt"])[:10] if state["insertedAt"] else None,
         passive_range=_passive_range(None, state["ownBattlesFrom"]),

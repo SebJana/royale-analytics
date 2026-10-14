@@ -256,22 +256,45 @@ async def last_battles(
                 status_code=404, detail=f"No battles found for {player_tag}"
             )
 
-        if player.first_sync_pending and not battles.get("battles"):
+        if player.first_sync_pending:
             # A just-tracked player whose first battle sync has not finished.
-            # Not cached: the next request after the sync must see the battles,
-            # and a player without new battles keeps the same sync version.
+            # Also with battles: other players' syncs may have stored older
+            # ones, and the flag keeps the frontend polling until the sync adds
+            # the latest. Not cached: the next request after the sync must see
+            # them, and a player without new battles keeps the same sync version.
             return json_response(
                 {
                     "player_tag": player_tag,
                     "last_battles": battles,
                     "first_sync_pending": True,
+                    "includes_newest_battle": False,
                 }
             )
+
+        # Whether the page starts with the newest stored battle, so a streak
+        # running into it is still going, as of the last sync. Without a
+        # cutoff the page is the latest battles by definition. With one, the
+        # watermark of the player document stands in for a lookup of newer
+        # battles. It only moves with new battles, which also bump the sync
+        # version, so the cached flag cannot go stale under its key.
+        # NOTE Battles stored by another player's sync can be newer than the
+        # watermark. A cutoff that leaves out only those still reads as newest
+        # until the player's own sync, a few minutes at most.
+        latest = battles.get("latestBattleTime")
+        includes_newest = req.before is None or (
+            latest is not None
+            and player.last_battle_time is not None
+            and latest >= player.last_battle_time
+        )
 
         return await cache_json_response(
             redis_conn,
             key,
-            {"player_tag": player_tag, "last_battles": battles},
+            {
+                "player_tag": player_tag,
+                "last_battles": battles,
+                "includes_newest_battle": includes_newest,
+            },
             ttl=settings.CACHE_TTL_BATTLES,
         )
 

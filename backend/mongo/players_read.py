@@ -233,12 +233,15 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
 
     Returns:
         dict | None: {"syncVersion": int, "firstSyncPending": bool,
-            "lastBattlesSyncAt": datetime | None, "insertedAt": str | None,
+            "lastBattlesSyncAt": datetime | None,
+            "lastBattleTime": datetime | None, "insertedAt": str | None,
             "ownBattlesFrom": datetime | None | "unknown",
             "playerName": str | None, "trackingGaps": list[dict],
             "exploreRank": int | None, "views30d": int} if the player is
             tracked, otherwise None. firstSyncPending stays True until the data scraper finished
-            the player's first battle sync. trackingGaps holds the untracked
+            the player's first battle sync. lastBattleTime is the newest
+            battle its own syncs found (the scraper's watermark), None before
+            the first one. trackingGaps holds the untracked
             periods as {"from", "to"} timestamp strings.
 
     Raises:
@@ -253,6 +256,7 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
                 "_id": 0,
                 "syncVersion": 1,
                 "lastBattlesSyncAt": 1,
+                "lastBattleTime": 1,
                 "insertedAt": 1,
                 "ownBattlesFrom": 1,
                 "playerName": 1,
@@ -268,6 +272,7 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
             "syncVersion": doc["syncVersion"],
             "firstSyncPending": doc.get("lastBattlesSyncAt") is None,
             "lastBattlesSyncAt": doc.get("lastBattlesSyncAt"),
+            "lastBattleTime": doc.get("lastBattleTime"),
             "insertedAt": doc.get("insertedAt"),
             # Absent for players tracked before it was recorded
             "ownBattlesFrom": doc.get("ownBattlesFrom", "unknown"),
