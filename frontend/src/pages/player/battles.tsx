@@ -15,6 +15,7 @@ import { BattleComponent } from "../../components/battle/battle";
 import { PlayerError } from "../../components/playerError/playerError";
 import { RecentForm } from "../../components/recentForm/recentForm";
 import { kingLevelTimeline } from "../../utils/towers";
+import { pageQueryState } from "../../utils/queryError";
 import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
 import {
   localeToUTC,
@@ -82,7 +83,7 @@ export default function PlayerBattles() {
     isLoading: cardsLoading,
     isError: isCardsError,
     refetch: refetchCards,
-  } = useCards();
+  } = pageQueryState(useCards());
 
   // Only needed to select a battle's whole game mode group on the decks page,
   // so its loading or failing never blocks the battles
@@ -108,11 +109,13 @@ export default function PlayerBattles() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = usePlayerBattlesInfinite(
-    playerTag,
-    battlesPageSize,
-    true,
-    appliedBeforeDate,
+  } = pageQueryState(
+    usePlayerBattlesInfinite(
+      playerTag,
+      battlesPageSize,
+      true,
+      appliedBeforeDate,
+    ),
   );
   // Flatten paginated battle data into a single array for easier rendering
   const battlesList = useMemo(

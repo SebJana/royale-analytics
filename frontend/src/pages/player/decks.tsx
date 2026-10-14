@@ -9,6 +9,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import { useGameModes } from "../../hooks/useGameModes";
 import { formatNumber, round } from "../../utils/number";
 import { pluralize } from "../../utils/plural";
+import { pageQueryState } from "../../utils/queryError";
 import { getCurrentFilterState } from "../../utils/filter";
 import { getTimeRange } from "../../utils/seasons";
 import {
@@ -412,14 +413,14 @@ export default function PlayerDecks() {
     isLoading: cardsLoading,
     isError: isCardsError,
     refetch: refetchCards,
-  } = useCards();
+  } = pageQueryState(useCards());
 
   const {
     data: gameModes,
     isLoading: gameModesLoading,
     isError: isGameModesError,
     refetch: refetchGameModes,
-  } = useGameModes();
+  } = pageQueryState(useGameModes());
 
   // Game mode initialization
   // Initialize selected game modes once when game modes are loaded
@@ -512,12 +513,14 @@ export default function PlayerDecks() {
   // First request: the default order. If every deck of the filter context
   // fits into it (real players have 150-200 decks, the cap is 250), sorting
   // and the minimum battles run in the browser without another request.
-  const base = useDeckStats(
-    playerTag,
-    getTimeRange(appliedFilters),
-    queryGameModes,
-    cardFilter,
-    DEFAULT_SORT,
+  const base = pageQueryState(
+    useDeckStats(
+      playerTag,
+      getTimeRange(appliedFilters),
+      queryGameModes,
+      cardFilter,
+      DEFAULT_SORT,
+    ),
   );
   const baseStats = base.data?.deck_statistics;
   // From the default order, so the sort shown cannot change it. A card filter
@@ -535,13 +538,15 @@ export default function PlayerDecks() {
     baseStats !== undefined &&
     !allDecksLoaded &&
     JSON.stringify(deckSort) !== JSON.stringify(DEFAULT_SORT);
-  const sorted = useDeckStats(
-    playerTag,
-    getTimeRange(appliedFilters),
-    queryGameModes,
-    cardFilter,
-    deckSort,
-    needsBackendSort,
+  const sorted = pageQueryState(
+    useDeckStats(
+      playerTag,
+      getTimeRange(appliedFilters),
+      queryGameModes,
+      cardFilter,
+      deckSort,
+      needsBackendSort,
+    ),
   );
   // Until the requested order arrives, the previous order stays on screen,
   // dimmed: the last backend sort, or the default order on the first one

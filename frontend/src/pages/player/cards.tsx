@@ -6,6 +6,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import { useGameModes } from "../../hooks/useGameModes";
 import { formatNumber, round } from "../../utils/number";
 import { pluralize } from "../../utils/plural";
+import { pageQueryState } from "../../utils/queryError";
 import { getCurrentFilterState } from "../../utils/filter";
 import { getTimeRange } from "../../utils/seasons";
 import { gameModeQueryKey, gameModesForQuery } from "../../utils/gameModes";
@@ -189,14 +190,14 @@ export default function PlayerCards() {
     isLoading: cardsLoading,
     isError: isCardsError,
     refetch: refetchCards,
-  } = useCards();
+  } = pageQueryState(useCards());
 
   const {
     data: gameModes,
     isLoading: gameModesLoading,
     isError: isGameModesError,
     refetch: refetchGameModes,
-  } = useGameModes();
+  } = pageQueryState(useGameModes());
 
   // Game mode initialization
   // Initialize selected game modes once when game modes are loaded
@@ -280,7 +281,9 @@ export default function PlayerCards() {
     isLoading: cardStatsLoading,
     isError: isCardStatsError,
     refetch: refetchCardStats,
-  } = useCardStats(playerTag, getTimeRange(appliedFilters), queryGameModes);
+  } = pageQueryState(
+    useCardStats(playerTag, getTimeRange(appliedFilters), queryGameModes),
+  );
 
   // Use the modes actually sent to the API for the loading state dependency.
   const modesKey = gameModeQueryKey(queryGameModes);

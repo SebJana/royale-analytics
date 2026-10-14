@@ -7,6 +7,7 @@ import { AppTooltip } from "../../components/tooltip/tooltip";
 import { useGameModes } from "../../hooks/useGameModes";
 import { getCurrentFilterState } from "../../utils/filter";
 import { getTimeRange } from "../../utils/seasons";
+import { pageQueryState } from "../../utils/queryError";
 import { formatDateForInput } from "../../utils/datetime";
 import { gameModeQueryKey, gameModesForQuery } from "../../utils/gameModes";
 import { useEffect, useState } from "react";
@@ -164,7 +165,7 @@ export default function PlayerPlots() {
     isLoading: gameModesLoading,
     isError: isGameModesError,
     refetch: refetchGameModes,
-  } = useGameModes();
+  } = pageQueryState(useGameModes());
 
   // Game mode initialization
   // Initialize selected game modes once when game modes are loaded
@@ -194,7 +195,9 @@ export default function PlayerPlots() {
     isLoading: statsLoading,
     isError: isStatsError,
     refetch: refetchStats,
-  } = useDailyStats(playerTag, getTimeRange(appliedFilters), queryGameModes);
+  } = pageQueryState(
+    useDailyStats(playerTag, getTimeRange(appliedFilters), queryGameModes),
+  );
 
   // Use the modes actually sent to the API for the loading state dependency.
   const modesKey = gameModeQueryKey(queryGameModes);
