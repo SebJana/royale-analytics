@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { PartyPopper } from "lucide-react";
+import { Delete, PartyPopper } from "lucide-react";
 import { AuthActionButton } from "./authActionButton";
 import { CircularProgress } from "@mui/material";
 import { isValidGuess } from "../../utils/wordGuess";
@@ -342,7 +342,10 @@ export function WordGuessGame({
         Solve the Word Guess to prove your reasoning skills
       </h3>
       {error && (
-        <div className="auth-error-overlay word-guess-error-overlay" role="alert">
+        <div
+          className="auth-error-overlay word-guess-error-overlay"
+          role="alert"
+        >
           {cooldown.message}
         </div>
       )}
@@ -427,6 +430,7 @@ export function WordGuessGame({
             {row.map((key) => (
               <button
                 key={key}
+                aria-label={key === "BACKSPACE" ? "Backspace" : undefined}
                 className={`keyboard-key ${
                   key === "ENTER" || key === "BACKSPACE" ? "wide" : ""
                 } ${letterStates[key] || ""}`}
@@ -439,7 +443,11 @@ export function WordGuessGame({
                   (key === "ENTER" && cooldown.remainingSeconds > 0)
                 }
               >
-                {key === "BACKSPACE" ? "⌫" : key}
+                {key === "BACKSPACE" ? (
+                  <Delete size={20} aria-hidden="true" />
+                ) : (
+                  key
+                )}
               </button>
             ))}
           </div>
