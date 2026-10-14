@@ -13,6 +13,7 @@ import { usePlayerBattlesInfinite } from "../../hooks/useLastBattles";
 import { usePageLoadingState } from "../../hooks/usePageLoadingState";
 import { BattleComponent } from "../../components/battle/battle";
 import { PlayerError } from "../../components/playerError/playerError";
+import { kingLevelTimeline } from "../../utils/towers";
 import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
 import {
   localeToUTC,
@@ -112,6 +113,12 @@ export default function PlayerBattles() {
   const battlesList = useMemo(
     () => battles?.pages.flatMap((p) => p.last_battles.battles) ?? [],
     [battles],
+  );
+  // The King Level at each loaded battle, from all of them: more battles
+  // give more chances of an untouched King Tower
+  const kingLevels = useMemo(
+    () => kingLevelTimeline(battlesList),
+    [battlesList],
   );
   // A just-tracked player has no battles until its first sync finished
   const firstSyncPending = battles?.pages[0]?.first_sync_pending === true;
@@ -381,6 +388,7 @@ export default function PlayerBattles() {
                     cards={cards ?? []} // fall back to empty list, if cards don't exist
                     playerTag={playerTag}
                     onOwnDeckOpen={handleOwnDeckOpen}
+                    kingLevel={kingLevels[i]}
                   />
                 ))}
 

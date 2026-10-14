@@ -1,0 +1,87 @@
+/* Team on the left, opponent on the right, like the decks below */
+.tower-health {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-md);
+}
+
+.tower-health-set {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+/* Bars fill from the bottom like a tower's health. The king stands taller
+   and wider, as it does on the arena. */
+.tower-health-tower {
+  position: relative;
+  display: block;
+  width: 14px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--bg-overlay-medium);
+  cursor: default;
+}
+
+.tower-health-tower.is-king {
+  width: 20px;
+  height: 36px;
+}
+
+.tower-health-fill {
+  position: absolute;
+  inset: auto 0 0;
+}
+
+/* NOTE Side colors match the crowns in battle.css. */
+.tower-health-set.is-team .tower-health-fill {
+  background: var(--color-info);
+}
+
+.tower-health-set.is-opponent .tower-health-fill {
+  background: var(--color-error);
+}
+
+/* A button for the keyboard, without the global button look, which would
+   paint it on hover and outline it after every tap */
+.tower-health-set {
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: none;
+  font: inherit;
+  cursor: default;
+}
+
+.tower-health-set:hover {
+  background: none;
+  border-color: transparent;
+}
+
+.tower-health-set:focus {
+  outline: none;
+}
+
+.tower-health-set:focus-visible {
+  outline: 2px solid var(--border-active);
+  outline-offset: 3px;
+}
+
+/* Hit points not recorded, or a full amount that cannot be told (boosted
+   events): hatched instead of a bar that would claim a share */
+.tower-health-tower.is-unknown {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--bg-overlay-medium) 0 3px,
+    transparent 3px 6px
+  );
+  outline: 1px solid var(--border-light);
+}
+
+.tower-health-tower.is-destroyed {
+  border: 1px dashed var(--border-strong);
+  background: none;
+}
