@@ -168,6 +168,7 @@
   max-width: 32ch;
   margin: 0 auto var(--spacing-xs);
   color: var(--color-primary);
+  text-shadow: var(--shadow-display-soft);
   font-size: var(--font-2xl);
   font-weight: var(--font-weight-bold);
   line-height: 1.35;

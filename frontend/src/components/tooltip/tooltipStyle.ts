@@ -9,7 +9,8 @@
 export const TOOLTIP_STYLE = {
   background: "rgba(24, 24, 24, 0.94)",
   color: "#ffffff",
-  fontFamily: "system-ui, Avenir, Helvetica, Arial, sans-serif",
+  fontFamily:
+    '"Rubik Variable", system-ui, Avenir, Helvetica, Arial, sans-serif',
   fontSizePx: 14.4,
   lineHeight: 1.45,
   paddingY: 8,

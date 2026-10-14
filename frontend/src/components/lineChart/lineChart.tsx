@@ -42,6 +42,9 @@ ChartJS.register(
   Legend,
   Filler,
 );
+// Axis labels and legends draw on a canvas, which cannot inherit the page
+// font; Chart.js would use its own Helvetica stack
+ChartJS.defaults.font.family = TOOLTIP_STYLE.fontFamily;
 
 const gradientCache = new WeakMap<
   CanvasRenderingContext2D,
@@ -139,7 +142,7 @@ function drawGroupRow(
   }
 
   ctx.save();
-  ctx.font = "12px sans-serif";
+  ctx.font = `12px ${TOOLTIP_STYLE.fontFamily}`;
   ctx.fillStyle = color;
   ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
   ctx.textAlign = "center";

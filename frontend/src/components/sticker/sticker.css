@@ -7,7 +7,12 @@
   padding: 4px 10px;
   border-radius: var(--radius-md);
   box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
-  font-weight: 800;
+  /* The display face has a single weight (index.css) */
+  font-family: var(--font-display);
+  font-weight: 400;
+  /* The box carries the shadow. Inside a heading or figure the text would
+     inherit theirs (index.css) and smudge on the small letters. */
+  text-shadow: none;
   line-height: 1.1;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -47,7 +52,6 @@
 
 .sticker-caption {
   font-size: var(--font-xs);
-  font-weight: var(--font-weight-bold);
   line-height: 1.15;
   text-align: left;
   white-space: normal;

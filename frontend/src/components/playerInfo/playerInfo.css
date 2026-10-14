@@ -195,6 +195,7 @@
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--spacing-lg) 0;
   color: var(--color-primary);
+  text-shadow: var(--shadow-display-soft);
   border-bottom: 2px solid var(--color-primary);
   padding-bottom: var(--spacing-sm);
 }

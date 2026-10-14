@@ -16,13 +16,19 @@ import {
   hasPreferenceConsent,
   subscribeConsent,
 } from "./utils/storage";
+// The page fonts (index.css), bundled with the app so no request leaves
+// for a font service. Each script (Latin, Latin Extended, ...) loads only
+// when a page shows it, e.g. in a player name.
+import "@fontsource-variable/rubik";
+import "@fontsource/lilita-one/400.css";
 import "./index.css";
 import App from "./App.tsx";
 
 // One look for every MUI tooltip; the Chart.js tooltips read the same
-// TOOLTIP_STYLE. Only tooltips are themed, every other component keeps the
-// MUI defaults it had without a theme.
+// TOOLTIP_STYLE. Besides tooltips only the font is themed, which MUI would
+// otherwise set to its own Roboto stack on its components.
 const theme = createTheme({
+  typography: { fontFamily: TOOLTIP_STYLE.fontFamily },
   components: {
     MuiTooltip: {
       styleOverrides: {

@@ -52,6 +52,7 @@
   padding: var(--spacing-sm) 0;
   color: var(--color-primary);
   line-height: 1.2;
+  text-shadow: var(--shadow-display-soft);
 }
 
 /* NOTE Width matches .search-section and friends at every breakpoint, so the

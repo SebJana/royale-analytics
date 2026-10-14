@@ -130,6 +130,9 @@
 }
 
 .plot-title-summary-vs {
+  font-family: var(--font-body);
+  /* Small running text, without the figures' shadow (index.css) */
+  text-shadow: none;
   color: var(--text-secondary);
   font-size: var(--font-sm);
   font-weight: var(--font-weight-normal);
