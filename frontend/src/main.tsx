@@ -10,6 +10,7 @@ import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persi
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { AuthProvider } from "./hooks/useAuth";
 import { TOOLTIP_STYLE } from "./components/tooltip/tooltipStyle";
+import { hideTooltipsWhileScrolling } from "./components/tooltip/scrollRest";
 import {
   NECESSARY_QUERY_META,
   PREFERENCE_QUERY_META,
@@ -100,6 +101,8 @@ subscribeConsent(() => {
     dehydrateOptions,
   });
 });
+
+hideTooltipsWhileScrolling();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

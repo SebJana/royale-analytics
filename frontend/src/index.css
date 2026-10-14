@@ -205,6 +205,17 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* Tooltips stay hidden while the page scrolls (scrollRest.ts) and fade
+   back in once it rests, if the pointer is still on their anchor */
+.MuiTooltip-popper {
+  transition: opacity 0.15s ease;
+}
+html.is-page-scrolling .MuiTooltip-popper {
+  opacity: 0;
+  pointer-events: none;
+  transition: none;
+}
+
 /* Define the default size and position of the used lottie animations across all pages */
 .lottie-animation {
   width: min(600px, 70%);
