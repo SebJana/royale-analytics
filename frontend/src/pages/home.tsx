@@ -433,7 +433,7 @@ function HomePage() {
             alt="Clash Royale Crown"
             className="home-icon"
           />
-          <h1 className="home-title">Clash Royale Analytics</h1>
+          <h1 className="home-title">Royale Analytics</h1>
           <div className="home-stat-cards-container">
             <StatCard
               value={formatNumberWithSuffix(
