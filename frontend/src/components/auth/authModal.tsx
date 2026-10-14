@@ -6,7 +6,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Button,
   CircularProgress,
 } from "@mui/material";
 import { WordGuessGame } from "./wordGuess";
@@ -370,7 +369,9 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
           onKeyDown={(e) => e.key === "Enter" && handleCaptchaSubmit()}
         />
         <div className="captcha-buttons">
-          <Button
+          <button
+            type="button"
+            className="auth-button"
             onClick={handleCaptchaSubmit}
             disabled={
               loading ||
@@ -379,19 +380,18 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
               !captchaImageLoaded ||
               !captchaAnswer.trim()
             }
-            variant="contained"
-            color="primary"
           >
             Verify
-          </Button>
-          <Button
+          </button>
+          <button
+            type="button"
+            className="auth-button is-secondary"
             onClick={initializeCaptcha}
             disabled={loading || retryBlocked}
-            variant="outlined"
-            startIcon={<RotateCcw size={18} aria-hidden="true" />}
           >
+            <RotateCcw size={18} aria-hidden="true" />
             Refresh
-          </Button>
+          </button>
         </div>
       </div>
     </div>
@@ -490,8 +490,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
           />
         </div>
         <AuthActionButton
-          action="continue"
-          showIcon={false}
+          action="submit"
           onClick={handleSecuritySubmit}
           busy={loading}
           disabled={retryBlocked}
@@ -534,7 +533,9 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
         <AuthActionButton
           action="retry"
           onClick={
-            error.recovery === "word_guess" ? handleWordGuessFailure : handleRestart
+            error.recovery === "word_guess"
+              ? handleWordGuessFailure
+              : handleRestart
           }
           disabled={loading || retryBlocked}
         >
@@ -596,9 +597,13 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
         <div className="auth-feedback-anchor">
           {!needsRecovery && errorFeedback}
         </div>
-        <Button onClick={handleClose} color="error" variant="outlined">
+        <button
+          type="button"
+          className="auth-button is-subtle"
+          onClick={handleClose}
+        >
           Cancel
-        </Button>
+        </button>
       </DialogActions>
     </Dialog>
   );

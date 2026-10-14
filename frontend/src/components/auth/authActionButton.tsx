@@ -1,50 +1,63 @@
-import { Button, CircularProgress, type ButtonProps } from "@mui/material";
+import type { ComponentPropsWithoutRef } from "react";
+import CircularProgress from "@mui/material/CircularProgress";
 import { ArrowRight, RotateCcw } from "lucide-react";
 import "./authOutcome.css";
 
 type AuthActionButtonProps = Omit<
-  ButtonProps,
-  "action" | "variant" | "startIcon" | "endIcon" | "color"
+  ComponentPropsWithoutRef<"button">,
+  "type"
 > & {
-  readonly action: "continue" | "retry";
+  readonly action: "continue" | "submit" | "retry";
   readonly busy?: boolean;
-  readonly showIcon?: boolean;
 };
 
-// Use the same action styles across games and recovery menus. Continue points
-// forward after the label; retry has an action icon before it. Final submission
-// can hide the icon because it doesn't move to another challenge.
+const DEFAULT_LABEL = {
+  continue: "Continue",
+  submit: "Submit",
+  retry: "Try Again",
+} as const;
+
+/**
+ * The main action of a stage or result panel, so always the app's primary
+ * button: one per view, its role told by label and icon rather than color
+ * (WCAG 1.4.1). Continue moves to the next stage with the View Player link's
+ * arrow (home.tsx), submit sends the current step, retry starts a step over
+ * with the restart icon that marks every retry, also the secondary Refresh
+ * beside Verify.
+ *
+ * @param action - Which of the three, which also picks the default label
+ * @param busy - Shows a spinner and blocks clicks while the action runs
+ */
 export function AuthActionButton({
   action,
   busy = false,
-  showIcon = true,
   className = "",
   disabled,
   children,
   ...props
 }: AuthActionButtonProps) {
   return (
-    <Button
+    <button
       {...props}
-      variant={action === "continue" ? "contained" : "outlined"}
-      disableElevation
-      className={`auth-action-button is-${action} ${className}`}
+      type="button"
+      className={`auth-button ${className}`}
       disabled={disabled || busy}
       aria-busy={busy}
-      startIcon={
-        busy ? (
-          <CircularProgress size={18} color="inherit" />
-        ) : showIcon && action === "retry" ? (
-          <RotateCcw size={18} aria-hidden="true" />
-        ) : undefined
-      }
-      endIcon={
-        !busy && showIcon && action === "continue" ? (
-          <ArrowRight size={18} aria-hidden="true" />
-        ) : undefined
-      }
     >
-      {children ?? (action === "continue" ? "Continue" : "Try Again")}
-    </Button>
+      {!busy && action === "retry" && (
+        <RotateCcw size={18} aria-hidden="true" />
+      )}
+      {busy && (
+        <CircularProgress size={16} color="inherit" aria-hidden="true" />
+      )}
+      {children ?? DEFAULT_LABEL[action]}
+      {!busy && action === "continue" && (
+        <ArrowRight
+          className="auth-button-arrow"
+          size={18}
+          aria-hidden="true"
+        />
+      )}
+    </button>
   );
 }

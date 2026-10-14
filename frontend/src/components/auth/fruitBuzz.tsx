@@ -6,7 +6,7 @@ import {
   type CSSProperties,
   type MouseEvent,
 } from "react";
-import { Button, CircularProgress } from "@mui/material";
+import { CircularProgress } from "@mui/material";
 import {
   Bot,
   Cherry,
@@ -873,9 +873,9 @@ export function FruitBuzz({
                 phase === "advancing" ||
                 (phase === "animating" && !gameEnded)) && (
                 <AppTooltip title={pauseLabel}>
-                  <Button
-                    className="buzz-pause-button"
-                    variant={pauseAfterRound ? "contained" : "outlined"}
+                  <button
+                    type="button"
+                    className={`auth-button buzz-pause-button${pauseAfterRound ? "" : " is-secondary"}`}
                     aria-label={pauseLabel}
                     aria-pressed={pauseAfterRound}
                     onClick={() => {
@@ -888,7 +888,7 @@ export function FruitBuzz({
                     ) : (
                       <Pause size={20} fill="currentColor" aria-hidden="true" />
                     )}
-                  </Button>
+                  </button>
                 </AppTooltip>
               )}
             </div>
@@ -990,34 +990,27 @@ export function FruitBuzz({
                 {phase === "ready" && (
                   <>
                     <h4>Ready to play?</h4>
-                    <Button
-                      variant="contained"
-                      size="large"
-                      className="auth-outcome-button is-success"
-                      aria-label="Start game"
+                    <button
+                      type="button"
+                      className="auth-button"
                       onClick={() => beginRef.current()}
                     >
-                      <Play size={24} fill="currentColor" aria-hidden="true" />
-                    </Button>
+                      <Play size={18} fill="currentColor" aria-hidden="true" />
+                      Start Game
+                    </button>
                   </>
                 )}
                 {phase === "round_ready" && (
                   <>
                     <h4>Paused</h4>
-                    <AppTooltip title="Resume game">
-                      <Button
-                        variant="contained"
-                        size="large"
-                        aria-label="Resume game"
-                        onClick={() => beginRef.current()}
-                      >
-                        <Play
-                          size={24}
-                          fill="currentColor"
-                          aria-hidden="true"
-                        />
-                      </Button>
-                    </AppTooltip>
+                    <button
+                      type="button"
+                      className="auth-button"
+                      onClick={() => beginRef.current()}
+                    >
+                      <Play size={18} fill="currentColor" aria-hidden="true" />
+                      Resume
+                    </button>
                   </>
                 )}
                 {phase === "won" && (

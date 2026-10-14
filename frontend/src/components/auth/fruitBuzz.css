@@ -261,17 +261,11 @@
   width: 44px;
   height: 44px;
 }
-.buzz-pause-button.MuiButton-root {
+/* An icon-only square in the timer row, unlike the labelled actions */
+.auth-modal .auth-button.buzz-pause-button {
   min-width: 44px;
   width: 44px;
   height: 44px;
-  padding: 0;
-}
-.buzz-center-message .MuiButton-root[aria-label="Start game"],
-.buzz-center-message .MuiButton-root[aria-label="Resume game"] {
-  min-width: 52px;
-  width: 52px;
-  height: 52px;
   padding: 0;
 }
 .buzz-progress.is-idle {
@@ -539,10 +533,6 @@
 }
 .buzz-center-message .buzz-late-icon {
   color: var(--color-error);
-}
-.buzz-center-message .MuiButton-root {
-  font-size: var(--font-lg);
-  padding: var(--spacing-md) var(--spacing-2xl);
 }
 .buzz-center-message.phase-round_ready {
   width: auto;
@@ -894,11 +884,6 @@
 .buzz-result-message {
   max-width: 100%;
   overflow-wrap: anywhere;
-}
-.buzz-finale .MuiButton-root,
-.buzz-center-message .MuiButton-root {
-  max-width: 100%;
-  white-space: normal;
 }
 
 @media (max-width: 768px), (max-height: 500px) {

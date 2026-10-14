@@ -448,7 +448,7 @@
   gap: 8px;
   width: 100%;
 }
-.auth-modal .popup-content.auth-outcome-panel > .auth-action-button {
+.auth-modal .popup-content.auth-outcome-panel > .auth-button {
   margin-top: 4px;
 }
 @media (max-height: 500px) {

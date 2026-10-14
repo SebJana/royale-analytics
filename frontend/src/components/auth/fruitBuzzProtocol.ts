@@ -56,7 +56,10 @@ export function calibrateFruitBuzz(
     }
     socket.onopen = () =>
       socket.send(
-        JSON.stringify({ type: "authenticate", word_guess_token: wordGuessToken }),
+        JSON.stringify({
+          type: "authenticate",
+          word_guess_token: wordGuessToken,
+        }),
       );
     socket.onmessage = (event) => {
       try {
@@ -122,7 +125,8 @@ export async function decryptFruitBuzzCard(
   keyBase64: string,
 ): Promise<string> {
   const bytes = new Uint8Array(await card.image.arrayBuffer());
-  if (bytes.length < 29) throw new AuthChallengeError("FRUIT_BUZZ_CARD_LOAD_FAILED");
+  if (bytes.length < 29)
+    throw new AuthChallengeError("FRUIT_BUZZ_CARD_LOAD_FAILED");
   const keyBytes = Uint8Array.from(atob(keyBase64), (character) =>
     character.charCodeAt(0),
   );
