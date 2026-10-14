@@ -239,21 +239,29 @@
     calc(-1 * var(--spacing-xs)) 0;
 }
 
-/* Most viewed players: rank, name and tag, views on the right. The top three
-   share the colors of the popular badge on the player page. */
+/* Most viewed players: rank, name and tag, views on the right. Every rank
+   gets the same centered box, so the names stay in one column next to the
+   gold stickers of the top three. */
 .player-search-paper .MuiAutocomplete-option.player-search-popular {
   gap: var(--spacing-md);
 }
 
 .player-search-popular-rank {
   flex: none;
-  min-width: 3ch;
+  box-sizing: border-box;
+  justify-content: center;
+  /* em, not ch: ch grows with the bolder weight of the stickers */
+  min-width: 3.25em;
+  padding: 2px 6px;
   color: var(--text-secondary);
   font-weight: var(--font-weight-bold);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
-.player-search-popular.is-top .player-search-popular-rank {
-  color: #ffb547;
+/* The shared Sticker sets the look, the list keeps its text size */
+.player-search-popular-rank.sticker {
+  font-size: inherit;
 }
 
 .player-search-popular-views {

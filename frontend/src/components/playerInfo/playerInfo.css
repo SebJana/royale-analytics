@@ -40,51 +40,45 @@
 
 .player-info-component-clan,
 .player-info-component-arena {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   font-size: var(--font-md);
   margin: var(--spacing-xs) 0;
   color: var(--text-secondary);
 }
 
-/* Only the most viewed players have it, so it stands out from the plain
-   stats below the name. */
+/* Only the most viewed players have it, gold for the top three. The look
+   comes from the shared Sticker. */
 .player-info-component-popularity-badge {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-sm);
-  margin: 0 0 var(--spacing-sm) 0;
-  padding: var(--spacing-xs) var(--spacing-md);
-  border: 1px solid rgba(255, 149, 0, 0.45);
-  border-radius: 999px;
-  background: rgba(255, 149, 0, 0.12);
-  font-size: var(--font-sm);
-  cursor: default;
-}
-
-.player-info-component-popularity-badge.is-top {
-  border-color: rgba(255, 196, 0, 0.8);
-  background: linear-gradient(
-    90deg,
-    rgba(255, 149, 0, 0.28),
-    rgba(255, 196, 0, 0.16)
-  );
-  box-shadow: 0 0 12px rgba(255, 149, 0, 0.25);
-}
-
-.player-info-component-popularity-rank {
-  color: #ffb547;
-  font-weight: var(--font-weight-bold);
-}
-
-.player-info-component-popularity-views {
-  color: var(--text-secondary);
+  margin: var(--spacing-sm) 0 var(--spacing-md) 0;
 }
 
 .player-info-component-trophies {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   font-size: var(--font-lg);
   margin: var(--spacing-xs) 0;
   color: var(--text-muted);
   font-weight: var(--font-weight-medium);
+}
+
+/* Long clan or arena names wrap next to the icon instead of squeezing it. */
+.player-info-component-icon {
+  flex-shrink: 0;
+}
+
+.player-info-component-clan-icon {
+  color: var(--color-accent);
+}
+
+.player-info-component-arena-icon {
+  color: #b794f6;
+}
+
+.player-info-component-trophy-icon {
+  color: #ffc93c;
 }
 
 /* Small hint how old the shown data is. Each part stays on one line and
@@ -233,6 +227,12 @@
   font-size: var(--font-xl);
   font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
+}
+
+/* Sits before the date, so the dates of all rows stay right-aligned */
+.player-info-component-og {
+  margin-right: var(--spacing-sm);
+  vertical-align: 2px;
 }
 
 /* A tile is never narrower than its number: a 6-digit total moves to the

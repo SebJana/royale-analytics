@@ -36,6 +36,7 @@ import { formatCompactNumber } from "../../utils/number";
 import { normalizePlayerTag } from "../../utils/playerTag";
 import "./playerSearch.css";
 import { AppTooltip } from "../tooltip/tooltip";
+import { Sticker } from "../sticker/sticker";
 import { CloseButton } from "../closeButton/closeButton";
 
 type Player = { tag: string; name: string };
@@ -521,14 +522,22 @@ export function PlayerSearch({
                 <ListItem
                   key={key}
                   {...optionProps}
-                  className={`${className ?? ""} player-search-popular${
-                    option.rank <= 3 ? " is-top" : ""
-                  }`}
+                  className={`${className ?? ""} player-search-popular`}
                   disableGutters
                 >
-                  <span className="player-search-popular-rank">
-                    #{option.rank}
-                  </span>
+                  {option.rank <= 3 ? (
+                    <Sticker
+                      tone="gold"
+                      size="sm"
+                      className="player-search-popular-rank"
+                    >
+                      #{option.rank}
+                    </Sticker>
+                  ) : (
+                    <span className="player-search-popular-rank">
+                      #{option.rank}
+                    </span>
+                  )}
                   <ListItemText
                     primary={option.name || option.tag}
                     secondary={option.tag}

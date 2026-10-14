@@ -117,10 +117,19 @@
 }
 
 .deck-section {
+  position: relative;
   flex: 0 1 700px;
   width: 100%;
   min-width: 0;
   max-width: 700px;
+}
+
+/* Slapped onto the deck's top left corner, over the edge of the row */
+.decks-main-deck {
+  position: absolute;
+  top: -12px;
+  left: -8px;
+  z-index: 1;
 }
 
 .deck-stats-container {
@@ -223,6 +232,12 @@
 /* Fixed grids instead of wrapping blocks. Type and padding shrink on their
    own (statCard.css). */
 @media (max-width: 768px) {
+  /* The narrow tower column puts the first card under the sticker, so the
+     deck moves down to give it its own space */
+  .deck-section.is-main-deck {
+    padding-top: var(--spacing-lg);
+  }
+
   .decks-general-stats {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

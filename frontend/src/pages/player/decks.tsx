@@ -21,11 +21,13 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import type { RefObject } from "react";
 import { StatCard } from "../../components/statCard/statCard";
+import { Sticker } from "../../components/sticker/sticker";
 import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
 import { FilterContainer } from "../../components/filterContainer/filterContainer";
 import type { FilterState } from "../../components/filterContainer/filterContainer";
@@ -152,6 +154,33 @@ function LastSeenStat({ lastSeen }: Readonly<{ lastSeen: string }>) {
   );
 }
 
+// Fewest battles for the most played deck to be called the main deck
+const MAIN_DECK_MIN_BATTLES = 3;
+
+// Identifies a deck across responses, which return new objects for it
+function deckKey(deck: Deck): string {
+  const cards = deck.deck.map(getCardFilterKey).sort().join(",");
+  return `${cards}|${deck.support.map((s) => s.id).join(",")}`;
+}
+
+/**
+ * The deck played clearly the most, or null. A tie has no main deck, and
+ * battles without card data do not count as a deck.
+ *
+ * @param decks - Decks in the default order (most battles first). Any other
+ *   order of a capped result could leave the most played deck out.
+ * @returns The main deck's key (see deckKey), or null
+ */
+function findMainDeck(decks: Deck[]): string | null {
+  const [first, second] = decks
+    .filter((d) => d.deck.length > 0)
+    .sort((a, b) => b.battleCount - a.battleCount);
+  if (!first || first.battleCount < MAIN_DECK_MIN_BATTLES) return null;
+  return !second || first.battleCount > second.battleCount
+    ? deckKey(first)
+    : null;
+}
+
 function VirtualDeckList({
   decks,
   cards,
@@ -160,6 +189,7 @@ function VirtualDeckList({
   matchedCards,
   matchedSupportIds,
   scrollingToTopRef,
+  mainDeckKey,
 }: Readonly<{
   decks: (Deck | DeckWithMatchScore)[];
   cards: CardMeta[];
@@ -168,6 +198,8 @@ function VirtualDeckList({
   matchedCards: Card[];
   matchedSupportIds: number[];
   scrollingToTopRef: RefObject<boolean>;
+  // The most played deck (see findMainDeck), null for none
+  mainDeckKey: string | null;
 }>) {
   const listRef = useRef<HTMLDivElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
@@ -241,6 +273,7 @@ function VirtualDeckList({
     >
       {virtualizer.getVirtualItems().map((virtualRow) => {
         const d = decks[virtualRow.index];
+        const isMainDeck = mainDeckKey !== null && deckKey(d) === mainDeckKey;
         return (
           <div
             key={virtualRow.key}
@@ -258,7 +291,10 @@ function VirtualDeckList({
               transform: `translateY(${virtualRow.start - scrollMargin}px)`,
             }}
           >
-            <div className="deck-section">
+            <div className={`deck-section${isMainDeck ? " is-main-deck" : ""}`}>
+              {isMainDeck && (
+                <Sticker className="decks-main-deck">main deck</Sticker>
+              )}
               {showMatch && "matchPercentage" in d && (
                 <div className="decks-card-match-header">
                   <span className="decks-card-match-value">{`${round(
@@ -484,6 +520,13 @@ export default function PlayerDecks() {
     DEFAULT_SORT,
   );
   const baseStats = base.data?.deck_statistics;
+  // From the default order, so the sort shown cannot change it. A card filter
+  // narrows the decks to those with its cards, whose top is not the player's
+  // main deck.
+  const mainDeckKey = useMemo(
+    () => (hasCardFilter ? null : findMainDeck(baseStats?.decks ?? [])),
+    [hasCardFilter, baseStats],
+  );
   const allDecksLoaded =
     baseStats !== undefined && baseStats.decks.length >= baseStats.deckCount;
   // Only a capped result needs the backend for another order: its top decks
@@ -728,6 +771,7 @@ export default function PlayerDecks() {
                   matchedSupportIds={appliedFilters.supportIds}
                   scrollingToTopRef={scrollingToTopRef}
                   showMatch={showMatch}
+                  mainDeckKey={mainDeckKey}
                 />
               </div>
             )}

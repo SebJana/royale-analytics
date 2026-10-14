@@ -94,6 +94,7 @@
 }
 
 .card-item {
+  position: relative;
   background-color: var(--bg-overlay-light);
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
@@ -101,6 +102,14 @@
     transform var(--transition-fast),
     box-shadow var(--transition-fast);
   border: 1px solid var(--border-light);
+}
+
+/* Slapped onto the tile's top right corner, over its edge */
+.card-item-mvp {
+  position: absolute;
+  top: -10px;
+  right: -8px;
+  z-index: 1;
 }
 
 .card-item:hover {

@@ -1,0 +1,54 @@
+/* Solid color, heavy type and a hard shadow without blur, like a sticker
+   on the page. Upright and still, so a few of them never look messy. */
+.sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+
+.sticker-sm {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+  font-size: var(--font-xs);
+}
+
+.sticker-orange {
+  background: #ff9f1c;
+  color: #3a1d00;
+}
+
+.sticker-gold {
+  background: #ffd23f;
+  color: #3a1d00;
+}
+
+.sticker-red {
+  background: var(--color-error);
+  color: #fff;
+}
+
+.sticker-figure {
+  font-size: var(--font-2xl);
+  line-height: 1;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.sticker-caption {
+  font-size: var(--font-xs);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.15;
+  text-align: left;
+  white-space: normal;
+}

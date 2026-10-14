@@ -25,6 +25,7 @@ import {
 import rareOutlineImg from "../../assets/cards/rareOutline.png";
 import "./cards.css";
 import { AppTooltip } from "../../components/tooltip/tooltip";
+import { Sticker } from "../../components/sticker/sticker";
 
 /**
  * Title of a card tile, e.g. "Evolution Knight".
@@ -52,24 +53,59 @@ function calculateAndFormatUsageRate(
 type CardStat = CardStats["card_statistics"]["cards"][number];
 
 /**
+ * How many more battles a card won than an even record would have, doubled
+ * to stay an integer. A card has to win often AND be played often to score
+ * high: 11 of 13 beats 5 of 5, and 50% or worse never scores above zero.
+ *
+ * @param stat Statistics of the card.
+ * @returns Twice the wins above 50%
+ */
+function winsAboveEven(stat: CardStat): number {
+  return 2 * stat.wins - stat.usage;
+}
+
+/**
+ * The cards with the most wins above an even record. Tied cards share the
+ * title; no card is MVP when none won more than it lost.
+ *
+ * @param stats Card statistics, without tower troops.
+ * @returns The MVP cards' statistics, empty if there is none
+ */
+function findMvps(stats: CardStat[]): Set<CardStat> {
+  const best = Math.max(0, ...stats.map(winsAboveEven));
+  if (best === 0) return new Set();
+  return new Set(stats.filter((s) => winsAboveEven(s) === best));
+}
+
+/**
  * Tile with one card's or tower troop's statistics.
  *
  * @param stat Statistics of the card or tower troop.
  * @param cards The official card list, undefined while loading.
  * @param totalBattles Battles in the filter, the usage rate's denominator.
+ * @param isMvp Whether the card is an MVP (see findMvps).
  */
 function CardStatTile({
   stat,
   cards,
   totalBattles,
+  isMvp = false,
 }: Readonly<{
   stat: CardStat;
   cards: CardMeta[] | undefined;
   totalBattles: number;
+  isMvp?: boolean;
 }>) {
   const title = cardTitle(stat.card, cards);
   return (
     <div className="card-item">
+      {isMvp && (
+        <AppTooltip title="Most wins above an even record" tapToShow>
+          <Sticker tone="gold" className="card-item-mvp">
+            mvp
+          </Sticker>
+        </AppTooltip>
+      )}
       {/* The title is cut off when long; the tooltip shows it in full */}
       <AppTooltip title={title} tapToShow>
         <h3 className="card-item-title">{title}</h3>
@@ -272,6 +308,7 @@ export default function PlayerCards() {
   const sortedCards = cardStats?.card_statistics.cards
     ? sortCards(cardStats.card_statistics.cards)
     : [];
+  const mvps = findMvps(sortedCards);
   // Tower troops, sorted the same way
   const sortedSupportCards = cardStats?.card_statistics.supportCards
     ? sortCards(cardStats.card_statistics.supportCards)
@@ -341,6 +378,7 @@ export default function PlayerCards() {
                     stat={c}
                     cards={cards}
                     totalBattles={totalBattles}
+                    isMvp={mvps.has(c)}
                   />
                 ))}
               </div>

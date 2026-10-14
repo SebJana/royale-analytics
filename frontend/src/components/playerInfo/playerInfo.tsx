@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
-import { ChevronUp, Info } from "lucide-react";
+import { Castle, ChevronUp, Info, Shield, Trophy } from "lucide-react";
 import { AppTooltip } from "../tooltip/tooltip";
+import { CopyableTag } from "../copyableTag/copyableTag";
+import { Sticker } from "../sticker/sticker";
 import type { Player } from "../../types/player";
 import { formatCompactNumber, formatNumber, round } from "../../utils/number";
-import { formatDateForInput, formatTimeAgo } from "../../utils/datetime";
+import {
+  formatDateForInput,
+  formatTimeAgo,
+  getClashRoyaleReleaseDate,
+} from "../../utils/datetime";
 import { readPreference, writePreference } from "../../utils/storage";
 import { StatCard } from "../statCard/statCard";
 import "./playerInfo.css";
@@ -147,6 +153,12 @@ export function PlayerInfo({
     accountAgeDays === undefined
       ? null
       : getAccountCreationDate(accountAgeDays);
+  // Accounts from the game's launch year. The creation date is derived from
+  // a day count, so an account from the first days of the next year can
+  // land here too, which is close enough for a sticker.
+  const launchYear = getClashRoyaleReleaseDate().getFullYear();
+  const isLaunchYearAccount =
+    accountCreationDate?.startsWith(String(launchYear)) ?? false;
   const elapsedTimeSplit = accountCreationDate
     ? getAccountAgeBreakdown(accountCreationDate)
     : null;
@@ -173,31 +185,49 @@ export function PlayerInfo({
               title="Rank among all tracked players by visitors in the last 30 days."
               tapToShow
             >
-              <span
-                className={`player-info-component-popularity-badge${
-                  player.popularity.rank <= 3 ? " is-top" : ""
-                }`}
+              <Sticker
+                tone={player.popularity.rank <= 3 ? "gold" : "orange"}
+                className="player-info-component-popularity-badge"
               >
-                <span className="player-info-component-popularity-rank">
-                  🔥 #{player.popularity.rank} most viewed
+                <span className="sticker-figure">
+                  #{player.popularity.rank}
                 </span>
-                <span className="player-info-component-popularity-views">
-                  {formatCompactNumber(player.popularity.views30d)} views · 30
+                <span className="sticker-caption">
+                  most viewed
+                  <br />
+                  {formatCompactNumber(player.popularity.views30d)} views in 30
                   days
                 </span>
-              </span>
+              </Sticker>
             </AppTooltip>
           )}
-          <p className="player-info-component-tag">{player?.tag}</p>
+          <p className="player-info-component-tag">
+            {player?.tag && <CopyableTag tag={player.tag} />}
+          </p>
           <p className="player-info-component-clan">
-            🛡️ {player?.clan?.name ?? "No Clan"}
+            <Shield
+              className="player-info-component-icon player-info-component-clan-icon"
+              size={16}
+              aria-hidden="true"
+            />
+            {player?.clan?.name ?? "No Clan"}
           </p>
           <p className="player-info-component-arena">
-            🏟️ {player?.arena?.name ?? "No Arena"}
+            <Castle
+              className="player-info-component-icon player-info-component-arena-icon"
+              size={16}
+              aria-hidden="true"
+            />
+            {player?.arena?.name ?? "No Arena"}
           </p>
           {Boolean(player?.trophies) && (
             <p className="player-info-component-trophies">
-              🏆 {formatNumber(player.trophies)}
+              <Trophy
+                className="player-info-component-icon player-info-component-trophy-icon"
+                size={18}
+                aria-hidden="true"
+              />
+              {formatNumber(player.trophies)}
             </p>
           )}
           {player?.syncInfo && (
@@ -246,6 +276,16 @@ export function PlayerInfo({
                     Created On:
                   </span>
                   <span className="player-info-component-info-value">
+                    {isLaunchYearAccount && (
+                      <AppTooltip
+                        title={`Playing since the launch year, ${launchYear}`}
+                        tapToShow
+                      >
+                        <Sticker size="sm" className="player-info-component-og">
+                          og
+                        </Sticker>
+                      </AppTooltip>
+                    )}
                     {accountCreationDate ?? "—"}
                   </span>
                 </div>
