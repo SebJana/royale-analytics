@@ -12,6 +12,23 @@ from .validation_utils import ensure_connected
 # with Mongo's own clock.
 
 
+def stored_time_now() -> str:
+    """The current time as the player document stores it, in UTC.
+
+    The readers (tracking gaps, the pause start) take these strings as UTC,
+    so the local time of a process outside a UTC container would shift them.
+
+    TODO Store insertedAt, deactivatedAt, reactivatedAt and the trackingGaps
+    bounds as BSON dates like every newer field, with a migration that
+    converts the existing strings and readers that accept both meanwhile.
+
+    Returns:
+        str: "YYYY-MM-DD HH-MM-SS"
+    """
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H-%M-%S")
+
+
 def name_update_fields(player_name: str) -> dict:
     """Return the $set fields of a pipeline update that stores a player name.
 
@@ -88,7 +105,7 @@ async def insert_tracked_player(
     """
     try:
         await ensure_connected(conn)
-        now = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+        now = stored_time_now()
 
         # Try to reactivate if it exists but is inactive
         res = await conn.db.players.update_one(
@@ -200,7 +217,7 @@ async def deactivate_tracked_player(
 
     try:
         await ensure_connected(conn)
-        current_time = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+        current_time = stored_time_now()
 
         fields = {"active": False, "deactivatedAt": current_time}
         if reason:
