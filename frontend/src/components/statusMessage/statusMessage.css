@@ -1,0 +1,115 @@
+/* Grid rows animate between 0fr and 1fr, so the slot follows the callout's
+   real height. Width and spacing come from the page through className. */
+.status-slot {
+  display: grid;
+  grid-template-rows: 0fr;
+  width: 100%;
+  opacity: 0;
+  transition:
+    grid-template-rows 220ms ease,
+    margin-top 220ms ease,
+    opacity 160ms ease;
+}
+
+.status-slot.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.status-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* --status-color drives the tint, border and icon of each tone. */
+.status-message {
+  --status-color: var(--color-success);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid color-mix(in srgb, var(--status-color) 45%, transparent);
+  border-radius: var(--radius-md);
+  background-color: color-mix(in srgb, var(--status-color) 12%, transparent);
+  text-align: left;
+  font-size: var(--font-base);
+  line-height: var(--line-height-normal);
+}
+
+.status-message.is-error {
+  --status-color: var(--color-error);
+}
+
+.status-message.is-wait {
+  --status-color: var(--color-warning);
+}
+
+.status-icon {
+  flex-shrink: 0;
+  /* Centres the icon on the title's line. */
+  margin-top: calc((1lh - 20px) / 2);
+  color: var(--status-color);
+}
+
+.status-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.status-text strong {
+  color: var(--text-primary);
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.status-text span {
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+
+/* Looks like the site's other action buttons (View Player, Add Player): a
+   router link styled as a button, since it navigates rather than submits. */
+.status-link {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background-color: var(--color-primary);
+  color: white;
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  transition: all var(--transition-slow);
+}
+
+/* Restates the colour, since the global a:hover would turn the text the same
+   blue as the button. */
+.status-link:hover {
+  background-color: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: white;
+}
+
+.status-link svg {
+  transition: transform var(--transition-fast);
+}
+
+.status-link:hover svg,
+.status-link:focus-visible svg {
+  transform: translateX(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-slot {
+    transition: none;
+  }
+}

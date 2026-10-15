@@ -1,15 +1,11 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import {
-  AlertCircle,
-  ArrowRight,
-  CircleCheck,
-  Clock,
-  LockKeyhole,
-  LockKeyholeOpen,
-} from "lucide-react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { LockKeyhole, LockKeyholeOpen } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { trackPlayer, untrackPlayer } from "../services/api/trackedPlayers";
+import { getTrackingErrorStatus } from "../utils/trackingErrors";
+import { StatusMessage } from "../components/statusMessage/statusMessage";
+import type { Status } from "../types/status";
 import { pluralize } from "../utils/plural";
 import { formatNumberWithSuffix } from "../utils/number";
 import {
@@ -35,75 +31,8 @@ import { StatCard } from "../components/statCard/statCard";
 import "./home.css";
 import { AppTooltip } from "../components/tooltip/tooltip";
 
-function getErrorMessage(error: unknown): string {
-  if (
-    !axios.isAxiosError<{
-      detail?: string | { code?: string; message?: string };
-    }>(error)
-  ) {
-    return error instanceof Error
-      ? error.message
-      : "Something went wrong. Please try again.";
-  }
-
-  if (!error.response) return "Could not reach the server. Please try again.";
-
-  const { status, data } = error.response;
-  const detail = data?.detail;
-  const code = typeof detail === "object" ? detail?.code : undefined;
-
-  // Check the backend code first; a 502 can also come from Clash Royale.
-  if (code === "INVALID_PLAYER_TAG")
-    return "Invalid player tag. Enter a tag like #YYRJQY28.";
-  if (code === "PLAYER_NOT_FOUND")
-    return "Player not found. Check the tag and try again.";
-  if (code === "PLAYER_NOT_TRACKED") return "That player isn't being tracked.";
-  if (code === "REMOVE_PLAYER_TOKEN_USED_UP")
-    return "This verification removed the most players it can. Verify again to remove more.";
-  if (code === "REMOVE_PLAYER_TOKEN_EXPIRED")
-    return "Your verification expired. Verify again.";
-  if (code === "TRACKING_CAPACITY_REACHED")
-    return "The maximum number of tracked players is reached. No new players can be added right now.";
-  if (code === "CR_API_AUTH_FAILED")
-    return (
-      "Clash Royale rejected the API connection, so this player can't be tracked right now. " +
-      "Please try again later."
-    );
-  if (code === "CR_API_MAINTENANCE")
-    return (
-      "Clash Royale is currently undergoing maintenance, so this player can't be tracked right now. " +
-      "Please try again later."
-    );
-  if (code === "CR_API_UNAVAILABLE" || code === "CR_API_INVALID_RESPONSE")
-    return "Could not check the player with Clash Royale. Please try again later.";
-  if (status === 401 || status === 403)
-    return "Authorization failed. Please verify again.";
-  if (status === 429) return "Too many requests. Please try again shortly.";
-  if (status >= 500)
-    return "The server could not complete the request. Please try again later.";
-
-  return (
-    (typeof detail === "string" ? detail : detail?.message) ??
-    "Something went wrong. Please try again."
-  );
-}
-
-type HomeStatus = {
-  tone: "success" | "error" | "wait";
-  title: string;
-  message: string;
-  /** Follow-up action, shown as a button under the message. */
-  link?: { to: string; label: string };
-};
-
-const STATUS_ICONS = {
-  success: CircleCheck,
-  error: AlertCircle,
-  wait: Clock,
-} as const;
-
 // Module level, so the slot sees the same object while it stays open.
-const AUTH_STATUS: HomeStatus = {
+const AUTH_STATUS: Status = {
   tone: "success",
   title: "Verification complete",
   message: "Enter a player tag to remove.",
@@ -122,78 +51,6 @@ function errorCode(error: unknown): string | undefined {
     return undefined;
   const detail = error.response?.data?.detail;
   return typeof detail === "object" ? detail?.code : undefined;
-}
-
-/**
- * Turns a failed add or remove into a status. Rate limits and outages pass on
- * their own, so they read as "wait" rather than as a mistake in the tag.
- */
-function getErrorStatus(error: unknown, title: string): HomeStatus {
-  const response = axios.isAxiosError<{ detail?: { code?: string } | string }>(
-    error,
-  )
-    ? error.response
-    : undefined;
-  const detail = response?.data?.detail;
-  const code = typeof detail === "object" ? detail?.code : undefined;
-  const isTemporary =
-    response?.status === 429 ||
-    code === "CR_API_MAINTENANCE" ||
-    code === "CR_API_UNAVAILABLE";
-  return {
-    tone: isTemporary ? "wait" : "error",
-    title,
-    message: getErrorMessage(error),
-  };
-}
-
-/**
- * Outcome callout under a home form. Shared by add, remove and verification,
- * so every status in the panels reads the same way.
- *
- * The slot stays mounted and opens or collapses its height, so the panels
- * below slide instead of jumping when a status comes or goes.
- */
-function HomeStatusMessage({
-  status,
-  id,
-}: Readonly<{ status: HomeStatus | null; id?: string }>) {
-  // Keeps the last status rendered while the slot collapses; dropping it
-  // right away would empty the box before it finishes closing.
-  const [shown, setShown] = useState(status);
-  if (status && status !== shown) setShown(status);
-  const open = status !== null;
-  const Icon = shown ? STATUS_ICONS[shown.tone] : null;
-
-  return (
-    <div
-      className={`home-status-slot${open ? " is-open" : ""}`}
-      aria-hidden={!open}
-      inert={!open}
-    >
-      <div className="home-status-clip">
-        {shown && Icon && (
-          <div
-            id={id}
-            className={`home-status-message is-${shown.tone}`}
-            role={shown.tone === "success" ? "status" : "alert"}
-          >
-            <Icon className="home-status-icon" size={20} aria-hidden="true" />
-            <div className="home-status-text">
-              <strong>{shown.title}</strong>
-              <span>{shown.message}</span>
-              {shown.link && (
-                <Link to={shown.link.to} className="home-status-link">
-                  {shown.link.label}
-                  <ArrowRight size={18} aria-hidden="true" />
-                </Link>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 function HomePage() {
@@ -233,10 +90,8 @@ function HomePage() {
   const [untrackedPlayerTag, setUntrackedPlayerTag] = useState("");
   const [trackingPlayer, setTrackingPlayer] = useState(false);
   const [untrackingPlayer, setUntrackingPlayer] = useState(false);
-  const [trackingStatus, setTrackingStatus] = useState<HomeStatus | null>(null);
-  const [untrackingStatus, setUntrackingStatus] = useState<HomeStatus | null>(
-    null,
-  );
+  const [trackingStatus, setTrackingStatus] = useState<Status | null>(null);
+  const [untrackingStatus, setUntrackingStatus] = useState<Status | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showAuthSuccess, setShowAuthSuccess] = useState(false);
   const trackingStatusId = useId();
@@ -370,7 +225,7 @@ function HomePage() {
       // Clear the input field
       setAddedPlayerTag("");
     } catch (error) {
-      setTrackingStatus(getErrorStatus(error, "Couldn't add player"));
+      setTrackingStatus(getTrackingErrorStatus(error, "Couldn't add player"));
     } finally {
       setTrackingPlayer(false);
     }
@@ -408,7 +263,9 @@ function HomePage() {
       // Clear the input field
       setUntrackedPlayerTag("");
     } catch (error) {
-      setUntrackingStatus(getErrorStatus(error, "Couldn't remove player"));
+      setUntrackingStatus(
+        getTrackingErrorStatus(error, "Couldn't remove player"),
+      );
       // A spent or expired removal token is useless, so the next removal
       // opens verification instead of failing again.
       const code = errorCode(error);
@@ -508,7 +365,11 @@ function HomePage() {
               {trackingPlayer ? "Adding Player..." : "Add Player"}
             </button>
 
-            <HomeStatusMessage status={trackingStatus} id={trackingStatusId} />
+            <StatusMessage
+              className="home-status-slot"
+              status={trackingStatus}
+              id={trackingStatusId}
+            />
           </div>
           <div
             className={`untrack-section${showAuthSuccess && isAuthenticated ? " untrack-section-unlocked" : ""}`}
@@ -578,10 +439,12 @@ function HomePage() {
               </button>
             )}
 
-            <HomeStatusMessage
+            <StatusMessage
+              className="home-status-slot"
               status={showAuthSuccess && isAuthenticated ? AUTH_STATUS : null}
             />
-            <HomeStatusMessage
+            <StatusMessage
+              className="home-status-slot"
               status={untrackingStatus}
               id={untrackingStatusId}
             />
