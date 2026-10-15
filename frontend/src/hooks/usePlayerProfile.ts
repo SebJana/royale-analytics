@@ -25,6 +25,22 @@ export function getProfileErrorCode(error: unknown): string | undefined {
   return typeof detail === "object" ? detail?.code : undefined;
 }
 
+/**
+ * Whether a PROFILE_NOT_SYNCED answer belongs to a parked player, which gets
+ * no profile until it is tracked again.
+ *
+ * @param error - Error of the profile query
+ * @returns True for a parked player without a stored profile
+ */
+function isParkedWithoutProfile(error: unknown): boolean {
+  if (
+    !axios.isAxiosError<{ detail?: { tracking?: { state?: string } } }>(error)
+  )
+    return false;
+  const detail = error.response?.data?.detail;
+  return typeof detail === "object" && detail?.tracking?.state === "parked";
+}
+
 // Answers that a retry cannot change
 const PERMANENT_ERROR_CODES = new Set([
   "INVALID_PLAYER_TAG",
@@ -45,13 +61,23 @@ export function usePlayerProfile(playerTag: string) {
     staleTime: 1 * min,
     gcTime: 30 * min,
     refetchInterval: (query) => {
-      const syncInfo = query.state.data?.syncInfo;
+      const data = query.state.data;
+      const syncInfo = data?.syncInfo;
       // Until the first battle sync lands, so the "Battles updated" hint does
-      // not stay at "not synced yet". Backs off while it takes long.
-      if (syncInfo && !syncInfo.battlesSyncedAt)
+      // not stay at "not synced yet". Backs off while it takes long. A
+      // parked player is not synced, so it is not waited for.
+      if (
+        syncInfo &&
+        !syncInfo.battlesSyncedAt &&
+        data?.tracking?.state !== "parked"
+      )
         return firstSyncPollInterval(query.state.dataUpdateCount);
+      // A parked player gets no profile until it is tracked again, maybe
+      // from another tab or by another visitor. The slower poll notices that.
       if (getProfileErrorCode(query.state.error) === "PROFILE_NOT_SYNCED")
-        return notSyncedPollInterval;
+        return isParkedWithoutProfile(query.state.error)
+          ? profileRefreshInterval
+          : notSyncedPollInterval;
       // Profile snapshots and battle checks without new battles leave the
       // syncVersion as it is, so an open page refreshes the name, clan and
       // "Battles updated" hint on its own

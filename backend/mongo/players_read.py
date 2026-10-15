@@ -262,9 +262,10 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
             "lastBattleTime": datetime | None, "insertedAt": str | None,
             "ownBattlesFrom": datetime | None | "unknown",
             "playerName": str | None, "trackingGaps": list[dict],
-            "exploreRank": int | None, "views30d": int, "parked": bool} if
+            "exploreRank": int | None, "views30d": int, "parked": bool,
+            "parkedSince": str | None} if
             the player is tracked or parked, otherwise None. firstSyncPending stays True until the data scraper finished
-            the player's first battle sync. lastBattleTime is the newest
+            the player's first battle sync, and is False while parked. lastBattleTime is the newest
             battle its own syncs found (the scraper's watermark), None before
             the first one. trackingGaps holds the untracked
             periods as {"from", "to"} timestamp strings.
@@ -280,6 +281,7 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
             {
                 "_id": 0,
                 "active": 1,
+                "deactivatedAt": 1,
                 "syncVersion": 1,
                 "lastBattlesSyncAt": 1,
                 "lastBattleTime": 1,
@@ -296,7 +298,9 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
             return None
         return {
             "syncVersion": doc["syncVersion"],
-            "firstSyncPending": doc.get("lastBattlesSyncAt") is None,
+            # A parked player waits for no sync, so it is never pending
+            "firstSyncPending": bool(doc.get("active"))
+            and doc.get("lastBattlesSyncAt") is None,
             "lastBattlesSyncAt": doc.get("lastBattlesSyncAt"),
             "lastBattleTime": doc.get("lastBattleTime"),
             "insertedAt": doc.get("insertedAt"),
@@ -307,6 +311,10 @@ async def get_tracked_player_cache_state(conn: MongoConn, player_tag: str):
             "exploreRank": doc.get("exploreRank"),
             "views30d": doc.get("views30d", 0),
             "parked": not doc.get("active"),
+            # Start of the current pause, as a "YYYY-MM-DD HH-MM-SS" string
+            "parkedSince": (
+                doc.get("deactivatedAt") if not doc.get("active") else None
+            ),
         }
 
     except Exception as e:

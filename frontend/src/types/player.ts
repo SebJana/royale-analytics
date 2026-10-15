@@ -1,3 +1,15 @@
+// "parked": taken off syncing to make room for other players. Its data stops
+// at that time, and tracking it again resumes the syncs. Also sent with a
+// PROFILE_NOT_SYNCED error, for a player parked before its first profile.
+export type PlayerTracking = {
+  state: "active" | "parked";
+  // Day the pause started (YYYY-MM-DD), null if unknown
+  since?: string | null;
+  // Battles of the pause recorded through other tracked players, as
+  // passiveBattles of a tracking gap
+  passiveBattles?: number | null;
+};
+
 // Only type Badge for display of account age using the YearsPlayed Badge
 type Badge = {
   name: string;
@@ -29,6 +41,7 @@ export type Player = {
     rank: number;
     views30d: number;
   } | null;
+  tracking?: PlayerTracking;
   // When the backend last refreshed the shown data (UTC, null until the
   // first sync). Not part of the Clash Royale profile itself.
   syncInfo?: {

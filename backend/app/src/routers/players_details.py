@@ -7,6 +7,7 @@ from redis.exceptions import RedisError
 from core.deps import (
     DbConn,
     RedConn,
+    TrackedPlayer,
     TrackedPlayerDep,
     ViewsConn,
     require_tracked_player,
@@ -52,6 +53,25 @@ router = APIRouter(
 )
 
 
+def _tracking_state(player: TrackedPlayer, pause_battles: int | None) -> dict:
+    """Tracking state of the profile response.
+
+    since is the day tracking was paused (YYYY-MM-DD), passiveBattles the
+    battles other tracked players stored since then. Both are None while the
+    player is tracked, or if the pause start is unknown.
+    """
+
+    if not player.parked:
+        return {"state": "active"}
+    return {
+        "state": "parked",
+        "since": (
+            player.parked_since.date().isoformat() if player.parked_since else None
+        ),
+        "passiveBattles": pause_battles,
+    }
+
+
 # TODO The view counts (view routes below) could shorten the sync intervals
 # of viewed players and lengthen those of players nobody opens.
 @router.get(
@@ -81,10 +101,14 @@ async def get_player_profile(
         ranges = [player.passive_range] + [
             gap["passiveRange"] for gap in player.tracking_gaps
         ]
+        # The current pause is an untracked period as well, still open
+        pause = (player.parked_since, None) if player.parked_since else None
+        ranges.append(pause)
         known = [r for r in ranges if r is not None]
         counts = iter(await count_battles_in_ranges(mongo_conn, player_tag, known))
         # None where the period was recorded before its own battles were
         passive = [next(counts) if r is not None else None for r in ranges]
+        pause_battles = passive.pop()
     except Exception:
         raise HTTPException(
             status_code=500, detail=f"Failed to fetch the profile of {player_tag}"
@@ -100,6 +124,9 @@ async def get_player_profile(
                 "code": "PROFILE_NOT_SYNCED",
                 "message": f"No profile stored for {player_tag} yet",
                 "name": player.name,
+                # A parked player gets no profile until it is tracked again,
+                # so the frontend offers that instead of waiting.
+                "tracking": _tracking_state(player, pause_battles),
             },
         )
     # Only the top of the explore list gets a badge, with a rounded count:
@@ -118,6 +145,10 @@ async def get_player_profile(
     return {
         **stored["profile"],
         "popularity": popularity,
+        # A parked player's data stops at the time it was parked. The frontend
+        # says so, lists the pause with the untracked periods, and offers to
+        # track it again.
+        "tracking": _tracking_state(player, pause_battles),
         "syncInfo": {
             "battlesSyncedAt": player.last_battles_sync_at,
             # Rises with every sync that stores battles of the player. The
@@ -267,9 +298,13 @@ async def last_battles(
             params=params,
             player_version=player.sync_version,
         )
-        cached = await get_cached_response(redis_conn, key)
-        if cached is not None:
-            return cached
+        # A player parked before its first sync gets cached answers without
+        # the pending flag. Tracked again, it keeps its sync version, so those
+        # answers would stop the frontend from waiting for the first sync.
+        if not player.first_sync_pending:
+            cached = await get_cached_response(redis_conn, key)
+            if cached is not None:
+                return cached
 
         battles = await get_last_battles(mongo_conn, player_tag, cutoff, req.limit)
 

@@ -3,7 +3,8 @@ import type { Status } from "../types/status";
 
 /**
  * Turns a failed add or remove of a tracked player into a message for the
- * user. Shared by the add and remove forms of the home page.
+ * user. Shared by the home page forms and the player page's "Track again",
+ * so the wording has to fit both: there is no tag field on the player page.
  *
  * NOTE: Match the error codes of the add and remove routes in the backend's
  * routers/players_tracked.py.
@@ -67,7 +68,7 @@ export function getTrackingErrorMessage(error: unknown): string {
 }
 
 /**
- * Turns a failed add or remove into a status. Rate limits and
+ * Turns a failed add, remove or "Track again" into a status. Rate limits and
  * outages pass on their own, so they read as "wait" rather than as a mistake
  * in the tag.
  *

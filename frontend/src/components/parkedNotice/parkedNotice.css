@@ -1,0 +1,102 @@
+/* The same card as the battles filter, so the notice reads as part of the
+   page rather than a system alert on top of it. */
+.parked-notice {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    "icon title button"
+    "icon message button"
+    ". status status";
+  column-gap: var(--spacing-lg);
+  margin-top: var(--spacing-xl);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  background-color: var(--bg-dark);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 2px 8px var(--shadow-light);
+  text-align: left;
+}
+
+/* The icon and the button centre on the title and its text together. A
+   status opens in a row of its own below, so neither moves with it. */
+.parked-notice-icon {
+  grid-area: icon;
+  align-self: center;
+  color: var(--color-warning);
+}
+
+.parked-notice-title {
+  grid-area: title;
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.parked-notice-message {
+  grid-area: message;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-base);
+  line-height: var(--line-height-normal);
+}
+
+/* About as wide as the home page's forms */
+.parked-notice-status {
+  grid-area: status;
+  max-width: 480px;
+}
+
+.parked-notice-status.is-open {
+  margin-top: var(--spacing-md);
+}
+
+/* In place of the whole notice once tracking resumed */
+.parked-notice-resumed {
+  margin-top: var(--spacing-xl);
+}
+
+.parked-notice-button {
+  grid-area: button;
+  align-self: center;
+  min-width: 100px;
+  padding: var(--spacing-sm) var(--spacing-2xl);
+  font-size: var(--font-base);
+}
+
+/* Only the icon and title share a row; the text, a status and the button
+   run the full width below them instead of keeping the icon's indent. */
+@media (max-width: 600px) {
+  .parked-notice {
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "icon title"
+      "message message"
+      "status status"
+      "button button";
+    column-gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+  }
+
+  /* The eye centres on the title's capitals, which Lilita One sets above
+     the middle of the line, with descender room below them. Measured 3px.
+     NOTE Follows the title's font and size; measure again if either changes. */
+  .parked-notice-icon {
+    transform: translateY(-3px);
+  }
+
+  /* The spacing sits on the text, not under the title: the icon centres on
+     the first row, which a title margin would make taller. */
+  .parked-notice-title {
+    margin-bottom: 0;
+  }
+
+  .parked-notice-message {
+    margin-top: var(--spacing-sm);
+  }
+
+  .parked-notice-button {
+    width: 100%;
+    margin-top: var(--spacing-md);
+  }
+}

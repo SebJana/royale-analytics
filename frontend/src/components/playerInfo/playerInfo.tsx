@@ -168,10 +168,16 @@ export function PlayerInfo({
       ? round((player?.wins / player?.battleCount) * 100, 1)
       : 0;
 
+  // The current pause of a parked player, an untracked period still open.
+  // Listed last, after the closed ones, as the periods run oldest first.
+  const pausedSince =
+    player?.tracking?.state === "parked" ? player.tracking.since : null;
+
   // Only shown when there is something to say about an untracked period
   const hasTrackingHistory =
     !!player?.syncInfo?.battlesBeforeTracking ||
-    !!player?.syncInfo?.trackingGaps?.length;
+    !!player?.syncInfo?.trackingGaps?.length ||
+    !!pausedSince;
 
   return (
     <div className="player-info-component-container">
@@ -350,6 +356,12 @@ export function PlayerInfo({
                     {passiveCountSuffix(gap.passiveBattles)}
                   </span>
                 ))}
+                {pausedSince && (
+                  <span className="player-info-component-tracking-hint-period">
+                    since {pausedSince}
+                    {passiveCountSuffix(player.tracking?.passiveBattles)}
+                  </span>
+                )}
               </p>
             )}
 

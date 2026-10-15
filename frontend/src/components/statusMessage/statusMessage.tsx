@@ -12,7 +12,8 @@ const STATUS_ICONS = {
 
 /**
  * Outcome callout under an action: adding, removing and verifying on the
- * home page. Shared, so every outcome reads the same way.
+ * home page, tracking a parked player again on the player page. Shared, so
+ * every outcome reads the same way.
  *
  * The slot stays mounted and opens or collapses its height, so the content
  * below slides instead of jumping when a status comes or goes.

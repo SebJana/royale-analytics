@@ -122,7 +122,8 @@ class TrackedPlayer:
 
     sync_version changes whenever the data scraper stores new battles for the
     player. Cache keys built with it are invalidated per player, not globally.
-    first_sync_pending is True from tracking until the first battle sync ends.
+    first_sync_pending is True from tracking until the first battle sync ends,
+    never while parked.
     last_battles_sync_at is when the scraper last checked the battle log (naive
     UTC), whether or not it found new battles. last_battle_time is the newest
     battle the player's own syncs found (naive UTC), None before the first.
@@ -140,7 +141,8 @@ class TrackedPlayer:
     ranking window, as of the last ranking.
     parked marks a player taken off the schedules to make room. Its stored
     data is still served, and its views still count, so it can rank its way
-    out of the parking order again.
+    out of the parking order again. parked_since is when that happened (naive
+    UTC), None while tracked or if unknown.
     """
 
     tag: str
@@ -155,6 +157,7 @@ class TrackedPlayer:
     explore_rank: int | None
     views_30d: int
     parked: bool
+    parked_since: datetime | None
 
 
 # Dependency that ensures the given player tag is active in the players collection
@@ -217,7 +220,17 @@ async def require_tracked_player(
         explore_rank=state["exploreRank"],
         views_30d=state["views30d"],
         parked=state["parked"],
+        parked_since=_parse_stored_time(state["parkedSince"]),
     )
+
+
+def _parse_stored_time(value) -> datetime | None:
+    """A "YYYY-MM-DD HH-MM-SS" timestamp of the player document, None if unreadable."""
+
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H-%M-%S")
+    except (TypeError, ValueError):
+        return None
 
 
 def _passive_range(start, own_battles_from) -> tuple | None:

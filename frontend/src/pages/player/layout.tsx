@@ -6,6 +6,7 @@ import {
 import { House, Menu, X, ChevronLeft } from "lucide-react";
 import { PlayerInfo } from "../../components/playerInfo/playerInfo";
 import { PlayerInfoPlaceholder } from "../../components/playerInfo/playerInfoPlaceholder";
+import { ParkedNotice } from "../../components/parkedNotice/parkedNotice";
 import { PlayerErrorBoundary } from "../../components/playerError/playerErrorBoundary";
 import { useEffect, useLayoutEffect, useState } from "react";
 import axios from "axios";
@@ -22,11 +23,20 @@ import emptyBox from "../../assets/animations/emptyBox.json";
 import genericError from "../../assets/animations/404.json";
 
 import CircularProgress from "@mui/material/CircularProgress";
+import type { PlayerTracking } from "../../types/player";
 import "./layout.css";
 
 export default function PlayerLayout() {
   const { playerTag = "" } = useParams();
   const [menuOpen, setMenuOpen] = useState(false);
+  // The player tracked again on this page, until it is parked anew.
+  // confirmed: the profile has reported it as tracked since.
+  const [resumed, setResumed] = useState<{
+    tag: string;
+    confirmed: boolean;
+  } | null>(null);
+  // Remounts the notice for a new pause, so a past success does not stay
+  const [noticeEpisode, setNoticeEpisode] = useState(0);
   const encodedTag = encodeURIComponent(playerTag ?? "");
   const { pathname } = useLocation();
 
@@ -63,11 +73,27 @@ export default function PlayerLayout() {
   // Players inserted without the API (e.g. in bulk) have no profile until
   // the scraper's first refresh. The rest of the page works without it.
   const profileNotSynced = errorCode === "PROFILE_NOT_SYNCED";
-  const notSyncedName = axios.isAxiosError<{ detail?: { name?: string } }>(
-    playerError,
-  )
-    ? playerError.response?.data?.detail?.name
+  const notSyncedDetail = axios.isAxiosError<{
+    detail?: { name?: string; tracking?: PlayerTracking };
+  }>(playerError)
+    ? playerError.response?.data?.detail
     : undefined;
+  const notSyncedName = notSyncedDetail?.name;
+  // Parked before its first profile refresh: nothing loads until it is
+  // tracked again, so the page offers that instead of a loading hint.
+  const tracking =
+    player?.tracking ??
+    (profileNotSynced ? notSyncedDetail?.tracking : undefined);
+  const isParked = tracking?.state === "parked";
+  // Adjusted while rendering, like derived state: another player, the
+  // profile confirming the resume, or a new pause after it.
+  if (resumed && resumed.tag !== playerTag) setResumed(null);
+  else if (resumed && !resumed.confirmed && tracking?.state === "active")
+    setResumed({ tag: resumed.tag, confirmed: true });
+  else if (resumed?.confirmed && isParked) {
+    setResumed(null);
+    setNoticeEpisode((episode) => episode + 1);
+  }
 
   // Recorded when the page loads, not when picked in the search, so links and
   // typed tags count too.
@@ -179,11 +205,26 @@ export default function PlayerLayout() {
         </div>
       </nav>
       <header className="player-header">
+        {/* Stays after "Track again" to show its outcome, until the
+            player is left or parked anew */}
+        {(isParked || resumed?.tag === playerTag) && (
+          <ParkedNotice
+            // A new player or a new pause starts without the old outcome
+            key={`${playerTag}:${noticeEpisode}`}
+            playerTag={playerTag}
+            since={tracking?.since}
+            onResumed={() => setResumed({ tag: playerTag, confirmed: false })}
+          />
+        )}
         {player ? (
           <PlayerInfo player={player} />
         ) : (
           profileNotSynced && (
-            <PlayerInfoPlaceholder tag={playerTag} name={notSyncedName} />
+            <PlayerInfoPlaceholder
+              tag={playerTag}
+              name={notSyncedName}
+              parked={isParked}
+            />
           )
         )}
       </header>
