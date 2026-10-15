@@ -291,8 +291,7 @@ class Settings:
     # Seasons start on the first Monday of a month at this UTC hour. Supercell
     # publishes the day but not the hour. Ranked battles around the October
     # 2026 reset point to 09:00 UTC, the logs bracket it between 08:25 and
-    # 21:19 UTC (docs/battle-log-field-findings.md). Kept until a source or
-    # more resets say otherwise.
+    # 21:19 UTC. Kept until a source or more resets say otherwise.
     SEASON_RESET_HOUR_UTC: int = 9
     # Oldest season id a request may name. The first-Monday rule holds since
     # the first themed season, which started on Monday, July 1, 2019.

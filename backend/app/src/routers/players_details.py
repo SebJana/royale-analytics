@@ -217,7 +217,7 @@ async def get_view_ticket(
 
 # Always 204 for a tracked player, whether the view counted or not: a client
 # faking views cannot tell which attempts worked. Nothing here logs the
-# client address or visitor id with the tag (docs/profile-views.md).
+# client address or visitor id with the tag.
 @router.post(
     "/{player_tag}/view",
     status_code=204,

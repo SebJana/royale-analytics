@@ -165,7 +165,7 @@ export function StorageSettings({
 
         {/* Not browser storage, so no entry in STORED_ITEMS and no switch: the
         server counts views on legitimate interest, from the request's IP.
-        NOTE Matches the privacy notes in docs/profile-views.md and the
+        NOTE Matches the privacy policy's sentence on view counting and the
         retention of the daily salt (VIEWS_DAY_TTL in the API settings). */}
         <section className="storage-settings-category">
           <header className="storage-settings-category-header">

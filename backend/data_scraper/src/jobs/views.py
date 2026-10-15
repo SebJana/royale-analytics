@@ -10,7 +10,7 @@ This job is the only writer of views30d and exploreRank. The writes are
 not atomic across players: while a ranking is written, or after one failed
 halfway, readers can see new counts next to old ranks, or a rank twice,
 until the next complete pass. Acceptable for a discovery list; the explore
-pages drop repeated players. See docs/profile-views.md.
+pages drop repeated players.
 """
 
 import asyncio

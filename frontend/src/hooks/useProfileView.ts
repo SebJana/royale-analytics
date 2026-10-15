@@ -14,7 +14,7 @@ const VIEW_DWELL_MS = 3_500;
  * background tab is reported if it is looked at while its ticket is valid
  * (10 minutes), else it is lost. Nothing is
  * stored in the browser; the backend tells visitors apart by a daily changing
- * hash of the IP (docs/profile-views.md). Failures are ignored, a lost view
+ * hash of the IP. Failures are ignored, a lost view
  * is harmless.
  *
  * @param playerTag - Tag of the viewed player, null until it is known

@@ -32,8 +32,6 @@ And a few limits make addresses expensive:
   id the Redis keys use never leaves the server.
 - The beacon answers the same whether the view counted or not, so a client
   cannot tell which of its attempts worked.
-
-See docs/profile-views.md for the design, the trade-offs and the privacy notes.
 """
 
 import asyncio
