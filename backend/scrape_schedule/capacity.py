@@ -29,11 +29,9 @@ from dataclasses import dataclass, asdict
 
 from redis.asyncio import Redis
 
-CAPACITY_KEY = "crsched:capacity"
+from .settings import settings
 
-# The base interval is searched to this precision. A second is far below the
-# 5 minute reconciliation period that recomputes it anyway.
-BASE_INTERVAL_PRECISION_S = 1.0
+CAPACITY_KEY = "crsched:capacity"
 
 
 @dataclass(frozen=True)
@@ -107,7 +105,7 @@ def compute_capacity(
         base_interval_s = max_interval_s
     else:
         low, high = min_interval_s, max_interval_s
-        while high - low > BASE_INTERVAL_PRECISION_S:
+        while high - low > settings.BASE_INTERVAL_PRECISION_S:
             middle = (low + high) / 2
             if fits(middle):
                 high = middle

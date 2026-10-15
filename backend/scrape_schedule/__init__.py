@@ -14,15 +14,11 @@ from .capacity import (
     publish_capacity,
     read_capacity,
 )
+from .settings import settings as schedule_settings
 
 # Names shared by the scraper (claims and acks) and the API (add and remove).
 BATTLES_SCHEDULE = "battles"
 PROFILES_SCHEDULE = "profiles"
-
-# A published capacity older than this is ignored by the API. Three missed
-# reconciliations mean the scraper is down, and its last estimate may no
-# longer match its keys.
-CAPACITY_MAX_AGE_S = 15 * 60  # 15 minutes
 
 # Snapshot of the scraper's monitoring metrics (JSON), read by the status CLI.
 METRICS_KEY = "crsched:metrics"
@@ -64,7 +60,7 @@ __all__ = [
     "read_capacity",
     "BATTLES_SCHEDULE",
     "PROFILES_SCHEDULE",
-    "CAPACITY_MAX_AGE_S",
+    "schedule_settings",
     "METRICS_KEY",
     "SCRAPER_METRICS_HISTORY_KEY",
     "API_METRICS_HISTORY_KEY",

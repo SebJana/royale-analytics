@@ -31,7 +31,7 @@ from mongo import (
     get_explore_page,
     save_player_profile,
 )
-from scrape_schedule import CAPACITY_MAX_AGE_S, read_capacity
+from scrape_schedule import read_capacity, schedule_settings
 from player_search import SearchIndexNotReady
 from core.settings import settings
 from helpers.token_budget import refund_token
@@ -79,7 +79,9 @@ async def ensure_tracking_capacity(
     """
 
     try:
-        capacity = await read_capacity(schedules.redis, CAPACITY_MAX_AGE_S)
+        capacity = await read_capacity(
+            schedules.redis, schedule_settings.CAPACITY_MAX_AGE_S
+        )
     except RedisError:
         capacity = None
     if capacity is None or capacity.max_players is None:
