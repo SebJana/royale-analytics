@@ -340,23 +340,24 @@ class PlayerSearchService:
     ) -> None:
         updated = removed = 0
         time_slice = _TimeSlice(_DIFF_SLICE_S)
-        for tag, (name, active) in changes.items():
+        # listed: tracked or parked (get_players_changed_since)
+        for tag, (name, listed) in changes.items():
             await time_slice.yield_if_spent()
             # Checked right before applying: the loop may have run API
             # changes during the sleep.
             if self._changed_since(tag, started):
                 continue
             # The index stores a missing name as "".
-            if active and index.get(tag) != (name or ""):
+            if listed and index.get(tag) != (name or ""):
                 index.upsert(tag, name)
                 updated += 1
-            elif not active and index.remove(tag):
+            elif not listed and index.remove(tag):
                 removed += 1
         self._log_applied(updated, removed)
 
     async def _apply_full(self, started: int) -> None:
         index = self._index
-        # seen[slot] marks a player found active in Mongo. One byte per slot
+        # seen[slot] marks a player found listed in Mongo. One byte per slot
         # instead of a set of a million tag strings (~100 MB at that size).
         seen = bytearray(index.slot_count())
         updated = removed = 0
@@ -383,7 +384,7 @@ class PlayerSearchService:
             after = page[-1][0]
             await asyncio.sleep(_FULL_PAGE_PAUSE_S)
 
-        # Indexed but not active in Mongo: deactivated by the scraper, or
+        # Indexed but no longer listed in Mongo: deactivated by the scraper, or
         # changed by the API during the read (guarded by _changed_since).
         # Pages are not one consistent read; a player deactivated after its
         # page was read stays until the next change read, which covers

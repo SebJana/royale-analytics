@@ -69,3 +69,8 @@ db.players.createIndex(
     partialFilterExpression: { exploreRank: { $exists: true } },
   },
 );
+// Parking order of the active players, keys as PARK_ORDER in players_read.py
+db.players.createIndex(
+  { views30d: 1, lastViewedAt: 1, insertedAt: 1, playerTag: 1 },
+  { name: "park_order_index", partialFilterExpression: { active: true } },
+);

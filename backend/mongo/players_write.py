@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from pymongo import ReturnDocument, UpdateMany, UpdateOne
 from .connection import MongoConn
+from .players_read import PARKED_REASON
 from .validation_utils import ensure_connected
 
 # NOTE searchChangedAt tells the API's player search which players to read
@@ -98,6 +99,8 @@ async def insert_tracked_player(
                 {
                     "$set": {
                         "active": True,
+                        # Starts the parking spare window (get_park_candidates)
+                        "activatedAt": "$$NOW",
                         "reactivatedAt": now,
                         "updatedAt": now,
                         "searchChangedAt": "$$NOW",
@@ -147,6 +150,11 @@ async def insert_tracked_player(
                 "$set": {"playerTag": player_tag, "active": True, "updatedAt": now},
                 "$setOnInsert": {
                     "insertedAt": now,
+                    "activatedAt": datetime.now(timezone.utc),
+                    # Unviewed players sort as 0 in the parking order from
+                    # the start, not before every counted 0 as a missing
+                    # field would.
+                    "views30d": 0,
                     "playerName": player_name,
                     "syncVersion": 0,
                     # Set by the first sync with battles
@@ -208,6 +216,44 @@ async def deactivate_tracked_player(
 
     except Exception as e:
         print(f"[DB] [ERROR] during update: {e}")
+        raise
+
+
+async def remove_parked_player(conn: MongoConn, player_tag: str) -> int:
+    """
+    Turns a parked player into a removed one, which the search no longer lists.
+
+    deactivatedAt keeps the time of parking: the player has not been synced
+    since then, so a later reactivation records the gap from there.
+
+    Args:
+        conn (MongoConn): Active connection to the mongo database
+        player_tag (str): The player tag starting with '#' (e.g., "#YYRJQY28")
+
+    Returns:
+        int: 1 if the player was parked, otherwise 0
+
+    Raises:
+        Exception: If the update of the player fails
+    """
+
+    try:
+        await ensure_connected(conn)
+        res = await conn.db.players.update_one(
+            {
+                "playerTag": player_tag,
+                "active": False,
+                "deactivatedReason": PARKED_REASON,
+            },
+            {
+                "$unset": {"deactivatedReason": ""},
+                "$currentDate": {"searchChangedAt": True},
+            },
+        )
+        return res.matched_count
+
+    except Exception as e:
+        print(f"[DB] [ERROR] removing the parked player {player_tag}: {e}")
         raise
 
 
@@ -457,7 +503,7 @@ async def write_view_ranking(
     Stores the windowed view counts and the explore ranking on the players.
 
     Every viewed player gets views30d. A player without views in the window
-    goes back to 0. exploreRank then numbers the active players with at least
+    goes back to 0, and so does one without the field yet. exploreRank then numbers the active players with at least
     min_views by views, most first, tag as the tiebreaker, leaving out
     players with exploreHidden. Everyone else loses the field. The ranking
     job is the only writer of both fields.
@@ -494,6 +540,11 @@ async def write_view_ranking(
             ops.append(
                 UpdateMany({"playerTag": {"$in": dropped}}, {"$set": {"views30d": 0}})
             )
+        # Players inserted before the add route stored a 0, or without the
+        # API. A missing field would sort before every counted 0 when parking.
+        ops.append(
+            UpdateMany({"views30d": {"$exists": False}}, {"$set": {"views30d": 0}})
+        )
         await _bulk_write_batches(players, ops)
 
         ranked = [

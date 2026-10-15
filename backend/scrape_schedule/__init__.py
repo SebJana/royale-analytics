@@ -14,6 +14,7 @@ from .capacity import (
     publish_capacity,
     read_capacity,
 )
+from .parking import players_to_park, spare_since
 from .settings import settings as schedule_settings
 
 # Names shared by the scraper (claims and acks) and the API (add and remove).
@@ -58,6 +59,8 @@ __all__ = [
     "compute_capacity",
     "publish_capacity",
     "read_capacity",
+    "players_to_park",
+    "spare_since",
     "BATTLES_SCHEDULE",
     "PROFILES_SCHEDULE",
     "schedule_settings",

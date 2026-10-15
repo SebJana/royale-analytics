@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi_limiter.depends import RateLimiter
-from redis.exceptions import RedisError
+from redis.exceptions import LockError, RedisError
 from core.deps import (
     AuthStateConn,
     DbConn,
@@ -26,18 +26,25 @@ from api_key_store import NoKeyAvailable, KeyStoreUnavailable
 from mongo import (
     insert_tracked_player,
     deactivate_tracked_player,
+    remove_parked_player,
     get_players_count,
     check_player_tracked,
+    get_tracked_player_cache_state,
+    get_park_candidates,
+    PARKED_REASON,
     get_explore_page,
     save_player_profile,
 )
-from scrape_schedule import read_capacity, schedule_settings
+from scrape_schedule import read_capacity, schedule_settings, spare_since
 from player_search import SearchIndexNotReady
 from core.settings import settings
 from helpers.token_budget import refund_token
 from helpers.profile_views import round_view_count
 
 router = APIRouter(prefix="/players", tags=["Tracked Players"])
+
+# Redis lock (scheduling Redis) around every add that parks a player
+ADMISSION_LOCK_KEY = "crsched:admission"
 
 # TODO Give the actual admin a way to batch insert and untrack player tags
 # without the challenge flow, the removal budget and the per-IP rate limits.
@@ -48,34 +55,34 @@ router = APIRouter(prefix="/players", tags=["Tracked Players"])
 # request per new tag and must respect ensure_tracking_capacity.
 
 
-# TODO Park the least viewed players when tracking nears capacity, instead of
-# refusing new ones. Parked is a third state besides active and deactivated:
-# the scraper stops syncing the player (off both schedules), but search still
-# lists it and its page shows the stored data with a notice that it is no
-# longer tracked. Opening a parked player reactivates it if capacity allows,
-# parking the next least viewed player if needed. Rank by the view counts from
-# the TODO in players_details.py (views in the last 30 days, then
-# lastViewedAt), and spare recently added or viewed players so two of them
-# cannot keep parking each other. require_tracked_player has to let parked
-# players through, and the state has to stay apart from a user removal
-# (e.g. deactivatedReason "parked").
-# A protected list (e.g. the top 1000 of the ranked leaderboard) is tracked at
-# all times, as the meta analysis needs those players: never parked, and not
-# removable through the removal route either, only by the admin. Refresh it
-# from the leaderboard regularly; a player leaving the top loses protection
-# and is ranked like everyone else. Its size counts against capacity first,
-# so the parking only ever shares what is left.
+# TODO Track the top TOP_PLAYERS_N of the last finished season, protected
+# from parking and from the removal route, with TOP_PLAYERS_N slots reserved
+# in the admission count so a full new list always fits. The season
+# finish of the ranked leaderboard comes from
+# /v1/locations/global/pathoflegend/{seasonId}/rankings/players?limit=N
+# (seasonId as YYYY-MM, e.g. 2026-09). Page through it with the
+# paging.cursors.after cursor up to the top N.
 async def ensure_tracking_capacity(
     mongo_conn: DbConn, schedules: Schedules, player_tag: str
-):
-    """Reject a new player if the data scraper cannot sync one more in time.
+) -> int | None:
+    """Check whether the data scraper can sync one more player in time.
 
     The scraper publishes how many players its keys can keep within the
     battle log window. Already tracked players always pass, and so does every
-    player while no recent estimate exists (scraper not running yet).
+    player while no recent estimate exists (scraper not running yet). A full
+    pool admits the player as long as another one can be parked for it
+    (admit_at_capacity).
+
+    Two adds at the same time can both pass at one below the limit. The
+    scraper's hourly parking check brings usage back below its watermarks.
+
+    Returns:
+        int | None: The admission limit if the pool is full, so the player
+        has to go through admit_at_capacity, otherwise None.
 
     Raises:
-        HTTPException: 503 with code TRACKING_CAPACITY_REACHED.
+        HTTPException: 503 with code TRACKING_CAPACITY_REACHED if the pool is
+            full and no player can be parked.
     """
 
     try:
@@ -85,17 +92,150 @@ async def ensure_tracking_capacity(
     except RedisError:
         capacity = None
     if capacity is None or capacity.max_players is None:
-        return
+        return None
     if await check_player_tracked(mongo_conn, player_tag):
-        return
-    if await get_players_count(mongo_conn) >= capacity.max_players:
+        return None
+    count = await get_players_count(mongo_conn)
+    if count < capacity.max_players:
+        return None
+    # Every active player can be parked, so a full pool has someone to park
+    # unless the limit is 0. Checked before the Clash Royale request, so such
+    # a pool does not spend app key requests on players it rejects anyway.
+    if count == 0:
+        raise _capacity_reached()
+    return capacity.max_players
+
+
+async def admit_at_capacity(
+    mongo_conn: DbConn,
+    schedules: Schedules,
+    player_tag: str,
+    player_name: str,
+    max_players: int,
+) -> str:
+    """Park one player and add player_tag, as one step for all full-pool adds.
+
+    The lock serializes this step across requests: without it, two adds of
+    the same player would each park someone for a single new player. Under
+    the lock the player and the count are checked again, as the Clash Royale
+    request before took a while. The lock expires on its own if the process
+    dies while holding it.
+
+    Args:
+        mongo_conn (DbConn): Mongo connection.
+        schedules (Schedules): Scraping schedules; their Redis holds the lock.
+        player_tag (str): The player to add.
+        player_name (str): Its name from the Clash Royale check.
+        max_players (int): The admission limit ensure_tracking_capacity saw.
+
+    Returns:
+        str: The result of insert_tracked_player.
+
+    Raises:
+        HTTPException: 503 TRACKING_BUSY if other full-pool adds hold the
+            lock too long, 503 TRACKING_CAPACITY_REACHED if nobody can be
+            parked, 500 if the player could not be stored.
+    """
+
+    lock = schedules.redis.lock(
+        ADMISSION_LOCK_KEY,
+        timeout=settings.ADMISSION_LOCK_TTL_S,
+        blocking_timeout=settings.ADMISSION_LOCK_WAIT_S,
+    )
+    try:
+        acquired = await lock.acquire()
+    except RedisError:
+        acquired = False
+    if not acquired:
         raise HTTPException(
             status_code=503,
             detail={
-                "code": "TRACKING_CAPACITY_REACHED",
-                "message": "The maximum number of tracked players is reached",
+                "code": "TRACKING_BUSY",
+                "message": "Too many players are being added at once",
             },
+            headers={"Retry-After": str(int(settings.ADMISSION_LOCK_WAIT_S))},
         )
+    try:
+        parked = None
+        if (
+            not await check_player_tracked(mongo_conn, player_tag)
+            and await get_players_count(mongo_conn) >= max_players
+        ):
+            parked = await make_room(mongo_conn, schedules, player_tag)
+        try:
+            return await insert_tracked_player(mongo_conn, player_tag, player_name)
+        except Exception:
+            if parked:
+                await _unpark(mongo_conn, parked)
+            raise HTTPException(
+                status_code=500, detail=f"Player {player_tag} could not be tracked"
+            )
+    finally:
+        try:
+            await lock.release()
+        except (LockError, RedisError):
+            # Expired already: another add may have run meanwhile, which only
+            # brings back the rare double parking the lock is there to stop.
+            pass
+
+
+async def make_room(mongo_conn: DbConn, schedules: Schedules, player_tag: str) -> str:
+    """Park the first player in parking order to make room for player_tag.
+
+    A candidate can be untracked by a removal between the read and the
+    write, so the next ones are tried before giving up.
+
+    Returns:
+        str: The tag of the parked player.
+
+    Raises:
+        HTTPException: 503 with code TRACKING_CAPACITY_REACHED if none of the
+            candidates could be parked.
+    """
+
+    candidates = await get_park_candidates(
+        mongo_conn, settings.PARK_ON_DEMAND_CANDIDATES, spare_since()
+    )
+    for tag in candidates:
+        if not await deactivate_tracked_player(mongo_conn, tag, PARKED_REASON):
+            continue
+        print(f"[INFO] Parked {tag} to make room for {player_tag}")
+        # The search keeps listing a parked player, so only the schedules
+        # change.
+        try:
+            await schedules.battles.remove(tag)
+            await schedules.profiles.remove(tag)
+        except RedisError as e:
+            # The scraper drops inactive players on their next claim or the
+            # next reconciliation, so this is only a delay.
+            print(f"[WARNING] Could not unschedule parked {tag}: {e}")
+        return tag
+    raise _capacity_reached()
+
+
+async def _unpark(mongo_conn: DbConn, player_tag: str):
+    """Track a player again that was parked for an add that then failed.
+
+    The reconciler puts it back on the schedules within a few minutes. Its
+    pause of a few milliseconds stays below the untracked periods the
+    profile lists.
+    """
+
+    try:
+        await insert_tracked_player(mongo_conn, player_tag)
+        print(f"[INFO] Tracked {player_tag} again after a failed add")
+    except Exception as e:
+        print(f"[ERROR] {player_tag} stays parked after a failed add: {e}")
+
+
+def _capacity_reached() -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={
+            "code": "TRACKING_CAPACITY_REACHED",
+            "message": "The maximum number of tracked players is reached",
+        },
+    )
 
 
 # The player search on the home page shows it as its Popular list.
@@ -229,7 +369,8 @@ async def search_tracked_players(
         502: {"description": "Clash Royale API request failed"},
         503: {
             "description": "Clash Royale API or key store unavailable, "
-            "or the scraper has no capacity for another player"
+            "or the scraper is full and no player can be parked, or too many "
+            "players are being added at once (TRACKING_BUSY, Retry-After)"
         },
     },
 )
@@ -245,7 +386,7 @@ async def add_tracked_player(
 
     # Checked before the Clash Royale request, so a full scraper does not
     # spend app key requests on players it would reject anyway.
-    await ensure_tracking_capacity(mongo_conn, schedules, player_tag)
+    full_at = await ensure_tracking_capacity(mongo_conn, schedules, player_tag)
 
     try:
         profile = await cr_api.check_existing_player(player_tag)
@@ -301,10 +442,22 @@ async def add_tracked_player(
             detail={"code": "CR_API_UNAVAILABLE", "message": e.detail},
         ) from e
 
-    try:
-        status_insert = await insert_tracked_player(
-            mongo_conn, player_tag, profile["name"]
+    # Only after the Clash Royale check, so a mistyped tag parks nobody.
+    if full_at is not None:
+        status_insert = await admit_at_capacity(
+            mongo_conn, schedules, player_tag, profile["name"], full_at
         )
+    else:
+        try:
+            status_insert = await insert_tracked_player(
+                mongo_conn, player_tag, profile["name"]
+            )
+        except Exception:
+            raise HTTPException(
+                status_code=500, detail=f"Player {player_tag} could not be tracked"
+            )
+
+    try:
         # The verification response is a complete profile. Storing it as the
         # first snapshot makes the profile page work right away, without
         # another Clash Royale request.
@@ -371,7 +524,14 @@ async def remove_tracked_player(
 ):
     player_tag = player.tag
     try:
-        affected_player_count = await deactivate_tracked_player(mongo_conn, player_tag)
+        # A parked player is already off the schedules; removing it only
+        # drops it from the search.
+        if player.parked:
+            affected_player_count = await remove_parked_player(mongo_conn, player_tag)
+        else:
+            affected_player_count = await deactivate_tracked_player(
+                mongo_conn, player_tag
+            )
 
         # Database operation returns 0 if no matching records were modified
         # Tracked player is verified with every given player tag, but handle async untrack issues
@@ -399,11 +559,13 @@ async def remove_tracked_player(
     except Exception:
         # A failure that removed nobody is no spent removal. Mongo can commit
         # the deactivation and still fail the request (a lost acknowledgement),
-        # so refund only when the player is verifiably still tracked. A 404
-        # above keeps the charge: the request did name a player, just one
-        # already removed.
+        # so refund only when the player is verifiably still tracked or
+        # parked. A 404 above keeps the charge: the request did name a player,
+        # just one already removed.
         try:
-            unchanged = await check_player_tracked(mongo_conn, player_tag)
+            unchanged = (
+                await get_tracked_player_cache_state(mongo_conn, player_tag) is not None
+            )
         except Exception:
             unchanged = False
         if unchanged:

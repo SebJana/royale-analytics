@@ -11,7 +11,7 @@ PLAYER_VIEWS_RETENTION_S = 35 * 24 * 60 * 60  # 35 days
 
 
 async def ensure_player_views_indexes(conn: MongoConn) -> None:
-    """Create the indexes of the view counts and the explore ranking, if missing.
+    """Create the indexes of the view counts, the explore ranking and parking.
 
     The API creates them at startup, before it counts the first view: without
     the unique index, two first views of a player on a day can create two
@@ -42,6 +42,19 @@ async def ensure_player_views_indexes(conn: MongoConn) -> None:
             "exploreRank",
             name="exploreRank_index",
             partialFilterExpression={"exploreRank": {"$exists": True}},
+        )
+        # Parking reads the active players in parking order and stops at its
+        # limit, instead of sorting every player on an add at full capacity.
+        # NOTE Keys match PARK_ORDER in players_read.py.
+        await conn.db.players.create_index(
+            [
+                ("views30d", 1),
+                ("lastViewedAt", 1),
+                ("insertedAt", 1),
+                ("playerTag", 1),
+            ],
+            name="park_order_index",
+            partialFilterExpression={"active": True},
         )
     except Exception as e:
         print(f"[DB] [ERROR] creating the player views indexes: {e}")

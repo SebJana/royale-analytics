@@ -38,6 +38,8 @@ export function getTrackingErrorMessage(error: unknown): string {
     return "This verification removed the most players it can. Verify again to remove more.";
   if (code === "REMOVE_PLAYER_TOKEN_EXPIRED")
     return "Your verification expired. Verify again.";
+  if (code === "TRACKING_BUSY")
+    return "Many players are being added right now. Please try again in a few seconds.";
   if (code === "TRACKING_CAPACITY_REACHED")
     return "The maximum number of tracked players is reached. No new players can be added right now.";
   if (code === "CR_API_AUTH_FAILED")
@@ -84,7 +86,8 @@ export function getTrackingErrorStatus(error: unknown, title: string): Status {
   const isTemporary =
     response?.status === 429 ||
     code === "CR_API_MAINTENANCE" ||
-    code === "CR_API_UNAVAILABLE";
+    code === "CR_API_UNAVAILABLE" ||
+    code === "TRACKING_BUSY";
   return {
     tone: isTemporary ? "wait" : "error",
     title,

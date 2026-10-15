@@ -177,6 +177,12 @@ class Settings:
     # them. A newly tracked or newly found player has no baseline yet.
     VIEWS_SPIKE_MIN_DAYS: int = 3
 
+    # Parking near capacity (jobs/parking.py). The watermarks and the spare
+    # window are shared with the API in backend/scrape_schedule/settings.py.
+    # How often usage is checked. Adds at full capacity park on demand in the
+    # API, so this only has to keep headroom, not react within minutes.
+    PARK_CHECK_INTERVAL: float = 60 * 60  # 1 hour
+
     # Self-hosted card images (see card_images.py)
     # Shared volume the image sets are written to; nginx serves it read-only.
     CARD_IMAGES_DIR: str = os.getenv("CARD_IMAGES_DIR", "/data/card-images")

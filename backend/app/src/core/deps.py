@@ -97,7 +97,7 @@ def get_scrape_schedules(request: Request) -> ScrapeSchedules:
 
 
 def get_player_search(request: Request) -> PlayerSearchService:
-    """Return the in-memory player search, which holds every tracked player."""
+    """Return the in-memory player search, which holds every tracked and parked player."""
 
     search = getattr(request.app.state, "player_search", None)
     if search is None:
@@ -138,6 +138,9 @@ class TrackedPlayer:
     explore_rank is the player's place in the explore list (1 is the most
     viewed), None if unranked. views_30d are its counted views in the
     ranking window, as of the last ranking.
+    parked marks a player taken off the schedules to make room. Its stored
+    data is still served, and its views still count, so it can rank its way
+    out of the parking order again.
     """
 
     tag: str
@@ -151,6 +154,7 @@ class TrackedPlayer:
     tracking_gaps: list[dict]
     explore_rank: int | None
     views_30d: int
+    parked: bool
 
 
 # Dependency that ensures the given player tag is active in the players collection
@@ -158,7 +162,7 @@ async def require_tracked_player(
     player_tag: str, cr_api: CrApi, mongo_conn: DbConn
 ) -> TrackedPlayer:
     """
-    FastAPI dependency that ensures a given player tag is valid and currently tracked.
+    FastAPI dependency that ensures a given player tag is valid and tracked or parked.
 
     FastAPI caches the result per request, so a router-level dependency and a
     TrackedPlayerDep route parameter share one Mongo lookup.
@@ -212,6 +216,7 @@ async def require_tracked_player(
         tracking_gaps=_relevant_tracking_gaps(state["trackingGaps"]),
         explore_rank=state["exploreRank"],
         views_30d=state["views30d"],
+        parked=state["parked"],
     )
 
 

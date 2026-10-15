@@ -415,6 +415,16 @@ class Settings:
     EXPLORE_PAGE_SIZE_MAX: int = 50
     # Players up to this explore rank get the popular badge on their profile
     POPULAR_TOP_X: int = 100
+    # Candidates an add at full capacity tries to park, in parking order. More
+    # than one, as the hourly check or another add can park the first ones
+    # between the read and the write.
+    PARK_ON_DEMAND_CANDIDATES: int = 5
+    # Lifetime of the lock around an add that parks a player. Far above the
+    # few Mongo writes it covers, so it only expires if the API dies.
+    ADMISSION_LOCK_TTL_S: float = 10  # 10 seconds
+    # How long such an add waits for the lock before answering 503
+    # TRACKING_BUSY with this as Retry-After.
+    ADMISSION_LOCK_WAIT_S: float = 5  # 5 seconds
 
     # Get set both in current and ahead version of the cache, and therefore not invalidated with every cycle
     CACHE_TTL_CAPTCHA_CHALLENGE: int = (
