@@ -288,11 +288,8 @@ class Settings:
     # fuzzy comparison of the security answers costs time per character.
     AUTH_ANSWER_MAX_LENGTH: int = 64
 
-    # Seasons start on the first Monday of a month at this UTC hour. Supercell
-    # publishes the day but not the hour. Ranked battles around the October
-    # 2026 reset point to 09:00 UTC, the logs bracket it between 08:25 and
-    # 21:19 UTC. Kept until a source or more resets say otherwise.
-    SEASON_RESET_HOUR_UTC: int = 9
+    # The reset hour of a season is SEASON_RESET_HOUR_UTC in the shared
+    # seasons package, which the data scraper reads as well.
     # Oldest season id a request may name. The first-Monday rule holds since
     # the first themed season, which started on Monday, July 1, 2019.
     SEASON_FIRST_ID: str = "2019-07"
