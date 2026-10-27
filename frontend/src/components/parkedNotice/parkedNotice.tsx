@@ -5,6 +5,7 @@ import { trackPlayer } from "../../services/api/trackedPlayers";
 import { TRACKED_PLAYER_COUNT_QUERY_KEY } from "../../hooks/useTrackedPlayerCount";
 import { getTrackingErrorStatus } from "../../utils/trackingErrors";
 import { StatusMessage } from "../statusMessage/statusMessage";
+import { NoticeCard } from "../noticeCard/noticeCard";
 import type { Status } from "../../types/status";
 import "./parkedNotice.css";
 
@@ -75,34 +76,25 @@ export function ParkedNotice({
     );
 
   return (
-    <section className="parked-notice" aria-labelledby="parked-notice-title">
-      <CirclePause
-        className="parked-notice-icon"
-        size={32}
-        aria-hidden="true"
-      />
-      <h2 id="parked-notice-title" className="parked-notice-title">
-        Tracking paused
-      </h2>
-      <p className="parked-notice-message">
-        {since ? `Paused since ${since}` : "This player was paused"} to make
-        room for players viewed more often. Its battles aren&apos;t checked
-        anymore, only games against other tracked players are still recorded.
-      </p>
-      <StatusMessage
-        status={status}
-        id={statusId}
-        className="parked-notice-status"
-      />
-      <button
-        type="button"
-        className="parked-notice-button"
-        onClick={handleTrackAgain}
-        disabled={pending}
-        aria-describedby={status ? statusId : undefined}
-      >
-        {pending ? "Tracking..." : "Track again"}
-      </button>
-    </section>
+    <NoticeCard
+      icon={CirclePause}
+      title="Tracking paused"
+      status={status}
+      statusId={statusId}
+      action={
+        <button
+          type="button"
+          onClick={handleTrackAgain}
+          disabled={pending}
+          aria-describedby={status ? statusId : undefined}
+        >
+          {pending ? "Tracking..." : "Track again"}
+        </button>
+      }
+    >
+      {since ? `Paused since ${since}` : "This player was paused"} to make room
+      for players viewed more often. Its battles aren&apos;t checked anymore,
+      only games against other tracked players are still recorded.
+    </NoticeCard>
   );
 }
