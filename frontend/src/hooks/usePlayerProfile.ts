@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import axios from "axios";
 import { fetchPlayerProfile } from "../services/api/player";
 import type { Player } from "../types/player";
@@ -6,8 +7,9 @@ import { PREFERENCE_QUERY_META } from "../utils/storage";
 import { firstSyncPollInterval } from "../utils/polling";
 
 const min = 60_000;
-// Poll interval while a player has no profile snapshot yet. Only players
-// inserted without the API (e.g. in bulk), until the scraper's first refresh.
+// Poll interval while a player has no profile snapshot yet: players inserted
+// without the API, e.g. from the top players' leaderboard, until the
+// scraper's first refresh.
 const notSyncedPollInterval = 30_000;
 // Poll interval of a synced profile on an open page, the same as the sync
 // version poll (useSyncVersionRefresh.ts). The route only reads the database.
@@ -48,7 +50,49 @@ const PERMANENT_ERROR_CODES = new Set([
   "PROFILE_NOT_SYNCED",
 ]);
 
-export function usePlayerProfile(playerTag: string) {
+/**
+ * The stored profile of a player, polled while the page is open.
+ *
+ * A query that never had data goes back to pending on every refetch, which
+ * clears its error. For a player without a profile (PROFILE_NOT_SYNCED) every
+ * poll would swap the whole page for the loading spinner and remount it. So
+ * while such a refetch runs, the last error of this player is reported as if
+ * it were still settled.
+ *
+ * @param playerTag - The player's tag as in the page URL
+ * @returns The React Query result, settled on the last error during refetches
+ */
+export function usePlayerProfile(
+  playerTag: string,
+): UseQueryResult<Player, Error> {
+  const query = useProfileQuery(playerTag);
+  const [lastError, setLastError] = useState<{
+    tag: string;
+    error: Error;
+  } | null>(null);
+  // Adjusted while rendering, like derived state
+  if (
+    query.error &&
+    (lastError?.tag !== playerTag || lastError.error !== query.error)
+  )
+    setLastError({ tag: playerTag, error: query.error });
+  const refetchingError =
+    query.isPending && query.isFetching && lastError?.tag === playerTag
+      ? lastError.error
+      : null;
+  if (!refetchingError) return query;
+  return {
+    ...query,
+    status: "error",
+    error: refetchingError,
+    isError: true,
+    isPending: false,
+    isLoading: false,
+    isLoadingError: true,
+  } as UseQueryResult<Player, Error>;
+}
+
+function useProfileQuery(playerTag: string) {
   return useQuery<Player, Error>({
     queryKey: ["playerProfile", playerTag],
     // Pass the playerTag to the query function from the query key
