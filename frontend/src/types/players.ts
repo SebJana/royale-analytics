@@ -40,6 +40,24 @@ export type PopularPlayer = {
   views30d: number;
 };
 
+export type TopPlayer = {
+  tag: string;
+  // Name on the leaderboard when the season's list was fetched
+  name: string;
+  // Path of Legend rank at the end of the season, 1 is the best
+  rank: number;
+};
+
+export type TopPage = {
+  // Season of the list (YYYY-MM), null while no list is applied or the
+  // requested season is unknown
+  season: string | null;
+  // Best rank first
+  players: TopPlayer[];
+  // Rank to continue after, null on the last page
+  nextCursor: number | null;
+};
+
 export type ExplorePage = {
   // Most viewed first
   players: PopularPlayer[];

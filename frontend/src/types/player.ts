@@ -1,8 +1,21 @@
+// Place on the global Path of Legend leaderboard at the end of a season
+export type TopFinish = {
+  // Season id, YYYY-MM
+  season: string;
+  rank: number;
+};
+
 // "parked": taken off syncing to make room for other players. Its data stops
 // at that time, and tracking it again resumes the syncs. Also sent with a
 // PROFILE_NOT_SYNCED error, for a player parked before its first profile.
 export type PlayerTracking = {
   state: "active" | "parked";
+  // Wanted for its own sake: stays tracked after a season in the top players
+  // ends. Missing in profiles cached before the field existed.
+  regular?: boolean;
+  // Set while the player is in the last finished season's top list, which
+  // keeps it tracked and protects it from removal until the next season.
+  topFinish?: TopFinish | null;
   // Day the pause started (YYYY-MM-DD), null if unknown
   since?: string | null;
   // Battles of the pause recorded through other tracked players, as

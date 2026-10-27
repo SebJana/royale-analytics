@@ -7,6 +7,7 @@ import { House, Menu, X, ChevronLeft } from "lucide-react";
 import { PlayerInfo } from "../../components/playerInfo/playerInfo";
 import { PlayerInfoPlaceholder } from "../../components/playerInfo/playerInfoPlaceholder";
 import { ParkedNotice } from "../../components/parkedNotice/parkedNotice";
+import { TopPlayerNotice } from "../../components/topPlayerNotice/topPlayerNotice";
 import { PlayerErrorBoundary } from "../../components/playerError/playerErrorBoundary";
 import { useEffect, useLayoutEffect, useState } from "react";
 import axios from "axios";
@@ -26,6 +27,22 @@ import CircularProgress from "@mui/material/CircularProgress";
 import type { PlayerTracking } from "../../types/player";
 import "./layout.css";
 
+/**
+ * Whether the top player on this page was just kept, so its notice stays to
+ * show the outcome after the refetched profile reports it as regular.
+ * Forgotten on another player: opened again, a kept player is regular and
+ * needs no notice.
+ *
+ * @param playerTag - The player's tag as in the page URL
+ * @returns Whether it was kept here, and the callback that marks it
+ */
+function useKeptPlayer(playerTag: string): readonly [boolean, () => void] {
+  const [keptTag, setKeptTag] = useState<string | null>(null);
+  // Adjusted while rendering, like derived state
+  if (keptTag && keptTag !== playerTag) setKeptTag(null);
+  return [keptTag === playerTag, () => setKeptTag(playerTag)] as const;
+}
+
 export default function PlayerLayout() {
   const { playerTag = "" } = useParams();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -37,6 +54,7 @@ export default function PlayerLayout() {
   } | null>(null);
   // Remounts the notice for a new pause, so a past success does not stay
   const [noticeEpisode, setNoticeEpisode] = useState(0);
+  const [kept, markKept] = useKeptPlayer(playerTag);
   const encodedTag = encodeURIComponent(playerTag ?? "");
   const { pathname } = useLocation();
 
@@ -216,6 +234,20 @@ export default function PlayerLayout() {
             onResumed={() => setResumed({ tag: playerTag, confirmed: false })}
           />
         )}
+        {/* Only while nobody keeps the player, and also without a profile:
+            the leaderboard adds players the scraper refreshes only within
+            hours. Stays after "Keep tracking" to show its outcome. A
+            missing regular (profiles cached before it) counts as kept. */}
+        {tracking?.topFinish &&
+          !isParked &&
+          (tracking.regular === false || kept) && (
+            <TopPlayerNotice
+              key={playerTag}
+              playerTag={playerTag}
+              topFinish={tracking.topFinish}
+              onKept={markKept}
+            />
+          )}
         {player ? (
           <PlayerInfo player={player} />
         ) : (

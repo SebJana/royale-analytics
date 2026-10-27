@@ -38,6 +38,13 @@
   color: #3a1d00;
 }
 
+/* The purple of the game's Path of Legend, so a ladder finish never reads
+   as one of the view ranks next to it */
+.sticker-legend {
+  background: #8b4dff;
+  color: #fff;
+}
+
 .sticker-red {
   background: var(--color-error);
   color: #fff;

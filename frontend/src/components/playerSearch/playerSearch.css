@@ -46,6 +46,9 @@
    it floats over other content. The input's corner radius, and a small gap
    below it like between the page's controls. */
 .player-search-paper.MuiAutocomplete-paper {
+  /* The tabs switch to two rows by the dropdown's own width, which follows
+     the input, not the screen. */
+  container: player-search-dropdown / inline-size;
   margin-top: var(--spacing-xs);
   background-color: color-mix(in srgb, var(--bg-primary), white 5%);
   border: 1px solid var(--border-medium);
@@ -132,8 +135,11 @@
 /* NOTE Styled as the segmented controls of the player pages
    (segmentedControl.css): a bordered group on the dark page color, the
    selected segment tinted. Update both together. */
+/* NOTE Four columns, one per entry of LISTS in playerSearch.tsx, and two
+   rows of two below the breakpoint. Update both with a new list. */
 .player-search-tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 2px;
   margin: var(--spacing-sm);
   padding: 2px;
@@ -145,10 +151,9 @@
 
 .player-search-tab,
 .player-search-tab:hover {
-  /* Icon above the label: large to hit with a thumb, and still four tabs
-     fit the dropdown's width on a phone. */
+  /* Icon above the label: large to hit with a thumb, and four tabs fit
+     the dropdown's width on most phones. */
   display: flex;
-  flex: 1 1 0;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -180,6 +185,21 @@
   flex: none;
   width: 20px;
   height: 20px;
+}
+
+/* Too narrow for four labels: two rows of two, the icon beside the label,
+   so the tabs still fill the width and grow less than twice as tall. */
+@container player-search-dropdown (max-width: 340px) {
+  .player-search-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .player-search-tab,
+  .player-search-tab:hover {
+    flex-direction: row;
+    gap: var(--spacing-sm);
+    min-height: 40px;
+  }
 }
 
 /* A caption or action row of the shown list, e.g. Clear for recent players. */
@@ -242,11 +262,11 @@
 /* Most viewed players: rank, name and tag, views on the right. Every rank
    gets the same centered box, so the names stay in one column next to the
    gold stickers of the top three. */
-.player-search-paper .MuiAutocomplete-option.player-search-popular {
+.player-search-paper .MuiAutocomplete-option.player-search-ranked {
   gap: var(--spacing-md);
 }
 
-.player-search-popular-rank {
+.player-search-rank {
   flex: none;
   box-sizing: border-box;
   justify-content: center;
@@ -260,7 +280,7 @@
 }
 
 /* The shared Sticker sets the look, the list keeps its text size */
-.player-search-popular-rank.sticker {
+.player-search-rank.sticker {
   font-size: inherit;
 }
 
@@ -275,7 +295,7 @@
   font-weight: var(--font-weight-normal);
 }
 
-/* "Show more" is the last row of the popular list, so the arrow keys reach
+/* "Show more" is the last row of a paged list, so the arrow keys reach
    it. Styled as an action, centered and in the link color. */
 .player-search-paper .MuiAutocomplete-option.player-search-show-more {
   justify-content: center;

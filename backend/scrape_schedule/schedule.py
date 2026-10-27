@@ -59,6 +59,27 @@ return 1
 """
 
 
+# KEYS are the schedule ZSET and its owner hash. ARGV holds player tag and
+# due time (ms) pairs. A claimed player keeps its score, which is its claim's
+# expiry: an earlier one would let a second worker claim the player while the
+# first still syncs it. One script, so no claim can start between the check
+# and the write.
+RESCHEDULE_UNCLAIMED = """
+local changed = 0
+for i = 1, #ARGV, 2 do
+    if redis.call('HEXISTS', KEYS[2], ARGV[i]) == 0 then
+        redis.call('ZADD', KEYS[1], tonumber(ARGV[i + 1]), ARGV[i])
+        changed = changed + 1
+    end
+end
+return changed
+"""
+
+# Players per RESCHEDULE_UNCLAIMED call, so one script never blocks Redis for
+# long.
+RESCHEDULE_BATCH = 500
+
+
 @dataclass(frozen=True)
 class Claim:
     """One claimed player and the owner token required to acknowledge it."""
@@ -101,6 +122,32 @@ class Schedule:
 
         if due_by_tag:
             await self.redis.zadd(self._zset, due_by_tag, nx=True)
+
+    async def reschedule_unclaimed(self, due_by_tag: dict[str, int]) -> int:
+        """Schedule players at absolute due times, unless a worker claimed them.
+
+        Replaces existing due times, e.g. the due time 0 the reconciler gives
+        players inserted moments before, but never a running claim.
+
+        Args:
+            due_by_tag (dict[str, int]): Player tag mapped to epoch milliseconds.
+
+        Returns:
+            int: Number of players scheduled; the rest were claimed.
+        """
+
+        items = list(due_by_tag.items())
+        changed = 0
+        for start in range(0, len(items), RESCHEDULE_BATCH):
+            args = [
+                value
+                for tag, due_ms in items[start : start + RESCHEDULE_BATCH]
+                for value in (tag, due_ms)
+            ]
+            changed += await self.redis.eval(
+                RESCHEDULE_UNCLAIMED, 2, self._zset, self._owners, *args
+            )
+        return changed
 
     async def remove(self, *player_tags: str):
         """Remove players from the schedule, including a running claim."""

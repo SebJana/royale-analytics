@@ -16,6 +16,7 @@ import {
 import {
   ArrowRight,
   CircleAlert,
+  Crown,
   Flame,
   History,
   Search,
@@ -29,14 +30,16 @@ import {
   useRecentPlayers,
 } from "../../hooks/useRecentPlayers";
 import { useExplorePlayers } from "../../hooks/useExplorePlayers";
+import { useTopPlayers } from "../../hooks/useTopPlayers";
 import { useStorageConsent } from "../../hooks/useStorageConsent";
 import { StorageSettingsContext } from "../../contexts/StorageSettingsContext";
 import type { PlayerSearchResult } from "../../types/players";
 import { formatCompactNumber } from "../../utils/number";
 import { normalizePlayerTag } from "../../utils/playerTag";
+import { formatSeasonLabel } from "../../utils/seasons";
 import "./playerSearch.css";
 import { AppTooltip } from "../tooltip/tooltip";
-import { Sticker } from "../sticker/sticker";
+import { Sticker, type StickerTone } from "../sticker/sticker";
 import { CloseButton } from "../closeButton/closeButton";
 
 type Player = { tag: string; name: string };
@@ -53,26 +56,30 @@ type PopularOption = {
   rank: number;
   views30d: number;
 };
-// The row that loads more popular players. A row rather than a button, so
-// the arrow keys reach it like the players above it.
+// The last finished season's best ranked players, tracked for the meta.
+type TopOption = { tag: string; name: string; match: "top"; rank: number };
+// The row that loads more popular or top players. A row rather than a
+// button, so the arrow keys reach it like the players above it.
 type MoreOption = { tag: ""; name: ""; match: "more" };
 type SearchOption =
   | PlayerSearchResult
   | TypedTagOption
   | RecentOption
   | PopularOption
+  | TopOption
   | MoreOption;
 // hidden marks the selected player in a list it does not belong to: MUI needs
 // the value among the options, but it is neither shown nor reachable there.
 type ListOption = SearchOption & { hidden?: boolean };
 
-// The lists the dropdown switches between. A new one (e.g. top players of the
-// ladder) needs an entry here and its options in PlayerSearch.
-type ListId = "search" | "recent" | "popular";
+// The lists the dropdown switches between. A new one needs an entry here
+// and its options in PlayerSearch.
+type ListId = "search" | "recent" | "popular" | "top";
 const LISTS: { id: ListId; label: string; icon: LucideIcon }[] = [
   { id: "search", label: "Search", icon: Search },
   { id: "recent", label: "Recent", icon: History },
   { id: "popular", label: "Popular", icon: Flame },
+  { id: "top", label: "Top", icon: Crown },
 ];
 
 // Room the dropdown needs below the input: the tabs, a header and about five
@@ -115,6 +122,23 @@ function EmptyState({
         <span className="player-search-empty-hint">{hint}</span>
       </span>
     </div>
+  );
+}
+
+/**
+ * The place of a ranked row, a sticker for the first three: gold for the most
+ * viewed, the Path of Legend purple for the top players.
+ */
+function RankLabel({
+  rank,
+  tone = "gold",
+}: Readonly<{ rank: number; tone?: StickerTone }>) {
+  return rank <= 3 ? (
+    <Sticker tone={tone} size="sm" className="player-search-rank">
+      #{rank}
+    </Sticker>
+  ) : (
+    <span className="player-search-rank">#{rank}</span>
   );
 }
 
@@ -190,6 +214,9 @@ export function PlayerSearch({
   const recentPlayers = useRecentPlayers();
   // Only fetched once the list is shown; most visitors search instead.
   const popular = useExplorePlayers(list === "popular");
+  const top = useTopPlayers(list === "top");
+  // The paged list on screen, which "Show more" continues
+  const paged = list === "top" ? top : popular;
   // The row the arrow keys are on, so Enter on "Show more" loads instead of
   // selecting.
   const highlighted = useRef<SearchOption | null>(null);
@@ -323,6 +350,32 @@ export function PlayerSearch({
           </button>
         </div>
       );
+  } else if (list === "top") {
+    // All pages come from one season's stored list, so none overlap.
+    options = (top.data?.pages ?? []).flatMap((page) =>
+      page.players.map((player): TopOption => ({ ...player, match: "top" })),
+    );
+    loading = top.isPending;
+    emptyState = top.isError ? (
+      <EmptyState
+        icon={CircleAlert}
+        title="Top players are unavailable right now"
+        hint="Search still finds every tracked player"
+      />
+    ) : (
+      <EmptyState
+        icon={Crown}
+        title="No top players yet"
+        hint="They show up once a season's leaderboard is published"
+      />
+    );
+    const season = top.data?.pages[0]?.season;
+    if (options.length > 0 && season)
+      header = (
+        <span>Path of Legend finish, season {formatSeasonLabel(season)}</span>
+      );
+    if (top.hasNextPage)
+      options = [...options, { tag: "", name: "", match: "more" }];
   } else {
     // A ranking refresh between two pages can move a player into the next
     // one; it is shown once, at its first place.
@@ -370,8 +423,8 @@ export function PlayerSearch({
     options = [...options, { ...selected, hidden: true }];
   }
 
-  const loadMorePopular = () => {
-    if (!popular.isFetchingNextPage) void popular.fetchNextPage();
+  const loadMore = () => {
+    if (!paged.isFetchingNextPage) void paged.fetchNextPage();
   };
 
   return (
@@ -418,7 +471,7 @@ export function PlayerSearch({
                 event as typeof event & { defaultMuiPrevented: boolean }
               ).defaultMuiPrevented = true;
               event.preventDefault();
-              loadMorePopular();
+              loadMore();
             }
           }}
           // The same player can be in several lists, so the list is part of
@@ -462,10 +515,10 @@ export function PlayerSearch({
                   {...optionProps}
                   className={`${className ?? ""} player-search-show-more`}
                   // Loads instead of selecting, so the list stays open
-                  onClick={loadMorePopular}
+                  onClick={loadMore}
                   disableGutters
                 >
-                  {popular.isFetchingNextPage ? "Loading…" : "Show more"}
+                  {paged.isFetchingNextPage ? "Loading…" : "Show more"}
                 </ListItem>
               );
             }
@@ -522,22 +575,10 @@ export function PlayerSearch({
                 <ListItem
                   key={key}
                   {...optionProps}
-                  className={`${className ?? ""} player-search-popular`}
+                  className={`${className ?? ""} player-search-ranked`}
                   disableGutters
                 >
-                  {option.rank <= 3 ? (
-                    <Sticker
-                      tone="gold"
-                      size="sm"
-                      className="player-search-popular-rank"
-                    >
-                      #{option.rank}
-                    </Sticker>
-                  ) : (
-                    <span className="player-search-popular-rank">
-                      #{option.rank}
-                    </span>
-                  )}
+                  <RankLabel rank={option.rank} />
                   <ListItemText
                     primary={option.name || option.tag}
                     secondary={option.tag}
@@ -549,6 +590,22 @@ export function PlayerSearch({
                       views
                     </span>
                   </span>
+                </ListItem>
+              );
+            }
+            if (option.match === "top") {
+              return (
+                <ListItem
+                  key={key}
+                  {...optionProps}
+                  className={`${className ?? ""} player-search-ranked`}
+                  disableGutters
+                >
+                  <RankLabel rank={option.rank} tone="legend" />
+                  <ListItemText
+                    primary={option.name || option.tag}
+                    secondary={option.tag}
+                  />
                 </ListItem>
               );
             }

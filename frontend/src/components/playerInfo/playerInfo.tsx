@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Castle, ChevronUp, Info, Shield, Trophy } from "lucide-react";
+import { Castle, ChevronUp, Crown, Info, Shield, Trophy } from "lucide-react";
 import { AppTooltip } from "../tooltip/tooltip";
 import { CopyableTag } from "../copyableTag/copyableTag";
 import { Sticker } from "../sticker/sticker";
 import type { Player } from "../../types/player";
 import { formatCompactNumber, formatNumber, round } from "../../utils/number";
+import { formatSeasonLabel } from "../../utils/seasons";
 import {
   formatDateForInput,
   formatTimeAgo,
@@ -173,6 +174,10 @@ export function PlayerInfo({
   const pausedSince =
     player?.tracking?.state === "parked" ? player.tracking.since : null;
 
+  // The badge stays while the player is in the last finished season's top
+  // list, the same time its protection lasts.
+  const topFinish = player?.tracking?.topFinish ?? null;
+
   // Only shown when there is something to say about an untracked period
   const hasTrackingHistory =
     !!player?.syncInfo?.battlesBeforeTracking ||
@@ -184,28 +189,50 @@ export function PlayerInfo({
       <div className="player-info-component-header">
         <div className="player-info-component-basic-info">
           <h1 className="player-info-component-name">{player?.name}</h1>
-          {player?.popularity && (
-            // NOTE: "30 days" matches VIEWS_WINDOW_DAYS in the data
-            // scraper's settings. The count is rounded by the backend.
-            <AppTooltip
-              title="Rank among all tracked players by visitors in the last 30 days."
-              tapToShow
-            >
-              <Sticker
-                tone={player.popularity.rank <= 3 ? "gold" : "orange"}
-                className="player-info-component-popularity-badge"
-              >
-                <span className="sticker-figure">
-                  #{player.popularity.rank}
-                </span>
-                <span className="sticker-caption">
-                  most viewed
-                  <br />
-                  {formatCompactNumber(player.popularity.views30d)} views in 30
-                  days
-                </span>
-              </Sticker>
-            </AppTooltip>
+          {(player?.popularity || topFinish) && (
+            <div className="player-info-component-badges">
+              {topFinish && (
+                <AppTooltip
+                  title="Global Path of Legend rank at the end of the season."
+                  tapToShow
+                >
+                  <Sticker tone="legend">
+                    <Crown
+                      className="player-info-component-legend-crown"
+                      aria-hidden="true"
+                    />
+                    <span className="sticker-figure">#{topFinish.rank}</span>
+                    <span className="sticker-caption">
+                      Path of Legend
+                      <br />
+                      {formatSeasonLabel(topFinish.season)} finish
+                    </span>
+                  </Sticker>
+                </AppTooltip>
+              )}
+              {player?.popularity && (
+                // NOTE: "30 days" matches VIEWS_WINDOW_DAYS in the data
+                // scraper's settings. The count is rounded by the backend.
+                <AppTooltip
+                  title="Rank among all tracked players by visitors in the last 30 days."
+                  tapToShow
+                >
+                  <Sticker
+                    tone={player.popularity.rank <= 3 ? "gold" : "orange"}
+                  >
+                    <span className="sticker-figure">
+                      #{player.popularity.rank}
+                    </span>
+                    <span className="sticker-caption">
+                      most viewed
+                      <br />
+                      {formatCompactNumber(player.popularity.views30d)} views in
+                      30 days
+                    </span>
+                  </Sticker>
+                </AppTooltip>
+              )}
+            </div>
           )}
           <p className="player-info-component-tag">
             {player?.tag && <CopyableTag tag={player.tag} />}

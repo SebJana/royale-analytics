@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -394,6 +395,40 @@ class ClashRoyaleAPI:
         """
 
         return await self._request("/cards")
+
+    async def get_path_of_legend_season_rankings(
+        self, season_id: str, limit: int, after: str | None = None
+    ):
+        """
+        Fetches one page of a finished season's global Path of Legend leaderboard.
+
+        Path of Legend is the ranked mode, with a leaderboard that resets
+        every season; the trophy road has its own, separate rankings.
+
+        Args:
+            season_id (str): Season id as "YYYY-MM" (e.g., "2026-09")
+            limit (int): Players in the page
+            after (str | None): paging.cursors.after of the previous page,
+                None for the first page
+
+        Returns:
+            dict: {"items": [{"tag", "name", "rank", ...}], "paging":
+                {"cursors": {"after"?}}}, without "after" on the last page
+
+        Raises:
+            HTTPError: If the API request fails (4xx/5xx status codes), e.g.
+                404 for a season without a leaderboard
+            RequestException: If there are network connectivity issues
+        """
+
+        params = {"limit": limit}
+        if after is not None:
+            params["after"] = after
+        # The cursor is opaque and may contain characters a URL reserves
+        return await self._request(
+            f"/locations/global/pathoflegend/{quote(season_id, safe='')}"
+            f"/rankings/players?{urlencode(params)}"
+        )
 
     async def close(self):
         """

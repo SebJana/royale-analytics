@@ -411,6 +411,10 @@ class Settings:
     EXPLORE_PAGE_SIZE_MAX: int = 50
     # Players up to this explore rank get the popular badge on their profile
     POPULAR_TOP_X: int = 100
+    # Players per page of the top list (last season's leaderboard) by
+    # default, and at most
+    TOP_PAGE_SIZE: int = 25
+    TOP_PAGE_SIZE_MAX: int = 50
     # Candidates an add at full capacity tries to park, in parking order. More
     # than one, as the hourly check or another add can park the first ones
     # between the read and the write.

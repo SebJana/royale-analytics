@@ -1,7 +1,7 @@
 import type { ComponentPropsWithRef } from "react";
 import "./sticker.css";
 
-export type StickerTone = "orange" | "gold" | "red";
+export type StickerTone = "orange" | "gold" | "red" | "legend";
 
 /**
  * A solid label for something a player earned or that stands out:
@@ -11,7 +11,8 @@ export type StickerTone = "orange" | "gold" | "red";
  * Children are plain text, or a `sticker-figure` (big number) next to a
  * `sticker-caption` (small stacked text).
  *
- * @param tone - gold for the very top, orange for notable, red for bad runs
+ * @param tone - gold for the very top, orange for notable, red for bad runs,
+ *   legend (purple) for a Path of Legend finish
  * @param size - sm for inline use in rows and headers
  */
 export function Sticker({

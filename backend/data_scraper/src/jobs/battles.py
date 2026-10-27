@@ -65,7 +65,10 @@ async def _failed(
         # Both conditions are required: several 404s in a row rule out a
         # single glitch, the time span rules out a short API outage.
         if missing_for >= settings.NOT_FOUND_MIN_SPAN:
-            await deactivate_tracked_player(mongo_conn, player_tag, reason="not_found")
+            # A top player whose account is gone has nothing left to sync
+            await deactivate_tracked_player(
+                mongo_conn, player_tag, reason="not_found", include_protected=True
+            )
             logger.warning(
                 "Untracked %s after %d consecutive 404s over %.0f hours",
                 player_tag,

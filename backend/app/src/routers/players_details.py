@@ -57,14 +57,19 @@ def _tracking_state(player: TrackedPlayer, pause_battles: int | None) -> dict:
     """Tracking state of the profile response.
 
     since is the day tracking was paused (YYYY-MM-DD), passiveBattles the
-    battles other tracked players stored since then. Both are None while the
-    player is tracked, or if the pause start is unknown.
+    battles other tracked players stored since then. Both only appear while
+    parked, and are None if the pause start is unknown. regular tells whether
+    the player stays tracked after a season in the top players, topFinish
+    ({"season", "rank"} or None) whether it is in the last season's top list
+    and so protected from removal.
     """
 
+    state = {"regular": player.regular, "topFinish": player.top_finish}
     if not player.parked:
-        return {"state": "active"}
+        return {"state": "active", **state}
     return {
         "state": "parked",
+        **state,
         "since": (
             player.parked_since.date().isoformat() if player.parked_since else None
         ),

@@ -143,6 +143,10 @@ class TrackedPlayer:
     data is still served, and its views still count, so it can rank its way
     out of the parking order again. parked_since is when that happened (naive
     UTC), None while tracked or if unknown.
+    regular is True if the player is wanted for its own sake, so it stays
+    tracked once it leaves the top players. top_finish is {"season", "rank"}
+    while it is one of the last finished season's top players, which
+    protects it from parking and removal, otherwise None.
     """
 
     tag: str
@@ -158,6 +162,8 @@ class TrackedPlayer:
     views_30d: int
     parked: bool
     parked_since: datetime | None
+    regular: bool
+    top_finish: dict | None
 
 
 # Dependency that ensures the given player tag is active in the players collection
@@ -221,6 +227,8 @@ async def require_tracked_player(
         views_30d=state["views30d"],
         parked=state["parked"],
         parked_since=_parse_stored_time(state["parkedSince"]),
+        regular=state["regular"],
+        top_finish=state["topFinish"],
     )
 
 

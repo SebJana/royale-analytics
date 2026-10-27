@@ -3,7 +3,7 @@
 Battle syncs and profile refreshes run continuously per player (see worker.py).
 The other loops run on their own timers: reconciliation with capacity planning,
 game mode flushes, card refreshes, the explore ranking, parking near capacity,
-and monitoring.
+the top players of the last season, and monitoring.
 """
 
 import asyncio
@@ -21,6 +21,7 @@ from game_modes import UniqueGameModes
 from intervals import battle_demand, min_profile_interval, profile_demand
 from jobs.cards import cards_loop
 from jobs.parking import parking_loop
+from jobs.top_players import top_players_loop
 from jobs.views import views_ranking_loop
 from log import setup_logging
 from metrics import (
@@ -388,7 +389,8 @@ async def main():
         # (and the card loop of the card image volume), the views loop of the
         # explore ranking, and none of them has leader election. Two parking
         # loops would each park down to the low watermark from the same count
-        # and park twice as many players. Run one
+        # and park twice as many players, and two rollovers would do the same
+        # with the budget (parking_lock only covers one process). Run one
         # scraper process, or move these loops behind a Redis lock before
         # scaling out.
         async with asyncio.TaskGroup() as tg:
@@ -397,6 +399,7 @@ async def main():
             tg.create_task(cards_loop(cr_api, mongo_conn, redis_conn))
             tg.create_task(views_ranking_loop(mongo_conn))
             tg.create_task(parking_loop(battles, profiles, mongo_conn))
+            tg.create_task(top_players_loop(cr_api, battles, profiles, mongo_conn))
             tg.create_task(
                 monitoring_loop(metrics, battles, profiles, pool, mongo_conn)
             )

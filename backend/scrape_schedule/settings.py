@@ -15,8 +15,20 @@ class Settings:
     # below the 5 minute reconciliation period that recomputes it anyway.
     BASE_INTERVAL_PRECISION_S: float = 1.0  # 1 second
 
-    # Usage (active players / max_players) above which the scraper starts
-    # parking the least viewed players.
+    # Players of the last finished season's ranked leaderboard that are
+    # tracked and protected for one season. Their slots are reserved by count:
+    # the other active players share max_players - TOP_PLAYERS_N, so a
+    # complete new list always fits, however many old top players were kept.
+    # NOTE There is no automatic cap. Size it with the planned keys and the
+    # storage: close to max_players the budget of the other players falls
+    # below PARK_MIN_BUDGET_SHARE and parking stops (degraded capacity), and
+    # every top player adds battles and profile snapshots to Mongo. A changed
+    # value is applied by the scraper's next rollover pass, which fetches the
+    # leaderboard again.
+    TOP_PLAYERS_N: int = 1000
+
+    # Usage (active players without topFinish / (max_players - TOP_PLAYERS_N))
+    # above which the scraper starts parking the least viewed players.
     PARK_HIGH_WATERMARK: float = 0.85
     # Usage the scraper parks down to. The gap to the high watermark keeps the
     # hourly check from parking a few players every single hour.
@@ -26,6 +38,14 @@ class Settings:
     # order, never an exemption: the capacity limit has to hold even when
     # every player is recent, and then recent players do park each other.
     PARK_SPARE_DAYS: int = 3  # 3 days
+    # Smallest share of max_players the budget of the players without
+    # topFinish may fall to before capacity counts as degraded. Below it
+    # nobody is parked and adds of new players are refused: max_players only
+    # drops that far when keys turn invalid or a far too large TOP_PLAYERS_N
+    # is deployed, and parking a large part of the players for either would
+    # take days of views to undo. Without it, a budget of a few players would
+    # park nearly every regular player at once.
+    PARK_MIN_BUDGET_SHARE: float = 0.2
 
 
 # Global settings instance, exported as schedule_settings so it does not

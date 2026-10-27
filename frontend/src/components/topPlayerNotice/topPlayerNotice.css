@@ -1,0 +1,4 @@
+/* In place of the whole notice once the player is kept */
+.top-player-notice-kept {
+  margin-top: var(--spacing-xl);
+}

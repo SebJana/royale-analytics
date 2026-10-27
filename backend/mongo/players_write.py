@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from pymongo import ReturnDocument, UpdateMany, UpdateOne
 from .connection import MongoConn
-from .players_read import PARKED_REASON
+from .players_read import LISTED_PLAYER_FILTER, NOT_PROTECTED, PARKED_REASON
 from .validation_utils import ensure_connected
 
 # NOTE searchChangedAt tells the API's player search which players to read
@@ -78,6 +78,90 @@ async def ensure_search_change_index(conn: MongoConn) -> None:
         raise
 
 
+def reactivation_stages(now: str, extra_fields: dict | None = None) -> list[dict]:
+    """Pipeline stages that track an inactive player again.
+
+    Shared by the add route and the top players rollover, so both record the
+    untracked period the same way.
+
+    Args:
+        now (str): The current time as stored_time_now() returns it.
+        extra_fields (dict | None): More fields for the $set stage.
+
+    Returns:
+        list[dict]: Stages for a pipeline update of an inactive player.
+    """
+
+    return [
+        {
+            "$set": {
+                "active": True,
+                # Starts the parking spare window (get_park_candidates)
+                "activatedAt": "$$NOW",
+                "reactivatedAt": now,
+                "updatedAt": now,
+                "searchChangedAt": "$$NOW",
+                "consecutiveFailures": 0,
+                "consecutiveNotFound": 0,
+                # Battles played while untracked are only recovered if they
+                # still fit into the battle log, so every untracked period is
+                # kept for the player page.
+                "trackingGaps": {
+                    "$concatArrays": [
+                        {"$ifNull": ["$trackingGaps", []]},
+                        [
+                            {
+                                "from": "$deactivatedAt",
+                                "to": now,
+                                # Set by the next sync with battles
+                                "ownBattlesFrom": None,
+                            }
+                        ],
+                    ]
+                },
+                **(extra_fields or {}),
+            }
+        },
+        # A player deactivated after repeated 404s exists again, so its old
+        # not-found streak must not count towards a new one. The adaptive
+        # intervals describe the old session; a stretched one would delay the
+        # first refreshes of the new session.
+        {
+            "$unset": [
+                "deactivatedReason",
+                "firstNotFoundAt",
+                "syncIntervalS",
+                "profileSyncIntervalS",
+                "lastSyncNewBattles",
+            ]
+        },
+    ]
+
+
+def new_player_fields(now: str, player_name: str) -> dict:
+    """Fields of a newly inserted player document, for $setOnInsert.
+
+    Args:
+        now (str): The current time as stored_time_now() returns it.
+        player_name (str): The player's name.
+
+    Returns:
+        dict: Everything but playerTag, active, regular and searchChangedAt.
+    """
+
+    return {
+        "insertedAt": now,
+        "activatedAt": datetime.now(timezone.utc),
+        # Unviewed players sort as 0 in the parking order from the start, not
+        # before every counted 0 as a missing field would.
+        "views30d": 0,
+        "playerName": player_name,
+        "syncVersion": 0,
+        # Set by the first sync with battles
+        "ownBattlesFrom": None,
+    }
+
+
 async def insert_tracked_player(
     conn: MongoConn, player_tag: str, player_name: str = "Player"
 ) -> str:
@@ -86,6 +170,9 @@ async def insert_tracked_player(
 
     - If the player doesn't exist: create with active=True.
     - If the player exists: set active=True again (reactivate).
+
+    Either way the player becomes regular: someone wants it tracked for its
+    own sake, so it stays tracked after a season in the top players ends.
 
     A new player is stored with ownBattlesFrom = None, and a reactivated one
     gets it on its new tracking gap. The first sync after that sets it to the
@@ -107,54 +194,12 @@ async def insert_tracked_player(
         await ensure_connected(conn)
         now = stored_time_now()
 
-        # Try to reactivate if it exists but is inactive
+        # Try to reactivate if it exists but is inactive. A pipeline update,
+        # so the gap can be built from the stored deactivatedAt in the same
+        # atomic write.
         res = await conn.db.players.update_one(
             {"playerTag": player_tag, "active": False},
-            # Pipeline update, so the gap can be built from the stored
-            # deactivatedAt in the same atomic write.
-            [
-                {
-                    "$set": {
-                        "active": True,
-                        # Starts the parking spare window (get_park_candidates)
-                        "activatedAt": "$$NOW",
-                        "reactivatedAt": now,
-                        "updatedAt": now,
-                        "searchChangedAt": "$$NOW",
-                        "consecutiveFailures": 0,
-                        "consecutiveNotFound": 0,
-                        # Battles played while untracked are only recovered
-                        # if they still fit into the battle log, so every
-                        # untracked period is kept for the player page.
-                        "trackingGaps": {
-                            "$concatArrays": [
-                                {"$ifNull": ["$trackingGaps", []]},
-                                [
-                                    {
-                                        "from": "$deactivatedAt",
-                                        "to": now,
-                                        # Set by the next sync with battles
-                                        "ownBattlesFrom": None,
-                                    }
-                                ],
-                            ]
-                        },
-                    }
-                },
-                # A player deactivated after repeated 404s exists again, so
-                # its old not-found streak must not count towards a new one.
-                # The adaptive intervals describe the old session; a stretched
-                # one would delay the first refreshes of the new session.
-                {
-                    "$unset": [
-                        "deactivatedReason",
-                        "firstNotFoundAt",
-                        "syncIntervalS",
-                        "profileSyncIntervalS",
-                        "lastSyncNewBattles",
-                    ]
-                },
-            ],
+            reactivation_stages(now, {"regular": True}),
             upsert=False,
         )
         if res.matched_count == 1:
@@ -164,19 +209,13 @@ async def insert_tracked_player(
         res = await conn.db.players.update_one(
             {"playerTag": player_tag},
             {
-                "$set": {"playerTag": player_tag, "active": True, "updatedAt": now},
-                "$setOnInsert": {
-                    "insertedAt": now,
-                    "activatedAt": datetime.now(timezone.utc),
-                    # Unviewed players sort as 0 in the parking order from
-                    # the start, not before every counted 0 as a missing
-                    # field would.
-                    "views30d": 0,
-                    "playerName": player_name,
-                    "syncVersion": 0,
-                    # Set by the first sync with battles
-                    "ownBattlesFrom": None,
+                "$set": {
+                    "playerTag": player_tag,
+                    "active": True,
+                    "regular": True,
+                    "updatedAt": now,
                 },
+                "$setOnInsert": new_player_fields(now, player_name),
                 # Also bumped for an already tracked player, which is harmless:
                 # the search re-reads the player and finds nothing changed.
                 # The match may also be a player deactivated between these two
@@ -197,16 +236,25 @@ async def insert_tracked_player(
 
 
 async def deactivate_tracked_player(
-    conn: MongoConn, player_tag, reason: str | None = None
+    conn: MongoConn,
+    player_tag,
+    reason: str | None = None,
+    include_protected: bool = False,
 ) -> int:
     """
     Deactivates a player that is being tracked into the players collection.
+
+    A user removal (no reason) also clears regular: nobody wants the player
+    tracked anymore, so a later top season does not keep it past its end.
 
     Args:
         conn (MongoConn): Active connection to the mongo database
         player_tag (str): The player tag starting with '#' (e.g., "#YYRJQY28")
         reason (str | None): Stored as deactivatedReason when the system, not
             a user, untracks the player (e.g. "not_found")
+        include_protected (bool): Also deactivate a top player (topFinish).
+            Only for players that are gone; parking and removals leave them,
+            even if topFinish was set after the caller read the player.
 
     Returns:
         int: The amount of affected players by the update
@@ -222,10 +270,14 @@ async def deactivate_tracked_player(
         fields = {"active": False, "deactivatedAt": current_time}
         if reason:
             fields["deactivatedReason"] = reason
+        else:
+            fields["regular"] = False
 
+        query = {"playerTag": player_tag, "active": True}
+        if not include_protected:
+            query.update(NOT_PROTECTED)
         res = await conn.db.players.update_one(
-            {"playerTag": player_tag, "active": True},
-            {"$set": fields, "$currentDate": {"searchChangedAt": True}},
+            query, {"$set": fields, "$currentDate": {"searchChangedAt": True}}
         )
 
         # Return the amount of players updated
@@ -239,6 +291,9 @@ async def deactivate_tracked_player(
 async def remove_parked_player(conn: MongoConn, player_tag: str) -> int:
     """
     Turns a parked player into a removed one, which the search no longer lists.
+
+    A parked top player keeps its protection until the next season, so it is
+    left as it is.
 
     deactivatedAt keeps the time of parking: the player has not been synced
     since then, so a later reactivation records the gap from there.
@@ -261,8 +316,10 @@ async def remove_parked_player(conn: MongoConn, player_tag: str) -> int:
                 "playerTag": player_tag,
                 "active": False,
                 "deactivatedReason": PARKED_REASON,
+                **NOT_PROTECTED,
             },
             {
+                "$set": {"regular": False},
                 "$unset": {"deactivatedReason": ""},
                 "$currentDate": {"searchChangedAt": True},
             },
@@ -505,6 +562,196 @@ async def record_battle_sync_failure(
 
     except Exception as e:
         print(f"[DB] [ERROR] recording the failed sync of {player_tag}", e)
+        raise
+
+
+async def migrate_regular_players(conn: MongoConn) -> int:
+    """Mark every tracked and parked player without the field as regular.
+
+    Before the top players, every tracked player was there for its own sake.
+    Only players lacking the field are touched, so this runs at every start:
+    players inserted from a leaderboard store regular=False, and removed
+    players are neither tracked nor parked. The rollover reads regular to
+    decide whom to park when a season's top list changes, so it runs first.
+
+    Args:
+        conn (MongoConn): Active MongoDB connection instance.
+
+    Returns:
+        int: Number of players marked.
+
+    Raises:
+        Exception: If the update fails.
+    """
+
+    try:
+        await ensure_connected(conn)
+        res = await conn.db.players.update_many(
+            {**LISTED_PLAYER_FILTER, "regular": {"$exists": False}},
+            {"$set": {"regular": True}},
+        )
+        return res.modified_count
+    except Exception as e:
+        print(f"[DB] [ERROR] marking the existing players as regular: {e}")
+        raise
+
+
+async def set_player_regular(conn: MongoConn, player_tag: str) -> int:
+    """Keep a tracked player after its season in the top players ends.
+
+    Args:
+        conn (MongoConn): Active MongoDB connection instance.
+        player_tag (str): The player tag starting with '#' (e.g., "#YYRJQY28")
+
+    Returns:
+        int: 1 if the player is tracked, otherwise 0 (nothing changed).
+
+    Raises:
+        Exception: If the update fails.
+    """
+
+    try:
+        await ensure_connected(conn)
+        res = await conn.db.players.update_one(
+            {"playerTag": player_tag, "active": True}, {"$set": {"regular": True}}
+        )
+        return res.matched_count
+    except Exception as e:
+        print(f"[DB] [ERROR] marking {player_tag} as regular: {e}")
+        raise
+
+
+async def write_top_finish(
+    conn: MongoConn, season: str, players: list[dict]
+) -> list[str]:
+    """Protect and track the top players of a season.
+
+    Every listed player gets topFinish first, so it is protected before it is
+    tracked and an hourly parking check in between cannot take it again.
+    New tags are inserted with the leaderboard name, which spends no Clash
+    Royale request, and regular=False. Inactive ones are tracked again with a
+    tracking gap, like insert_tracked_player. Safe to repeat: a second run
+    finds every player tracked and changes nothing but topFinish.
+
+    Args:
+        conn (MongoConn): Active MongoDB connection instance.
+        season (str): Season id of the leaderboard, as "YYYY-MM".
+        players (list[dict]): {"tag", "name", "rank"} per listed player.
+
+    Returns:
+        list[str]: Tags this call started tracking, inserted or reactivated.
+
+    Raises:
+        Exception: If a write fails. Writes done before it stay.
+    """
+
+    try:
+        await ensure_connected(conn)
+        now = stored_time_now()
+        ops = [
+            UpdateOne(
+                {"playerTag": p["tag"]},
+                {
+                    "$set": {"topFinish": {"season": season, "rank": p["rank"]}},
+                    "$setOnInsert": {
+                        **new_player_fields(now, p["name"]),
+                        "active": True,
+                        "regular": False,
+                        "updatedAt": now,
+                    },
+                },
+                upsert=True,
+            )
+            for p in players
+        ]
+        inserted = []
+        for start in range(0, len(ops), RANKING_BATCH_SIZE):
+            batch = ops[start : start + RANKING_BATCH_SIZE]
+            res = await conn.db.players.bulk_write(batch, ordered=False)
+            inserted += [players[start + i]["tag"] for i in res.upserted_ids]
+
+        # By tag too: after a smaller TOP_PLAYERS_N, players no longer listed
+        # keep this season's topFinish until the rollover retires them.
+        listed = {
+            "topFinish.season": season,
+            "playerTag": {"$in": [p["tag"] for p in players]},
+        }
+        # Only players inserted without it: $currentDate in the upserts would
+        # make the search re-read every listed player. Matched by the missing
+        # field, not by this call's inserts, so a repeat after a failure
+        # between both writes still marks the players the failed call added.
+        await conn.db.players.update_many(
+            {**listed, "searchChangedAt": {"$exists": False}},
+            {"$currentDate": {"searchChangedAt": True}},
+        )
+        # Removed players never got the field. Without it, the next start's
+        # migration would count a reactivated one as regular.
+        await conn.db.players.update_many(
+            {**listed, "regular": {"$exists": False}}, {"$set": {"regular": False}}
+        )
+
+        inactive = {**listed, "active": False}
+        reactivated = [
+            doc["playerTag"]
+            async for doc in conn.db.players.find(inactive, {"_id": 0, "playerTag": 1})
+        ]
+        if reactivated:
+            await conn.db.players.update_many(
+                {**inactive, "playerTag": {"$in": reactivated}},
+                reactivation_stages(now),
+            )
+        return inserted + reactivated
+
+    except Exception as e:
+        print(f"[DB] [ERROR] writing the top players of {season}: {e}")
+        raise
+
+
+async def retire_former_top_player(conn: MongoConn, player_tag: str) -> bool:
+    """Drop the protection of a top player the current top list leaves out.
+
+    A regular player stays tracked. Any other is parked, so its page and its
+    place in the search stay and anyone can track it again. One atomic write:
+    a "Move to regular" right before it lands first and keeps the player, one
+    right after finds it parked and tracks it again. The caller removes a
+    parked player's schedules right after, as with any parking. Only the
+    rollover writes topFinish, so a tag from get_former_top_players of the
+    same pass is still left out when this runs.
+
+    Args:
+        conn (MongoConn): Active MongoDB connection instance.
+        player_tag (str): The player tag starting with '#' (e.g., "#YYRJQY28")
+
+    Returns:
+        bool: True if this call parked the player.
+
+    Raises:
+        Exception: If a write fails.
+    """
+
+    try:
+        await ensure_connected(conn)
+        former = {"playerTag": player_tag, "topFinish": {"$exists": True}}
+        res = await conn.db.players.update_one(
+            {**former, "active": True, "regular": {"$ne": True}},
+            {
+                "$set": {
+                    "active": False,
+                    "deactivatedAt": stored_time_now(),
+                    "deactivatedReason": PARKED_REASON,
+                },
+                "$unset": {"topFinish": ""},
+                "$currentDate": {"searchChangedAt": True},
+            },
+        )
+        if res.matched_count:
+            return True
+        # Regular, or already off the schedules (e.g. its account is gone)
+        await conn.db.players.update_one(former, {"$unset": {"topFinish": ""}})
+        return False
+
+    except Exception as e:
+        print(f"[DB] [ERROR] retiring the former top player {player_tag}: {e}")
         raise
 
 

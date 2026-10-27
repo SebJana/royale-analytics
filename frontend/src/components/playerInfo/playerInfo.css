@@ -50,8 +50,71 @@
 
 /* Only the most viewed players have it, gold for the top three. The look
    comes from the shared Sticker. */
-.player-info-component-popularity-badge {
+/* One row of stickers, a little roomier than elsewhere as the banner's main
+   marks. On a phone they may use the full row instead of wrapping. */
+.player-info-component-badges {
+  display: flex;
+  gap: var(--spacing-md);
   margin: var(--spacing-sm) 0 var(--spacing-md) 0;
+}
+
+.player-info-component-badges > .sticker {
+  padding: 6px 12px;
+}
+
+/* As tall as the figure's digits, so the crown reads as part of the rank */
+.player-info-component-legend-crown {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.5;
+}
+
+@media (max-width: 600px) {
+  .player-info-component-badges {
+    gap: var(--spacing-sm);
+    /* Into the room the header keeps for the section toggle, which sits
+       above the badges, so the row spans the whole card */
+    margin-right: calc(-1 * (var(--spacing-2xl) + var(--spacing-lg)));
+  }
+
+  /* Their own width, as on a desktop. Only when two do not fit side by
+     side do they shrink and wrap their captions. */
+  .player-info-component-badges > .sticker {
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: 6px 8px;
+  }
+
+  /* Two stickers are slightly wider than a phone's row. A size smaller,
+     without the crown, both fit with every caption on its two lines; the
+     purple still marks the finish. */
+  .player-info-component-badges:has(> :nth-child(2)) > .sticker {
+    gap: 4px;
+    padding: 6px;
+  }
+
+  .player-info-component-badges:has(> :nth-child(2)) .sticker-figure {
+    font-size: var(--font-xl);
+  }
+
+  .player-info-component-badges:has(> :nth-child(2)) .sticker-caption {
+    font-size: 0.62rem;
+    white-space: nowrap;
+  }
+
+  .player-info-component-badges:has(> :nth-child(2))
+    .player-info-component-legend-crown {
+    display: none;
+  }
+}
+
+/* Below the smallest common phones the lines no longer fit; wrapping beats
+   running out of the sticker. */
+@media (max-width: 359px) {
+  .player-info-component-badges:has(> :nth-child(2)) .sticker-caption {
+    white-space: normal;
+  }
 }
 
 .player-info-component-trophies {

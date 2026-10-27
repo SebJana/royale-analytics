@@ -10,6 +10,7 @@ from core.deps import (
     CrApi,
     PlayerSearch,
     Schedules,
+    TrackedPlayer,
     TrackedPlayerDep,
     require_remove_player_token,
 )
@@ -28,14 +29,24 @@ from mongo import (
     deactivate_tracked_player,
     remove_parked_player,
     get_players_count,
+    get_parkable_players_count,
     check_player_tracked,
+    check_player_protected,
     get_tracked_player_cache_state,
     get_park_candidates,
     PARKED_REASON,
     get_explore_page,
+    get_top_season_page,
     save_player_profile,
+    set_player_regular,
 )
-from scrape_schedule import read_capacity, schedule_settings, spare_since
+from scrape_schedule import (
+    budget_degraded,
+    parking_budget,
+    read_capacity,
+    schedule_settings,
+    spare_since,
+)
 from player_search import SearchIndexNotReady
 from core.settings import settings
 from helpers.token_budget import refund_token
@@ -55,34 +66,30 @@ ADMISSION_LOCK_KEY = "crsched:admission"
 # request per new tag and must respect ensure_tracking_capacity.
 
 
-# TODO Track the top TOP_PLAYERS_N of the last finished season, protected
-# from parking and from the removal route, with TOP_PLAYERS_N slots reserved
-# in the admission count so a full new list always fits. The season
-# finish of the ranked leaderboard comes from
-# /v1/locations/global/pathoflegend/{seasonId}/rankings/players?limit=N
-# (seasonId as YYYY-MM, e.g. 2026-09). Page through it with the
-# paging.cursors.after cursor up to the top N.
 async def ensure_tracking_capacity(
     mongo_conn: DbConn, schedules: Schedules, player_tag: str
 ) -> int | None:
     """Check whether the data scraper can sync one more player in time.
 
     The scraper publishes how many players its keys can keep within the
-    battle log window. Already tracked players always pass, and so does every
-    player while no recent estimate exists (scraper not running yet). A full
-    pool admits the player as long as another one can be parked for it
-    (admit_at_capacity).
+    battle log window. TOP_PLAYERS_N of them are kept for the last season's
+    top players, so the players without topFinish share the rest. Already
+    tracked players and top players always pass, and so does every player
+    while no recent estimate exists (scraper not running yet). A full pool
+    admits the player as long as another one can be parked for it
+    (admit_at_capacity), unless the budget is degraded (budget_degraded):
+    then nobody is parked, as in the scraper, and the player is refused.
 
     Two adds at the same time can both pass at one below the limit. The
     scraper's hourly parking check brings usage back below its watermarks.
 
     Returns:
-        int | None: The admission limit if the pool is full, so the player
-        has to go through admit_at_capacity, otherwise None.
+        int | None: The budget of players without topFinish if it is used
+        up, so the player has to go through admit_at_capacity, otherwise None.
 
     Raises:
         HTTPException: 503 with code TRACKING_CAPACITY_REACHED if the pool is
-            full and no player can be parked.
+            full and no player can be parked, or the budget is degraded.
     """
 
     try:
@@ -95,15 +102,23 @@ async def ensure_tracking_capacity(
         return None
     if await check_player_tracked(mongo_conn, player_tag):
         return None
-    count = await get_players_count(mongo_conn)
-    if count < capacity.max_players:
+    # A top player coming back (e.g. its account answered 404 for a while)
+    # takes one of the TOP_PLAYERS_N reserved slots, so nobody else is parked
+    # for it.
+    if await check_player_protected(mongo_conn, player_tag):
         return None
-    # Every active player can be parked, so a full pool has someone to park
-    # unless the limit is 0. Checked before the Clash Royale request, so such
-    # a pool does not spend app key requests on players it rejects anyway.
-    if count == 0:
+    budget = parking_budget(capacity.max_players)
+    count = await get_parkable_players_count(mongo_conn)
+    if count < budget:
+        return None
+    # Every counted player can be parked, so a full pool has someone to park
+    # unless nobody is counted. A degraded budget parks nobody, or each add
+    # would swap out one more regular player while the keys are short.
+    # Checked before the Clash Royale request, so such a pool does not spend
+    # app key requests on players it rejects anyway.
+    if count == 0 or budget_degraded(capacity.max_players):
         raise _capacity_reached()
-    return capacity.max_players
+    return budget
 
 
 async def admit_at_capacity(
@@ -126,7 +141,7 @@ async def admit_at_capacity(
         schedules (Schedules): Scraping schedules; their Redis holds the lock.
         player_tag (str): The player to add.
         player_name (str): Its name from the Clash Royale check.
-        max_players (int): The admission limit ensure_tracking_capacity saw.
+        max_players (int): The budget ensure_tracking_capacity saw.
 
     Returns:
         str: The result of insert_tracked_player.
@@ -159,7 +174,7 @@ async def admit_at_capacity(
         parked = None
         if (
             not await check_player_tracked(mongo_conn, player_tag)
-            and await get_players_count(mongo_conn) >= max_players
+            and await get_parkable_players_count(mongo_conn) >= max_players
         ):
             parked = await make_room(mongo_conn, schedules, player_tag)
         try:
@@ -286,6 +301,53 @@ async def explore_players(
     }
 
 
+# The player search on the home page shows it as its Top list.
+# NOTE Keep this above any future GET "/{player_tag}" route, like /search.
+@router.get(
+    "/top",
+    dependencies=[Depends(RateLimiter(times=60, seconds=60))],
+    responses={
+        422: {"description": "Cursor, limit or season out of range"},
+        429: {"description": "Too many requests from this client"},
+        500: {"description": "Top list lookup failed"},
+    },
+)
+async def top_players(
+    mongo_conn: DbConn,
+    cursor: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[
+        int, Query(ge=1, le=settings.TOP_PAGE_SIZE_MAX)
+    ] = settings.TOP_PAGE_SIZE,
+    season: Annotated[str | None, Query(pattern=r"^[0-9]{4}-[0-9]{2}$")] = None,
+):
+    """The last finished season's top players, by their leaderboard rank.
+
+    Read from the season's stored leaderboard snapshot, which the data
+    scraper applies once it is published. It lists every player of the
+    leaderboard, also one whose account is gone since. The cursor is the last
+    rank of the previous page. Later pages pass the first page's season, so a
+    list paged across a rollover stays one season. season in the response is
+    None while no list is applied, or the requested season is unknown.
+    """
+
+    try:
+        # One extra player reveals whether another page exists.
+        doc = await get_top_season_page(mongo_conn, season, cursor, limit + 1)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail="Failed to fetch the top list"
+        ) from e
+    if doc is None:
+        return {"season": None, "players": [], "nextCursor": None}
+    players = doc["players"]
+    page = players[:limit]
+    return {
+        "season": doc["_id"],
+        "players": page,
+        "nextCursor": page[-1]["rank"] if len(players) > limit else None,
+    }
+
+
 @router.get(
     "/count",
     responses={500: {"description": "Tracked player count lookup failed"}},
@@ -384,6 +446,19 @@ async def add_tracked_player(
     # Use the same trimmed tag for the Clash Royale check and the stored player.
     player_tag = player_tag.strip()
 
+    # A tracked player only becomes regular ("Move to regular" for a top
+    # player). Its existence was checked when it was added, so this spends
+    # no app key request. Its stored name is not refreshed here either; the
+    # scraper's next battle sync with new battles repairs a stale one. A parked player
+    # continues below and is reactivated.
+    try:
+        if await set_player_regular(mongo_conn, player_tag):
+            return {"status": "Player is already being tracked", "tag": player_tag}
+    except Exception:
+        raise HTTPException(
+            status_code=500, detail=f"Player {player_tag} could not be tracked"
+        )
+
     # Checked before the Clash Royale request, so a full scraper does not
     # spend app key requests on players it would reject anyway.
     full_at = await ensure_tracking_capacity(mongo_conn, schedules, player_tag)
@@ -467,8 +542,9 @@ async def add_tracked_player(
             status_code=500, detail=f"Player {player_tag} could not be tracked"
         )
 
-    # Searchable before the response goes out. Already tracked players are
-    # upserted too: the profile was just fetched, so it repairs a stale name.
+    # Searchable before the response goes out. A player tracked between the
+    # regular check above and the insert is upserted too: the profile was
+    # just fetched, so it repairs a stale name.
     search.upsert(player_tag, profile["name"])
 
     if status_insert in ("created", "reactivated"):
@@ -497,13 +573,37 @@ async def add_tracked_player(
     return {"status": "Player is being tracked", "tag": player_tag}
 
 
+async def require_removable_player(player: TrackedPlayerDep) -> TrackedPlayer:
+    """FastAPI dependency that rejects the last season's top players.
+
+    They stay tracked for the meta analysis until the next season's list
+    replaces them. Checked before the removal token, so trying costs no
+    removal.
+
+    Raises:
+        HTTPException: 403 with code PLAYER_PROTECTED for a top player.
+    """
+
+    if player.top_finish is not None:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "PLAYER_PROTECTED",
+                "message": "Top players of the last season can not be removed "
+                "until the next season",
+            },
+        )
+    return player
+
+
 @router.delete(
     "/{player_tag}",
     dependencies=[Depends(RateLimiter(times=3, seconds=60))],
     responses={
         403: {
             "description": (
-                "Invalid or untracked player, removal token invalid or expired "
+                "Invalid or untracked player, one of the last season's top "
+                "players (PLAYER_PROTECTED), removal token invalid or expired "
                 "(REMOVE_PLAYER_TOKEN_EXPIRED), or its removals used up "
                 "(REMOVE_PLAYER_TOKEN_USED_UP)"
             )
@@ -518,8 +618,9 @@ async def remove_tracked_player(
     schedules: Schedules,
     search: PlayerSearch,
     auth_state_conn: AuthStateConn,
-    player: TrackedPlayerDep,
-    # After the player check, so an invalid or untracked tag costs no removal.
+    player: Annotated[TrackedPlayer, Depends(require_removable_player)],
+    # After the player checks, so an invalid, untracked or protected tag costs
+    # no removal.
     token_claims: Annotated[dict, Depends(require_remove_player_token)],
 ):
     player_tag = player.tag
@@ -535,7 +636,8 @@ async def remove_tracked_player(
 
         # Database operation returns 0 if no matching records were modified
         # Tracked player is verified with every given player tag, but handle async untrack issues
-        # with this catch here
+        # with this catch here. Also 0 for a player that became one of the top
+        # players since the check, a rare enough race to answer as untracked.
         if affected_player_count == 0:
             raise HTTPException(
                 status_code=404,

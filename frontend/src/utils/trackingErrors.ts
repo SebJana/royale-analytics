@@ -35,6 +35,8 @@ export function getTrackingErrorMessage(error: unknown): string {
   if (code === "PLAYER_NOT_FOUND")
     return "No Clash Royale player has this tag.";
   if (code === "PLAYER_NOT_TRACKED") return "That player isn't being tracked.";
+  if (code === "PLAYER_PROTECTED")
+    return "This is one of last season's top players. It can be removed once the next season's top list replaces it.";
   if (code === "REMOVE_PLAYER_TOKEN_USED_UP")
     return "This verification removed the most players it can. Verify again to remove more.";
   if (code === "REMOVE_PLAYER_TOKEN_EXPIRED")

@@ -183,6 +183,29 @@ class Settings:
     # API, so this only has to keep headroom, not react within minutes.
     PARK_CHECK_INTERVAL: float = 60 * 60  # 1 hour
 
+    # Top players of the last finished season (jobs/top_players.py). Their
+    # number, TOP_PLAYERS_N, is shared with the API in
+    # backend/scrape_schedule/settings.py.
+    # How often the last finished season is checked. A new season starts once
+    # a month, so a day only delays its top list by up to that long.
+    TOP_CHECK_INTERVAL: float = 24 * 60 * 60  # 1 day
+    # A season's leaderboard is only fetched this long after the computed
+    # start of the next season, and a pass runs right then. A stored list is
+    # never fetched again, so a fetch before the real reset could keep a
+    # still moving list for a whole season. The reset hour is an estimate
+    # (SEASON_RESET_HOUR_UTC at 09:00 UTC) that the logs only bracket between
+    # 08:25 and 21:19 UTC, so the margin covers the whole bracket.
+    TOP_RESET_MARGIN: float = 13 * 60 * 60  # 13 hours
+    # Retry delay if a rollover failed, e.g. while the leaderboard of a just
+    # finished season is not published yet
+    TOP_RETRY_DELAY: float = 60 * 60  # 1 hour
+    # Players per leaderboard request. A rollover costs TOP_PLAYERS_N / this
+    # many requests once a season.
+    TOP_RANKINGS_PAGE_SIZE: int = 100
+    # Waits for a free key per leaderboard page before the pass fails. Each
+    # wait lasts as long as the key store says, so this spans a few minutes.
+    TOP_PAGE_KEY_ATTEMPTS: int = 20
+
     # Self-hosted card images (see card_images.py)
     # Shared volume the image sets are written to; nginx serves it read-only.
     CARD_IMAGES_DIR: str = os.getenv("CARD_IMAGES_DIR", "/data/card-images")
