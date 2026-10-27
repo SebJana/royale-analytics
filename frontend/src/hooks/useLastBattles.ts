@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import {
   useInfiniteQuery,
   useQueryClient,
@@ -7,6 +7,7 @@ import {
 import type { LastBattles } from "../types/lastBattles";
 import { validatePlayerTagSyntax } from "../utils/playerTag";
 import { fetchLastBattles } from "../services/api/lastBattles";
+import { firstSyncPollInterval } from "../utils/polling";
 
 const min = 60_000; // 1 minute in milliseconds
 const cacheDuration = 5 * min;
@@ -24,12 +25,12 @@ export function usePlayerBattlesInfinite(
   playerTag: string,
   limit = 50,
   enabled = true,
-  beforeDate?: string
+  beforeDate?: string,
 ) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(
     () => ["playerBattles", playerTag, limit, beforeDate] as const,
-    [playerTag, limit, beforeDate]
+    [playerTag, limit, beforeDate],
   );
 
   const q = useInfiniteQuery<
@@ -54,6 +55,12 @@ export function usePlayerBattlesInfinite(
     staleTime: cacheDuration,
     // Keep data in memory - after that it gets garbage collected
     gcTime: cacheDuration,
+    // Poll only until the first battle sync of a just-tracked player finished,
+    // backing off while it takes long
+    refetchInterval: (query) =>
+      query.state.data?.pages[0]?.first_sync_pending
+        ? firstSyncPollInterval(query.state.dataUpdateCount)
+        : false,
     // Disable automatic refetching to reduce unnecessary API calls
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -61,15 +68,32 @@ export function usePlayerBattlesInfinite(
     retry: 2,
     retryDelay: (i) => Math.min(1000 * 2 ** i, 30_000),
 
-    // Disable persistence to prevent restoring many pages at once
-    // When user hits reload they're back to seeing only the last X default loaded battles
-    meta: { persist: false },
+    // No storage meta, so never persisted (main.tsx): a reload starts with
+    // the default pages again instead of restoring many at once.
   });
 
-  // Force reset to first page when data becomes stale to prevent mass API calls
+  // The battles page polls faster than the profile while a just-tracked
+  // player's first sync runs. Once the battles arrive, refresh the profile
+  // too, so its "Battles updated" hint matches the battles shown.
+  const firstSyncPending = q.data?.pages[0]?.first_sync_pending === true;
+  const wasFirstSyncPending = useRef(firstSyncPending);
   useEffect(() => {
+    if (wasFirstSyncPending.current && !firstSyncPending) {
+      queryClient.invalidateQueries({ queryKey: ["playerProfile", playerTag] });
+    }
+    wasFirstSyncPending.current = firstSyncPending;
+  }, [firstSyncPending, playerTag, queryClient]);
+
+  // Stale battles with older pages loaded start over from the first page
+  // when the battles page opens, since a refetch costs a request per page.
+  // Checked once per opening: battles going stale while they are read keep
+  // their pages, so the reader keeps their place.
+  const checkedKey = useRef<typeof queryKey | null>(null);
+  useEffect(() => {
+    if (checkedKey.current === queryKey) return;
+    checkedKey.current = queryKey;
     if (q.isStale && q.data?.pages && q.data.pages.length > 1) {
-      queryClient.resetQueries({ queryKey });
+      queryClient.resetQueries({ queryKey, exact: true });
     }
   }, [q.isStale, q.data, queryClient, queryKey]);
 

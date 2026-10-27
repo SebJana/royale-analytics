@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from .connection import MongoConn
 from .validation_utils import ensure_connected
 
@@ -19,7 +19,7 @@ async def insert_game_modes(conn: MongoConn, game_modes: list):
 
     try:
         await ensure_connected(conn)
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         inserted = 0
         modified = 0

@@ -1,0 +1,30 @@
+/* A borderless icon button that only shows its shape on hover, with the
+   rounded corners of the other buttons. The repeated hover selector outranks
+   the global button:hover in index.css. */
+.close-button,
+.close-button:hover {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-sm);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+}
+
+.close-button:hover {
+  background-color: var(--bg-overlay-strong);
+  color: var(--text-primary);
+}
+
+.close-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.close-button svg {
+  width: 20px;
+  height: 20px;
+}

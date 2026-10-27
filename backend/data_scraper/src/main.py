@@ -1,45 +1,98 @@
-from clean import (
-    clean_battle_log_list,
-    validate_battle_log_structure,
-    validate_battle_log_content,
-    get_player_name,
-)
-from game_modes import UniqueGameModes
-from clash_royale_api import ClashRoyaleAPI, ClashRoyaleMaintenanceError
-from mongo import MongoConn
-from mongo import (
-    insert_battles,
-    set_player_name,
-    insert_game_modes,
-    get_battles_count,
-    print_first_battles,
-)
-from mongo import get_tracked_player_tags
-from redis_service import CacheRedisConn, build_redis_key, set_redis_json
-from api_rate_limiter import ApiRateLimiter
-from settings import settings
+"""Data scraper entry point: connects services and runs the background loops.
 
-import httpx
-import time
+Battle syncs and profile refreshes run continuously per player (see worker.py).
+The other loops run on their own timers: reconciliation with capacity planning,
+game mode flushes, card refreshes, the explore ranking, parking near capacity,
+the top players of the last season, and monitoring.
+"""
+
 import asyncio
+import contextlib
+import logging
+import signal
+import time
+from functools import partial
 
+from redis.asyncio import Redis
 
-# TODO switch to logger
+from api_key_store import KeyStore, KeyStoreConfig, keys_from_env
+from clash_royale_api import ClashRoyaleAPI
+from game_modes import UniqueGameModes
+from intervals import battle_demand, min_profile_interval, profile_demand
+from jobs.cards import cards_loop
+from jobs.parking import parking_loop
+from jobs.top_players import top_players_loop
+from jobs.views import views_ranking_loop
+from log import setup_logging
+from metrics import (
+    Metrics,
+    append_history,
+    build_history_sample,
+    build_snapshot,
+    publish_snapshot,
+    start_status_server,
+)
+from mongo import (
+    MongoConn,
+    get_database_health,
+    get_game_modes,
+    insert_game_modes,
+)
+from reconciler import reconcile_schedules
+from redis_service import GAME_MODES_CACHE_KEY, CacheRedisConn, set_redis_json
+from scrape_schedule import (
+    BATTLES_SCHEDULE,
+    PROFILES_SCHEDULE,
+    Schedule,
+    compute_capacity,
+    publish_capacity,
+)
+from settings import settings
+from worker import WorkerPool
+
+logger = logging.getLogger("scraper")
 
 
 async def init():
-    """Initialize API, Redis, and MongoDB clients. Does a health/connection
+    """Initialize API, Redis, and MongoDB clients. Does a health/connection check.
 
     Returns:
-        tuple[ClashRoyaleAPI, CacheRedisConn, MongoConn]: Initialized clients.
+        tuple[ClashRoyaleAPI, Redis, CacheRedisConn, MongoConn]: Initialized
+        clients. The plain Redis client is the key store/scheduling Redis.
 
     Raises:
-        SystemExit: If either Redis or MongoDB connection fails.
+        SystemExit: If any connection fails after all retries.
     """
 
-    # Retry Clash Royale API
-    cr_api = ClashRoyaleAPI(api_key=settings.API_TOKEN)
-    await retry_async(cr_api.check_connection, name="Clash Royale API")
+    # Use the same dedicated Redis server as the API app. The scraper's pool
+    # still has its own tokens, request interval, and cooldown history.
+    key_redis = Redis(
+        host=settings.KEY_STORE_REDIS_HOST,
+        port=settings.REDIS_PORT,
+        password=settings.REDIS_PASSWORD,
+        decode_responses=True,
+        # Without timeouts a hung Redis blocks claims, acks, and the shielded
+        # shutdown acks indefinitely. Matches the cache connection.
+        socket_connect_timeout=3,
+        socket_timeout=5,
+    )
+    await retry_async(key_redis.ping, name="key store Redis")
+    key_store = KeyStore(
+        "scraper",
+        keys_from_env("scraper"),
+        key_redis,
+        KeyStoreConfig(
+            requests_per_second=settings.CR_KEY_REQUESTS_PER_SECOND,
+            pool_requests_per_second=settings.CR_KEY_POOL_REQUESTS_PER_SECOND,
+        ),
+    )
+    cr_api = ClashRoyaleAPI(key_store=key_store)
+    # The probes identify bad tokens before the scraping loop starts. Unknown
+    # keys from transient failures are retried later by the store.
+    inventory = await retry_async(
+        cr_api.check_connection, name="Clash Royale key inventory"
+    )
+    logger.info("Scraper Clash Royale keys: %s", inventory)
 
     # Retry Redis
     redis_conn = CacheRedisConn(
@@ -50,12 +103,15 @@ async def init():
     await retry_async(redis_conn.connect, name="Redis")
 
     # Retry MongoDB
-    mongo_conn = MongoConn(app_name=settings.MONGO_CLIENT_NAME)
+    mongo_conn = MongoConn(
+        app_name=settings.MONGO_CLIENT_NAME,
+        max_pool_size=settings.MONGO_MAX_POOL_SIZE,
+        wait_queue_timeout_s=settings.MONGO_WAIT_QUEUE_TIMEOUT,
+    )
     await retry_async(mongo_conn.connect, name="MongoDB")
 
-    print("[INFO] Successfully connected to all services")
-    # Upon successful connection, return all three
-    return cr_api, redis_conn, mongo_conn
+    logger.info("Successfully connected to all services")
+    return cr_api, key_redis, redis_conn, mongo_conn
 
 
 async def retry_async(func, name):
@@ -82,285 +138,293 @@ async def retry_async(func, name):
     retries = settings.INIT_RETRIES
     delay = settings.INIT_RETRY_DELAY
 
-    for attempt in range(1, settings.INIT_RETRIES + 1):
+    for attempt in range(1, retries + 1):
         try:
             return await func()
-        except Exception as e:
-            print(
-                f"[ERROR] Failed to connect to {name} (attempt {attempt}/{retries}): {e}"
+        except Exception:
+            logger.exception(
+                "Failed to connect to %s (attempt %d/%d)", name, attempt, retries
             )
             if attempt < retries:
                 await asyncio.sleep(delay)
             else:
-                print(
-                    f"[ERROR] Exiting after {retries} failed attempts to connect to {name}"
+                logger.error(
+                    "Exiting after %d failed attempts to connect to %s", retries, name
                 )
                 exit(1)
 
 
-api_rl = ApiRateLimiter(per_second=settings.REQUESTS_PER_SECOND)
-
-
-async def process_player(
-    player_tag: str,
-    mode_store: UniqueGameModes,
-    cr_api: ClashRoyaleAPI,
+async def reconcile_loop(
+    battles: Schedule,
+    profiles: Schedule,
     mongo_conn: MongoConn,
+    pool: WorkerPool,
+    metrics: Metrics,
 ):
-    """Fetch, validate, clean, and persist the latest battles for a single player.
+    """Reconcile the schedules, plan capacity, and resize the pool until cancelled.
 
-    The API call is throttled by a global rate limiter (max REQUESTS_PER_SECOND).
-    Transient HTTP/network errors are retried with exponential backoff.
-    A maintenance error intentionally propagates to abort the entire cycle.
-
-    Args:
-        player_tag (str): Player tag (e.g., "#YYRJQY28").
-        mode_store (UniqueGameModes): Thread safe store for the found game modes in the battle logs.
-        cr_api (ClashRoyaleAPI): API client to fetch battle logs.
-        mongo_conn (MongoConn): Mongo connection used to write data.
-
-    Returns:
-        None: Returns early on any "non-retriable" error or on success.
-
-    Raises:
-        ClashRoyaleMaintenanceError: Propagated to stop the current cycle for all players.
+    Capacity follows the usable keys, which change when keys fail validation,
+    get rejected, or recover, and the tracked players and their activity. The
+    estimate sets the base battle interval, the worker count, and, through
+    Redis, the API's admission limit for new players.
     """
 
-    print(f"[INFO] Running data scraping cycle for Player {player_tag} ...")
-    attempt = 0
+    key_store = pool.cr_api.key_store
     while True:
         try:
-            async with api_rl:
-                # Try to fetch the last battles for each player
-                battle_logs = await cr_api.get_player_battle_logs(player_tag=player_tag)
-
-            # Check whether any battle logs were returned
-            if not battle_logs:
-                print(f"[WARNING] No battle logs returned for player {player_tag}")
-                return
-
-            # Check if the response has all the necessary fields and correct content
-            if not validate_battle_log_structure(
-                battle_logs
-            ) or not validate_battle_log_content(battle_logs):
-                print(f"[ERROR] Battle logs for Player {player_tag} couldn't be used")
-                return
-
-            # Prepare the data for storage
-            cleaned_battle_logs = clean_battle_log_list(
-                battle_logs, player_tag=player_tag
+            tracked = await reconcile_schedules(battles, profiles, mongo_conn)
+            players = list(tracked.values())
+            inventory = await key_store.inventory()
+            capacity = compute_capacity(
+                active_players=len(players),
+                usable_keys=inventory["usable"],
+                per_key_rps=settings.CR_KEY_REQUESTS_PER_SECOND,
+                utilization=settings.CAPACITY_UTILIZATION,
+                # Admission assumes full load, where profiles are stretched
+                profile_max_age_s=min_profile_interval(settings.MAX_SYNC_INTERVAL),
+                min_interval_s=settings.MIN_SYNC_INTERVAL,
+                max_interval_s=settings.MAX_SYNC_INTERVAL,
+                # partial binds this pass's players; both are called right away
+                battle_demand=partial(battle_demand, players),
+                profile_demand=partial(profile_demand, players),
             )
+            await publish_capacity(key_store.redis, capacity)
+            pool.resize(capacity)
+            metrics.capacity = capacity
+            metrics.last_reconcile_at = time.time()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # The next pass retries; workers keep running on the current schedule.
+            logger.exception("Schedule reconciliation failed")
+        await asyncio.sleep(settings.RECONCILE_INTERVAL)
 
-            player_name = get_player_name(battle_logs, player_tag=player_tag)
-            extract_game_modes(battle_logs=battle_logs, mode_store=mode_store)
 
-            # Insert battles into MongoDB
-            # If any error occurs here, the class handles the output for the logs
-            await insert_battles(mongo_conn, cleaned_battle_logs)
+async def store_game_modes(game_modes: list, mongo_conn: MongoConn) -> bool:
+    """Write game modes to Mongo and report whether any of them is new.
 
-            # Set the name of the player into MongoDB
-            # Update the name on every run of the scraping, because this name is basis for users
-            # being able to find people by name, which can be changed and therefore needs to be updated
-            await set_player_name(
-                mongo_conn, player_tag=player_tag, player_name=player_name
-            )
+    Args:
+        game_modes (list): Unique game mode names seen since the last flush.
+        mongo_conn (MongoConn): Active Mongo connection.
 
-            return
+    Returns:
+        bool: True if at least one mode was not stored before.
 
-        except ClashRoyaleMaintenanceError as e:
-            # Global stop, raise error
-            print(
-                f"[WARNING] {getattr(e, 'detail', str(e))} ... Skipping the current cycle"
-            )
-            raise  # Only raise this error
+    Raises:
+        Exception: If the Mongo write fails. The caller keeps the modes for a retry.
+    """
 
-        except httpx.HTTPStatusError as e:
-            code = e.response.status_code if e.response else 0
-            if code in (403, 404):
-                print(f"[ERROR] HTTP {code} for {player_tag} – not retrying")
-                return
-            if code in (429, 500, 502, 503, 504) and attempt < settings.MAX_RETRIES:
-                backoff = settings.BASE_BACKOFF * (2**attempt)
-                print(
-                    f"[WARNING] HTTP {code} for {player_tag} – retry in {backoff:.1f}s"
+    result = await insert_game_modes(mongo_conn, game_modes)
+    if not result.get("inserted"):
+        return False
+    logger.info("%d new game modes inserted", result["inserted"])
+    return True
+
+
+async def refresh_game_modes_cache(mongo_conn: MongoConn, redis_conn: CacheRedisConn):
+    """Rebuild the API's cached game mode list from Mongo.
+
+    Raises:
+        Exception: Any Mongo or Redis error; the caller retries on the next flush.
+    """
+
+    game_modes = await get_game_modes(mongo_conn)
+    await set_redis_json(
+        redis_conn,
+        GAME_MODES_CACHE_KEY,
+        game_modes,
+        ttl=settings.CACHE_TTL_GAME_MODES,
+    )
+
+
+async def game_modes_loop(
+    mode_store: UniqueGameModes, mongo_conn: MongoConn, redis_conn: CacheRedisConn
+):
+    """Write newly seen game modes to Mongo and keep the cached list current.
+
+    This loop is the only writer of GAME_MODES_CACHE_KEY. The API reads it and
+    falls back to Mongo without caching, because a cache write from a request
+    that read Mongo before a new mode was inserted could land after this loop's
+    write and hide the new mode for a full TTL. Writes from this single task are
+    ordered, so the cached list never goes back to an older state.
+    """
+
+    # Zero builds the cached list on the first pass
+    next_cache_refresh = 0.0
+    while True:
+        new_mode = False
+        game_modes = mode_store.drain()
+        if game_modes:
+            try:
+                new_mode = await store_game_modes(game_modes, mongo_conn)
+            except Exception:
+                # Keep the modes for the next flush instead of dropping them.
+                mode_store.restore(game_modes)
+                # The failed write may still have inserted a new mode. The
+                # retry would then not count it as new, so the cache is
+                # rebuilt on the next pass regardless.
+                next_cache_refresh = 0.0
+                logger.exception("Game mode flush failed")
+
+        # A new mode is written to the cache right away, so the filter options
+        # include it as soon as its battles can show up. The timed refresh
+        # restores the list after an eviction or a restart of redis-cache.
+        if new_mode or time.monotonic() >= next_cache_refresh:
+            try:
+                await refresh_game_modes_cache(mongo_conn, redis_conn)
+                next_cache_refresh = (
+                    time.monotonic() + settings.GAME_MODES_CACHE_REFRESH_INTERVAL
                 )
-                await asyncio.sleep(backoff)
-                continue
-            print(f"[ERROR] HTTP {code} for {player_tag}")
-            return
+            except Exception:
+                # Zero retries on the next flush, which also covers a new mode
+                # that is already in Mongo and would not count as new again.
+                next_cache_refresh = 0.0
+                logger.exception("Game mode cache refresh failed")
 
-        except httpx.RequestError as e:
-            if attempt < settings.MAX_RETRIES:
-                backoff = settings.BASE_BACKOFF * (2**attempt)
-                print(f"[WARN] Net error {e!r} – retry in {backoff:.1f}s")
-                await asyncio.sleep(backoff)
-                continue
-            print(f"[ERROR] Network error for {player_tag}: {e}")
-            return
-
-        except Exception as e:
-            print(f"[ERROR] Unknown error for {player_tag}: {e}")
-            return
+        await asyncio.sleep(settings.GAME_MODES_FLUSH_INTERVAL)
 
 
-async def run_players_cycle(
-    players: list[str],
-    mode_store: UniqueGameModes,
-    cr_api: ClashRoyaleAPI,
+async def monitoring_loop(
+    metrics: Metrics,
+    battles: Schedule,
+    profiles: Schedule,
+    pool: WorkerPool,
     mongo_conn: MongoConn,
 ):
-    """Run a concurrent fetch/clean/store cycle for all tracked players.
+    """Publish the snapshot, record history samples, and log until cancelled."""
 
-    Uses an asyncio.TaskGroup so all player tasks start together. Any
-    ClashRoyaleMaintenanceError raised by an individual task cancels the group
-    and is handled here, effectively aborting the entire cycle.
+    key_store = pool.cr_api.key_store
+    last_log = time.monotonic()
+    last_sample = time.monotonic()
+    while True:
+        await asyncio.sleep(settings.METRICS_INTERVAL)
+        # Collected apart from the snapshot and bounded in time, so a Mongo
+        # outage shows up as unreachable instead of stalling the Redis based
+        # status until the driver's own timeouts expire.
+        try:
+            async with asyncio.timeout(settings.MONGO_HEALTH_TIMEOUT):
+                mongo = {"ok": True, **await get_database_health(mongo_conn)}
+        except Exception:
+            mongo = {"ok": False}
+            logger.warning("Mongo health check failed")
+        try:
+            snapshot = await build_snapshot(
+                metrics, battles, profiles, key_store, pool.target, mongo
+            )
+            await publish_snapshot(metrics, key_store, snapshot)
+        except Exception:
+            logger.exception("Metrics snapshot failed")
+            continue
 
-    Args:
-        players (list[str]): Collection of player tags to process.
-        mode_store (UniqueGameModes): Thread safe store for the found game modes in the battle logs.
-        cr_api (ClashRoyaleAPI): API client instance.
-        mongo_conn (MongoConn): MongoDB connection for writes.
-    """
+        if time.monotonic() - last_sample >= settings.METRICS_HISTORY_INTERVAL:
+            span_s = time.monotonic() - last_sample
+            last_sample = time.monotonic()
+            sample = build_history_sample(
+                metrics.take_sample_counts(), snapshot, span_s
+            )
+            try:
+                await append_history(key_store.redis, sample)
+            except Exception:
+                # The counts are gone, so the charts show a missing point
+                # instead of a later one that counts two periods as one.
+                logger.exception("Metrics history write failed")
 
-    try:
-        async with asyncio.TaskGroup() as tg:
-            for p in players:
-                tg.create_task(
-                    process_player(
-                        player_tag=p,
-                        mode_store=mode_store,
-                        cr_api=cr_api,
-                        mongo_conn=mongo_conn,
-                    )
-                )
-    except* ClashRoyaleMaintenanceError:
-        print("[INFO] Maintenance detected – aborting cycle")
-
-
-def extract_game_modes(battle_logs: list[dict], mode_store: UniqueGameModes):
-    """
-    Extract unique game modes from battle logs and insert them into a thread-safe store.
-
-    Args:
-        battles (list[dict]): List of battle dictionaries (newest first) as returned by the Clash Royale API.
-        mode_store (UniqueGameModes): Thread safe store for the found game modes in the battle logs.
-    """
-    for battle in battle_logs:
-        game_mode = battle.get("gameMode")
-
-        if game_mode:
-            mode_store.add(game_mode)
-
-
-async def cache_cards(cr_api: ClashRoyaleAPI, redis_conn: CacheRedisConn):
-    """Fetch all card metadata and write it to Redis using 'version-ahead'.
-
-    The card cache is set with a TTL and marked as one version ahead; after
-    the cycle, a version increment validates these entries. This
-    function does not retry, as on-demand API calls can retrieve cards if
-    this step fails.
-
-    Args:
-        cr_api (ClashRoyaleAPI): API client to fetch the cards.
-        redis_conn (CacheRedisConn): Redis connection used to store the cache.
-    """
-
-    try:
-        # Fetch cards and save them to the redis cache as one version AHEAD
-        cards = await cr_api.get_cards()
-        key = await build_redis_key(
-            conn=redis_conn, service="crApi", resource="allCards", version_ahead=True
-        )
-        await set_redis_json(
-            conn=redis_conn, key=key, value=cards, ttl=2 * settings.CACHE_TTL_CARDS
-        )
-        print(
-            "[CACHE] [INFO] Cards successfully fetched and set in cache with version ahead"
-        )
-    except Exception as e:
-        print(
-            f"[ERROR] Unknown error occurred for while trying to update the cache {e}"
-        )
+        # The log line keeps a coarse history in the container logs, which
+        # the snapshot (always only the latest state) does not.
+        if time.monotonic() - last_log >= settings.STATUS_LOG_INTERVAL:
+            last_log = time.monotonic()
+            jobs = snapshot["jobs"]
+            schedules = snapshot["schedules"]
+            logger.info(
+                "Last %ds: %d battle jobs %s, %d battles inserted, %d profile jobs | "
+                "battles %d scheduled, %d due, oldest waiting %.0fs | %d workers",
+                settings.METRICS_WINDOW,
+                jobs["battles"]["jobs"],
+                jobs["battles"]["outcomes"] or "{}",
+                jobs["battles"]["inserted"],
+                jobs["profiles"]["jobs"],
+                schedules["battles"]["scheduled"],
+                schedules["battles"]["due"],
+                schedules["battles"]["oldest_due_lateness_s"],
+                pool.target,
+            )
 
 
 async def main():
-    """Start and run the continuous scraping loop.
+    """Start the scraper and run its loops until the process is stopped.
 
-    - Waits for dependent services to be ready (`INIT_SLEEP_DURATION`).
-    - Initializes API, Redis, and Mongo connections.
-    - Every cycle:
-        * Loads tracked player tags from Mongo.
-        * Runs a concurrent player processing cycle (rate-limited fetch).
-        * Saves newly found game modes to Mongo.
-        * Refreshes the card cache (version-ahead), then increments the Redis version
-          to invalidate old keys and validate the new ones.
-        * Sleeps `REQUEST_CYCLE_DURATION` before the next cycle.
+    - Waits for dependent services and validates the scraper key pool.
+    - Rebuilds the schedules from the tracked players in Mongo.
+    - Runs the workers, the timer loops, and the status endpoint concurrently.
+    - On SIGTERM (docker stop) or SIGINT, hands claimed players back, flushes
+      collected game modes, and closes all connections.
     """
 
-    cr_api, redis_conn, mongo_conn = await init()
+    setup_logging()
 
-    while True:
-        print("[INFO] Starting new data scraping cycle...")
+    # Without a handler, SIGTERM ends Python immediately and none of the
+    # cleanup below runs. Cancelling the main task unwinds it normally.
+    # add_signal_handler is unavailable on Windows; the container runs Linux.
+    loop = asyncio.get_running_loop()
+    main_task = asyncio.current_task()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        with contextlib.suppress(NotImplementedError):
+            loop.add_signal_handler(sig, main_task.cancel)
 
-        start_time = time.time()
+    cr_api, key_redis, redis_conn, mongo_conn = await init()
 
-        # TODO upon hitting "Player doesn't exist" remove from tracked players, as player deleted their account?
+    battles = Schedule(key_redis, BATTLES_SCHEDULE)
+    profiles = Schedule(key_redis, PROFILES_SCHEDULE)
+    mode_store = UniqueGameModes()
+    metrics = Metrics()
+    pool = WorkerPool(battles, profiles, cr_api, mongo_conn, mode_store, metrics)
+    status_server = await start_status_server(metrics, key_redis)
 
-        # Loop over every tracked player
-        players = set()
-        try:
-            players = await get_tracked_player_tags(mongo_conn)
-            print(f"[INFO] Found {len(players)} tracked players: {players}")
-        except Exception:
-            continue
-
-        if not players:
-            print("[WARNING] No players to track, sleeping until next cycle")
-            await asyncio.sleep(settings.REQUEST_CYCLE_DURATION)
-            continue
-
-        mode_store = UniqueGameModes()
-
-        # Run fetching, cleaning and storing of data concurrently
-        await run_players_cycle(
-            players=players, mode_store=mode_store, cr_api=cr_api, mongo_conn=mongo_conn
-        )
-
-        # Get a list of all unique game modes in this iteration of battle logs
-        game_modes = mode_store.get_values()
-        modes_result = await insert_game_modes(mongo_conn, game_modes)
-        print(
-            f"[INFO] {modes_result.get('inserted')} game modes inserted, "
-            f"{modes_result.get('modified')} modified"
-        )
-
-        # Optional debug (uncomment to check first documents and document count)
-        battles_count = await get_battles_count(mongo_conn)
-        print(f"[INFO] There are now {battles_count} battles in the collection")
-        # await print_first_battles(mongo_conn)
-
-        # Save new cards as the version ahead
-        await cache_cards(cr_api=cr_api, redis_conn=redis_conn)
-        # Increment redis key version, invalidate cache
-        new_version = await redis_conn.increment_version()
-        # Existing current version keys will be invalid; not looked up anymore, and be deleted via expiring ttl
-        # All cards key, that was one version ahead, will be validated with this increment
-        print(
-            f"[CACHE] [INFO] Redis version incremented to v{new_version}, cache invalidated."
-        )
-
-        # Determine how long to sleep for to meet aimed at cycle time
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        sleep_time = settings.REQUEST_CYCLE_DURATION - elapsed_time
-        print(f"[INFO] Cycle took {elapsed_time:.2f}s for {len(players)} players")
-
-        # Check if valid sleep time remains
-        if sleep_time <= 0:
-            print("[WARNING] Cycle duration is too low. Running without sleep")
-            sleep_time = 0  # Don't sleep at all
-
-        await asyncio.sleep(sleep_time)
+    try:
+        # reconcile_loop runs its first pass immediately, which also starts
+        # the workers. Every loop handles its own errors, so the group only
+        # ends on cancellation; Docker's restart policy covers anything else.
+        # NOTE Claims let several scraper processes share the workers, but the
+        # card and game mode loops are the only writers of their cache keys
+        # (and the card loop of the card image volume), the views loop of the
+        # explore ranking, and none of them has leader election. Two parking
+        # loops would each park down to the low watermark from the same count
+        # and park twice as many players, and two rollovers would do the same
+        # with the budget (parking_lock only covers one process). Run one
+        # scraper process, or move these loops behind a Redis lock before
+        # scaling out.
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(reconcile_loop(battles, profiles, mongo_conn, pool, metrics))
+            tg.create_task(game_modes_loop(mode_store, mongo_conn, redis_conn))
+            tg.create_task(cards_loop(cr_api, mongo_conn, redis_conn))
+            tg.create_task(views_ranking_loop(mongo_conn))
+            tg.create_task(parking_loop(battles, profiles, mongo_conn))
+            tg.create_task(top_players_loop(cr_api, battles, profiles, mongo_conn))
+            tg.create_task(
+                monitoring_loop(metrics, battles, profiles, pool, mongo_conn)
+            )
+    except asyncio.CancelledError:
+        logger.info("Stopping data scraper")
+        raise
+    finally:
+        status_server.close()
+        # Workers hand their claimed players back before Redis closes
+        await pool.stop()
+        # Game modes collected since the last flush would otherwise be lost
+        # until the same modes are seen again.
+        remaining = mode_store.drain()
+        if remaining:
+            try:
+                if await store_game_modes(remaining, mongo_conn):
+                    await refresh_game_modes_cache(mongo_conn, redis_conn)
+            except Exception:
+                logger.exception("Final game mode flush failed")
+        await cr_api.close()
+        await redis_conn.close()
+        mongo_conn.close()
+        # Last, because it also closes key_redis, which the schedules share
+        await cr_api.key_store.close()
+        logger.info("Data scraper stopped")
 
 
 if __name__ == "__main__":

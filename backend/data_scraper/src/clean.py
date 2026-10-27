@@ -1,89 +1,67 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import copy
+import hashlib
+import logging
+
+from bson import ObjectId
+
+logger = logging.getLogger(__name__)
+
+# Stored battle result, from sideA's view. Signed, so the other side's result
+# is the negation, which readers apply per document.
+# NOTE Match RESULT_WIN / RESULT_DRAW / RESULT_LOSS in mongo/query_utils.py.
+RESULT_WIN = 1
+RESULT_DRAW = 0
+RESULT_LOSS = -1
+
+# Battle level fields that are not stored. The boat battle fields are further
+# information of clan wars battles, that are disregarded in this app. Their
+# outcome, boatBattleWon, is kept as the result (determine_game_result).
+DROPPED_BATTLE_FIELDS = (
+    "deckSelection",
+    "isHostedMatch",
+    "leagueNumber",
+    "isLadderTournament",
+    "boatBattleSide",
+    "boatBattleWon",
+    "newTowersDestroyed",
+    "prevTowersDestroyed",
+    "remainingTowers",
+)
 
 
-def validate_battle_log_structure(battle_logs):
+def is_valid_battle(battle) -> bool:
     """
-    Validates the API response if it is in the correct form and syntax.
+    Checks one battle for the fields the cleaning steps require.
 
     Args:
-        battle_logs: The response from the Clash Royale API
+        battle: One entry of the battle log, after duel rounds are extracted
 
     Returns:
-        bool: True if the response is valid, False otherwise
+        bool: True if the battle can be cleaned, False otherwise
     """
 
-    # Check if battle_logs is None or empty
-    if not battle_logs:
+    if not isinstance(battle, dict):
         return False
-
-    # Check if it's a list (expected format)
-    if not isinstance(battle_logs, list):
+    if not isinstance(battle.get("battleTime"), str):
         return False
-
-    # Check if the list is empty
-    if len(battle_logs) == 0:
+    if not all(isinstance(battle.get(f), dict) for f in ("arena", "gameMode")):
         return False
+    return _is_valid_side(battle.get("team")) and _is_valid_side(battle.get("opponent"))
 
-    # Validate first battle log structure
-    first_battle = battle_logs[0]
 
-    # Check if it's a dictionary
-    if not isinstance(first_battle, dict):
-        print(f"[VALIDATION] Expected battle to be dict, got {type(first_battle)}")
+def _is_valid_side(players) -> bool:
+    # A non-empty list of players, each with a card list and a tag. The tags
+    # place the sides and identify the battle (normalize_battle).
+    if not isinstance(players, list) or not players:
         return False
-
-    return True
-
-
-def validate_battle_log_content(battle_logs):
-    """
-    Validates the API response to ensure it contains valid battle log data.
-
-    Args:
-        battle_logs: The response from the Clash Royale API
-
-    Returns:
-        bool: True if the response is valid, False otherwise
-    """
-
-    # Validate first battle log content
-    first_battle = battle_logs[0]
-
-    # Check for required fields
-    required_fields = ["battleTime", "team", "opponent", "arena", "gameMode"]
-    for field in required_fields:
-        if field not in first_battle:
-            print(f"[VALIDATION] Missing required field: {field}")
-            return False
-
-    # Validate team and opponent structure
-    team = first_battle.get("team")
-    opponent = first_battle.get("opponent")
-
-    if not isinstance(team, list) or not isinstance(opponent, list):
-        print("[VALIDATION] Team or opponent is not a list")
-        return False
-
-    if len(team) == 0 or len(opponent) == 0:
-        print("[VALIDATION] Team or opponent list is empty")
-        return False
-
-    # Check if team and opponent players have required fields
-    for player in team + opponent:
-        if not isinstance(player, dict):
-            print("[VALIDATION] Player is not a dictionary")
-            return False
-
-        if "cards" not in player:
-            print("[VALIDATION] Player missing cards field")
-            return False
-
-        if not isinstance(player["cards"], list):
-            print("[VALIDATION] Player cards is not a list")
-            return False
-
-    return True
+    return all(
+        isinstance(player, dict)
+        and isinstance(player.get("cards"), list)
+        and isinstance(player.get("tag"), str)
+        and player["tag"]
+        for player in players
+    )
 
 
 def adjust_card_levels(cards):
@@ -100,7 +78,7 @@ def adjust_card_levels(cards):
     # Clash Royale changed the level system, but their API still returns the old
     # levels. Back then all cards started at level 1 and could be leveled up.
     # Maxed out: Level 13 for common cards, level 11 for rare cards, level 8 for epic cards, ...
-    # Nowadays everything is capped at level 14 (15), and the different rarities
+    # Nowadays everything is capped at level 14 (15) [16], and the different rarities
     # just start off at different starting levels:
     #   common: 1
     #   rare: 3
@@ -119,14 +97,23 @@ def adjust_card_levels(cards):
     # Additionally the card level can be higher than the maxLevel specified for the card
     # Clash Royale introduced Level 15 for all cards, without changing the stat in the API response
 
-    for card in cards:
-        # Determine level and rarity and offset it to the new system
+    # Some modes have no support cards, and the API omits the field then
+    for card in cards or []:
         old_card_level = card.get("level")
         rarity = card.get("rarity")
-        new_level = old_card_level + rarity_level_offsets[rarity]
+        if not isinstance(old_card_level, int) or rarity not in rarity_level_offsets:
+            # A rarity added after this mapping must not block the whole
+            # battle. The level stays in the old system until it is added.
+            logger.warning(
+                "Card %s kept its API level: unknown rarity %r or level %r",
+                card.get("name"),
+                rarity,
+                old_card_level,
+            )
+            continue
 
-        # Save the new level as card level
-        card["level"] = new_level
+        # Save the level offset to the new system as card level
+        card["level"] = old_card_level + rarity_level_offsets[rarity]
 
 
 def remove_unnecessary_card_fields(cards):
@@ -153,24 +140,32 @@ def remove_unnecessary_card_fields(cards):
         "used",  # Only a stat for a card when it's a duel
     ]
 
-    for card in cards:
+    for card in cards or []:
         for key in keys_to_remove:
             card.pop(key, None)
 
 
 def determine_game_result(battle):
     """
-    Determines the result of a battle based on crown counts.
+    Determines the result of a battle from the team's view.
 
-    Compares the crown count between the reference player's team and opponents
-    to determine if the battle was a victory, defeat, or draw.
+    Compares the crown count of the team with that of the opponents.
+    normalize_battle turns the result into the view of sideA. A boat battle
+    takes boatBattleWon instead, the outcome from the log owner's (team's)
+    view, attacker or defender. The API gave its winner 3 crowns and the
+    loser 0 in every boat battle checked, so the crowns agree, but the
+    outcome does not rely on that.
 
     Args:
         battle (dict): Battle log dictionary containing team and opponent data
 
     Returns:
-        str: "Victory", "Defeat", or "Draw"
+        int: RESULT_WIN, RESULT_LOSS or RESULT_DRAW
     """
+
+    won = battle.get("boatBattleWon")
+    if isinstance(won, bool):
+        return RESULT_WIN if won else RESULT_LOSS
 
     # Default to zero as crown amount if it can't be found in the json
     own_crowns = battle.get("team")[0].get("crowns", 0)
@@ -178,80 +173,204 @@ def determine_game_result(battle):
 
     # Check who won
     if own_crowns > opponent_crowns:
-        return "Victory"
+        return RESULT_WIN
 
     if own_crowns < opponent_crowns:
-        return "Defeat"
+        return RESULT_LOSS
 
     # Upon same crown amount
-    return "Draw"
+    return RESULT_DRAW
 
 
 def clean_battle_log_list(battle_logs, player_tag):
     """
     Processes and cleans a list of battle logs from the Clash Royale API.
 
-    Adds metadata, converts timestamps, determines game results, and removes
-    unnecessary fields to prepare the data for database storage.
+    Converts timestamps, determines game results, removes unnecessary fields
+    and normalizes each battle (normalize_battle) to prepare the data for
+    database storage. Each battle is cleaned on its own: a malformed entry is
+    logged and skipped, so it cannot keep the valid battles of the same log
+    from being stored.
 
     Args:
         battle_logs (list): List of raw battle log dictionaries from the API
-        player_tag (str): The player tag to use as reference for the battles
+        player_tag (str): The player whose battle log this is, for the logs
 
     Returns:
-        list: List of cleaned and processed battle log dictionaries
+        list: The cleaned battles, newest first. Best of 3 duels are expanded
+            into one battle per round.
     """
 
-    i = 0
-    while i < len(battle_logs):
-        battle = battle_logs[i]
-
-        # Battle is a best of 3 duel, needs own extraction logic
-        if battle.get("team") and battle["team"][0].get("rounds"):
-            duel_battles = extract_duel_battles(battle)
-            battle_logs.pop(i)  # Remove the current un-extracted duel battle log
-            battle_logs[i:i] = (
-                duel_battles  # Insert the extracted duel battles, they will be cleaned after
+    cleaned = []
+    for battle in battle_logs:
+        try:
+            # A best of 3 duel holds every round in one entry
+            if battle["team"][0].get("rounds"):
+                battles = extract_duel_battles(battle)
+            else:
+                battles = [battle]
+            # A duel is only stored with all of its rounds
+            cleaned.extend([_clean_single_battle(b) for b in battles])
+        except Exception:
+            battle_time = battle.get("battleTime") if isinstance(battle, dict) else None
+            logger.exception(
+                "Skipped malformed battle of %s at %s", player_tag, battle_time
             )
-            continue  # move to the next battle, which is the first battle of the duel
 
-        # Add a reference player tag to each battle
-        # Tag combined with time is unique identifier for each battle
-        battle["referencePlayerTag"] = player_tag
+    return cleaned
 
-        # Turn the date/time format into ISO time
-        battle_time = battle.get("battleTime")  # e.g. "20250817T022935.000Z"
-        # Parse to datetime
-        battle_time = datetime.strptime(battle_time, "%Y%m%dT%H%M%S.000Z")
-        battle["battleTime"] = battle_time
 
-        # For each battle in the log format and clean it
-        clean_battle(battle)
+def _clean_single_battle(battle):
+    """
+    Cleans and normalizes one battle (or one extracted duel round) in place.
 
-        # See if game ended in victory/defeat or draw
-        battle["gameResult"] = determine_game_result(battle)
+    Raises:
+        ValueError: If the battle lacks a field the cleaning requires.
+    """
 
-        # Remove the unnecessary stats from each battle
-        keys_to_remove = [
-            "deckSelection",
-            "isHostedMatch",
-            "leagueNumber",
-            "isLadderTournament",
-        ]
+    if not is_valid_battle(battle):
+        raise ValueError("Battle is missing required fields")
 
-        for key in keys_to_remove:
-            battle.pop(key, None)
+    # e.g. "20250817T022935.000Z"
+    battle["battleTime"] = datetime.strptime(battle["battleTime"], "%Y%m%dT%H%M%S.000Z")
 
-        # Refactor Arena and GameMode (get rid of id)
-        arena = battle.get("arena").get("name")
-        battle["arena"] = arena
+    # Both run while the boat battle fields are still there
+    clean_battle(battle)
+    battle["result"] = determine_game_result(battle)
 
-        game_mode = battle.get("gameMode").get("name")
-        battle["gameMode"] = game_mode
+    for key in DROPPED_BATTLE_FIELDS:
+        battle.pop(key, None)
 
-        i += 1  # move to the next battle
+    # Refactor Arena and GameMode (get rid of id)
+    battle["arena"] = battle["arena"].get("name")
+    battle["gameMode"] = battle["gameMode"].get("name")
 
-    return battle_logs
+    return normalize_battle(battle)
+
+
+def normalize_battle(battle):
+    """
+    Turns a battle from one player's view into the stored, view free form.
+
+    Every participant's battle log holds the same battle, with the own side
+    as team. Sorting the players of each side by tag, and calling the side
+    with the smallest tag sideA, gives every copy the same layout, so the
+    copies share one _id and the battle is stored once (see
+    split_battle_copies in mongo/battles_read.py for copies whose times
+    differ). Works in 2v2 as well:
+    all four logs agree on the order. Readers turn it back into one player's
+    view with perspective_stages (mongo/query_utils.py).
+
+    NOTE One document per battle instead of one per tracked participant
+    keeps statistics across all battles honest: a meta analysis or a deck
+    and card usage estimate would otherwise count every battle between two
+    tracked players twice, and these are the battles most likely to be
+    stored. Especially relevant when tracked friends, clanmates or top
+    players often play with (TeamVsTeam) or against each other. playerTags
+    holds every participant, not only the tracked ones, so a player tracked
+    later already has the battles against players tracked before, and is
+    passively tracked (to a certain degree) through them until then.
+
+    Sets:
+      - sideA, sideB: the sides, players sorted by tag, each with deckKey
+      - result: from sideA's view (RESULT_WIN, RESULT_LOSS or RESULT_DRAW)
+      - playerTags: every participant, sideA first, for the player index
+      - _id: battle_id
+
+    Args:
+        battle (dict): Cleaned battle with team, opponent, result from the
+            team's view and battleTime as datetime. Every player has a tag.
+
+    Returns:
+        dict: The same battle, normalized in place.
+    """
+
+    team = sorted(battle.pop("team"), key=lambda player: player["tag"])
+    opponent = sorted(battle.pop("opponent"), key=lambda player: player["tag"])
+    result = battle.pop("result")
+
+    if opponent[0]["tag"] < team[0]["tag"]:
+        team, opponent = opponent, team
+        result = -result
+
+    for player in team + opponent:
+        player["deckKey"] = build_deck_key(player)
+
+    battle["sideA"] = team
+    battle["sideB"] = opponent
+    battle["result"] = result
+    battle["playerTags"] = [player["tag"] for player in team + opponent]
+    battle["_id"] = battle_id(battle["battleTime"], team + opponent)
+    return battle
+
+
+def battle_id(battle_time, players):
+    """
+    Builds the _id of a battle from its time, participants and decks.
+
+    One player cannot be in two battles at once, but one boat defense can be
+    attacked by several players at the same time, so the time and a single
+    tag are not unique. All tags are. The decks are part of it as well, so
+    that two ids are only equal for the same battle: duel rounds are one
+    second apart, and in a log shifted by a second one round would otherwise
+    get the id of another. A duplicate key on insert therefore always means
+    a copy. The id has the layout of an ObjectId, 4 bytes of seconds and 8
+    bytes of a hash of the sorted tags and decks, so it costs the _id index
+    no more than one, and new battles are added at its end.
+
+    Two logs can report the same battle one second apart, which gives the
+    copies different ids. Those are caught before the insert by
+    split_battle_copies (mongo/battles_read.py); the id only catches exact
+    copies, including two syncs inserting the same battle at once.
+
+    Args:
+        battle_time (datetime): Battle time, UTC (naive, as stored)
+        players (list[dict]): Every participant with tag and deckKey, in any
+            order
+
+    Returns:
+        ObjectId: The id, its generation_time is the battle time
+    """
+
+    seconds = int(battle_time.replace(tzinfo=timezone.utc).timestamp())
+    identity = "|".join(sorted(f"{p['tag']}={p['deckKey']}" for p in players))
+    digest = hashlib.blake2b(identity.encode(), digest_size=8).digest()
+    return ObjectId(seconds.to_bytes(4, "big") + digest)
+
+
+def build_deck_key(player):
+    """
+    Builds the identity of one participant's deck as one string.
+
+    The deck statistics group battles by it, so they need not extract and sort
+    every battle's cards at read time. Card levels stay out: a deck is the
+    same deck at any level. Its parts are already the card filter's keys.
+
+    NOTE The format is parsed by deck_card_filter_stages (mongo/query_utils.py)
+    and has to stay identical to what the deck statistics expect:
+    "<id>-<evolutionLevel>,..." sorted as strings, "|", then the tower troop
+    ids sorted as strings, e.g. "26000000-1,26000010-0,...|159000000". A deck
+    without a tower troop ends in "|". A card without an id uses its name.
+
+    Args:
+        player (dict): Cleaned participant, evolution levels as stored
+
+    Returns:
+        str: The deck key, "|" for a player without cards
+    """
+
+    # Should always use the id for the key, fallback to name if no id is present.
+    # This is (hopefully) redundant and Clash Royale (hopefully) will always
+    # provide a stable id for the same card.
+    def identity(card):
+        return card.get("id") if card.get("id") is not None else card.get("name")
+
+    cards = sorted(
+        f"{identity(card)}-{int(card.get('evolutionLevel') or 0)}"
+        for card in player.get("cards") or []
+    )
+    towers = sorted(str(identity(tower)) for tower in player.get("supportCards") or [])
+    return ",".join(cards) + "|" + ",".join(towers)
 
 
 def extract_duel_battles(battle):
@@ -285,7 +404,8 @@ def extract_duel_battles(battle):
 
     # iterate only over rounds that exist on both sides
     # should always be same amount
-    for i in range(min(len(team_rounds), len(opp_rounds))):
+    round_count = min(len(team_rounds), len(opp_rounds))
+    for i in range(round_count):
         team = team_rounds[i]
         opp = opp_rounds[i]
         current_battle = copy.deepcopy(battle)
@@ -306,6 +426,10 @@ def extract_duel_battles(battle):
         team0["kingTowerHitPoints"] = team.get("kingTowerHitPoints")
         team0["princessTowersHitPoints"] = team.get("princessTowersHitPoints")
         team0["elixirLeaked"] = team.get("elixirLeaked")
+        # A round's own tower troop, if the log has one per round, even an
+        # empty one (None). Only an absent field keeps the duel-level tower.
+        if "supportCards" in team:
+            team0["supportCards"] = team["supportCards"]
         team0.pop("rounds")  # Remove the rounds list from the current battle
 
         # OPPONENT per-round
@@ -314,7 +438,16 @@ def extract_duel_battles(battle):
         opp0["kingTowerHitPoints"] = opp.get("kingTowerHitPoints")
         opp0["princessTowersHitPoints"] = opp.get("princessTowersHitPoints")
         opp0["elixirLeaked"] = opp.get("elixirLeaked")
+        if "supportCards" in opp:
+            opp0["supportCards"] = opp["supportCards"]
         opp0.pop("rounds")  # Remove the rounds list from the current battle
+
+        # The API reports trophyChange once for the whole duel. Only the last
+        # round keeps it, where the duel is decided, so no earlier round
+        # carries a change its own crowns may contradict.
+        if i < round_count - 1:
+            for player in current_battle["team"] + current_battle["opponent"]:
+                player.pop("trophyChange", None)
 
         battle_time_str = current_battle.get("battleTime")
         dt = datetime.strptime(battle_time_str, "%Y%m%dT%H%M%S.000Z")
@@ -322,8 +455,6 @@ def extract_duel_battles(battle):
         # Shift by i seconds, so the position in the duel
         dt_shifted = dt + timedelta(seconds=i)
         current_battle["battleTime"] = dt_shifted.strftime("%Y%m%dT%H%M%S.000Z")
-
-        # TODO (potentially) add unique match ID
 
         extracted.append(current_battle)
 
@@ -359,27 +490,72 @@ def clean_battle(battle):
 
         player.pop("globalRank", None)
 
+    remove_boat_defense_evolutions(battle)
+
+
+def remove_boat_defense_evolutions(battle):
+    """
+    Drops the evolution levels of a ClanWar_BoatBattle defense.
+
+    The API reports them on the 12 defense cards, but they follow the
+    defender's unlocked variants (1 evolution, 2 hero, 3 both) instead of
+    anything played, so they would split identical defenses and invent a
+    level 3 that no card has. Only works before normalization: stored
+    battles have neither boatBattleSide nor a team.
+
+    NOTE Assumes evolutions never take part in a boat defense, which held for
+    every battle checked so far. If the game ever lets them, this rule has to
+    go, although no focus currently lays on any clan wars battles.
+
+    Args:
+        battle (dict): Battle with team, opponent, gameMode (dict or name)
+            and boatBattleSide, the side of the player whose log it is
+
+    Returns:
+        bool: True if the battle is a boat battle and a defense was cleaned
+    """
+
+    game_mode = battle.get("gameMode")
+    if isinstance(game_mode, dict):
+        game_mode = game_mode.get("name")
+    if game_mode != "ClanWar_BoatBattle":
+        return False
+
+    # The team is always the side of the player whose log it is
+    side = battle.get("boatBattleSide")
+    if side == "defender":
+        defenders = battle.get("team") or []
+    elif side == "attacker":
+        defenders = battle.get("opponent") or []
+    else:
+        logger.warning("Boat battle without a known side: %r", side)
+        return False
+
+    for player in defenders:
+        for card in player.get("cards") or []:
+            card.pop("evolutionLevel", None)
+    return True
+
 
 def get_player_name(battles, player_tag):
     """
     Extracts the player's name from the most recent battle log entry.
 
     Args:
-        battles (list[dict]): List of battle dictionaries (newest first) as returned by the Clash Royale API.
+        battles (list[dict]): Cleaned battles (newest first), see clean_battle_log_list.
         player_tag (str): The tag of the player whose name is being retrieved.
 
     Returns:
         str: The player's name if found, otherwise the given `player_tag`.
     """
 
-    # battles[0] is the newest/earliest battle, so chances are this is the actual current name.
+    # battles[0] is the newest battle, so chances are this is the actual current name.
     # Easiest way to get the actual name would be to use the get_player_info of the clash_royale_api module,
     # but extracting it from the battle log, which is already being fetched, saves one API-call per cycle per player
     battle = battles[0]  # Take first battle of battles in the list
 
-    # Reference player is always found in team
-    for player in battle.get("team"):
-        # Check if it's the reference player
+    # Normalized, so the player can be on either side
+    for player in battle["sideA"] + battle["sideB"]:
         if player.get("tag") == player_tag:
             return player.get("name")
 

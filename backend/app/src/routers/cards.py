@@ -1,52 +1,58 @@
 from fastapi import APIRouter, HTTPException
-import httpx
 
-from core.deps import CrApi, RedConn
+from core.deps import DbConn, RedConn
 from core.settings import settings
-from clash_royale_api import ClashRoyaleMaintenanceError
-from redis_service import get_redis_json, set_redis_json, build_redis_key
+from core.route_timing import note_cache_lookup
+from helpers.json_response import get_cached_response, json_response
+from redis_service import CARDS_CACHE_KEY
+from mongo import get_cards as get_stored_cards
 
 router = APIRouter(prefix="/cards", tags=["Cards"])
 
 
-@router.get("")
-async def get_cards(cr_api: CrApi, redis_conn: RedConn):
+@router.get(
+    "",
+    responses={
+        502: {"description": "Card lookup failed"},
+        503: {"description": "Cards not stored yet (CARDS_NOT_READY)"},
+    },
+)
+async def get_cards(mongo_conn: DbConn, redis_conn: RedConn):
     try:
-        # Check cache
-        # Data scraper re-news card cache on every run, so only request cards here as fallback
-        # if the cache happens to be empty upon some error or async issue
-        key = await build_redis_key(
-            conn=redis_conn, service="crApi", resource="allCards"
-        )
-        cached_cards = await get_redis_json(redis_conn, key)
+        # The cache only holds a copy of Mongo, so a cache outage falls back to
+        # Mongo instead of failing the request. The scraper stores exactly the
+        # served list, so its text is sent as it is.
+        cached = await get_cached_response(redis_conn, CARDS_CACHE_KEY)
+    except Exception as e:
+        print(f"[CACHE] [WARNING] reading the cards failed, using Mongo: {e}")
+        note_cache_lookup(False)
+        cached = None
+    if cached is not None:
+        return cached
 
-        if cached_cards is not None:
-            return cached_cards
-
-        # If not cached, fetch them from Clash Royale and cache them
-        cards = await cr_api.get_cards()
-        await set_redis_json(redis_conn, key, cards, ttl=settings.CACHE_TTL_CARDS)
-        return cards
-
-    except ClashRoyaleMaintenanceError as e:
-        raise HTTPException(status_code=e.code, detail=e.detail)
-
-    except httpx.HTTPStatusError as http_err:
-        status = http_err.response.status_code if http_err.response else 502
-        # Common Clash Royale API errors
-        if status == 403:
-            raise HTTPException(
-                status_code=403, detail="Forbidden – check API token or IP whitelist"
-            )
-        elif status == 429:
-            raise HTTPException(
-                status_code=429, detail="Rate limit exceeded, try again later"
-            )
-        else:
-            raise HTTPException(status_code=status, detail="Clash Royale API error")
+    try:
+        stored = await get_stored_cards(mongo_conn)
 
     except Exception as e:
-        # Network / timeout / DNS errors / Redis error
-        raise HTTPException(
-            status_code=502, detail=f"Error trying to fetch the cards: {e}"
-        )
+        # A Mongo error does not fall back to the Clash Royale API, so an outage
+        # cannot turn every request into a call that spends key quota.
+        print(f"[DB] [ERROR] Fetching the cards failed: {e}")
+        raise HTTPException(status_code=502, detail="Error trying to fetch the cards")
+
+    # The data scraper is the only writer of the cards in Mongo and the cache
+    # (see data_scraper/src/jobs/cards.py). Caching this Mongo read could overwrite
+    # a newer list written after the read and keep it until the TTL ends.
+    if stored and stored.get("payload"):
+        return json_response(stored["payload"])
+
+    # Only on a fresh install, before the scraper's first card refresh. The
+    # scraper stores the list before mirroring its images, so this resolves
+    # within seconds of its first Clash Royale request.
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "code": "CARDS_NOT_READY",
+            "message": "Cards are not available yet, try again shortly",
+        },
+        headers={"Retry-After": str(settings.CARDS_NOT_READY_RETRY_AFTER)},
+    )

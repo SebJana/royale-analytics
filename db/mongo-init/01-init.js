@@ -14,22 +14,63 @@ db.createUser({
 print(`[init] creating index on 'player' collection for unique 'playerTag'`);
 db.players.createIndex({ playerTag: 1 }, { unique: true, name: "tag_unique" });
 
+// The API's player search reads only the players changed since its last
+// read. NOTE The API also creates this index at startup, for databases that
+// existed before it; keep the name in sync with ensure_search_change_index.
+print(`[init] creating index on 'player' collection for 'searchChangedAt'`);
+db.players.createIndex(
+  { searchChangedAt: 1 },
+  { name: "searchChangedAt_index" },
+);
+
 print(`[init] creating index on 'game_modes' collection for unique 'name'`);
 db.game_modes.createIndex({ name: 1 }, { unique: true, name: "name_unique" });
 
 print(
-  `[init] creating index on 'battles' collection for 'battleTime' and 'referencePlayerTag'`
+  `[init] creating index on 'battles' collection for 'playerTags' and 'battleTime'`,
 );
 
+// One document per battle for all participants (normalize_battle in the data
+// scraper's clean.py). Multikey, so a lookup of any one participant is still
+// one bounded scan sorted by time. Not unique: the _id deduplicates.
 db.battles.createIndex(
-  { referencePlayerTag: 1, battleTime: -1 },
-  { unique: true, name: "referencePlayerTag_battleTime_index" }
+  { playerTags: 1, battleTime: -1 },
+  { name: "playerTags_battleTime_index" },
 );
 
-print(`[init] creating additional indexes for common query patterns`);
+print(
+  `[init] creating index on 'battles' collection for 'gameMode' filtered stats`,
+);
 
-// Compound index for player performance analysis over time
+// Mode-filtered stats seek one time range per selected mode instead of
+// fetching and discarding every other mode's battles.
 db.battles.createIndex(
-  { referencePlayerTag: 1, gameResult: 1, battleTime: -1 },
-  { name: "referencePlayerTag_result_time_index" }
+  { playerTags: 1, gameMode: 1, battleTime: -1 },
+  { name: "playerTags_gameMode_time_index" },
+);
+
+// Profile views per player and UTC day, and the explore ranking built from
+// them. NOTE The data scraper also creates these at startup, for databases
+// that existed before them; keep names and the TTL in sync with
+// ensure_player_views_indexes and PLAYER_VIEWS_RETENTION_S (35 days).
+print(`[init] creating indexes for 'player_views' and the explore ranking`);
+db.player_views.createIndex(
+  { playerTag: 1, day: 1 },
+  { unique: true, name: "playerTag_day_unique" },
+);
+db.player_views.createIndex(
+  { day: 1 },
+  { expireAfterSeconds: 35 * 24 * 60 * 60, name: "day_ttl" },
+);
+db.players.createIndex(
+  { exploreRank: 1 },
+  {
+    name: "exploreRank_index",
+    partialFilterExpression: { exploreRank: { $exists: true } },
+  },
+);
+// Parking order of the active players, keys as PARK_ORDER in players_read.py
+db.players.createIndex(
+  { views30d: 1, lastViewedAt: 1, insertedAt: 1, playerTag: 1 },
+  { name: "park_order_index", partialFilterExpression: { active: true } },
 );

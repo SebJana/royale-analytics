@@ -13,7 +13,9 @@
   box-shadow: 0 4px 12px var(--shadow-medium);
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--transition-normal), transform var(--transition-fast),
+  transition:
+    opacity var(--transition-normal),
+    transform var(--transition-fast),
     box-shadow var(--transition-fast);
   z-index: var(--z-fixed);
   display: flex;
@@ -41,7 +43,9 @@
 
 .scroll-to-top-button:focus {
   outline: none;
-  box-shadow: 0 4px 12px var(--shadow-medium), 0 0 0 3px rgba(52, 152, 219, 0.3);
+  box-shadow:
+    0 4px 12px var(--shadow-medium),
+    0 0 0 3px rgba(52, 152, 219, 0.3);
 }
 
 /* Mobile responsive adjustments */

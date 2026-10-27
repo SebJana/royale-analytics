@@ -1,24 +1,35 @@
 import "./statCard.css";
-import Tooltip from "@mui/material/Tooltip";
+import { AppTooltip } from "../tooltip/tooltip";
 import type { ReactNode } from "react";
+import { formatNumber } from "../../utils/number";
 
 export function StatCard({
   value,
   label,
   tooltip,
-}: Readonly<{ value: string | number; label: string; tooltip?: ReactNode }>) {
+  className,
+}: Readonly<{
+  value: ReactNode;
+  label: string;
+  tooltip?: ReactNode;
+  className?: string;
+}>) {
   const card = (
-    <div className="stat-card">
-      <div className="stat-card-number">{value}</div>
+    <div className={className ? `stat-card ${className}` : "stat-card"}>
+      {/* Numbers get thousands separators; strings (e.g. "54.6%") show as given */}
+      <div className="stat-card-number">
+        {typeof value === "number" ? formatNumber(value) : value}
+      </div>
       <div className="stat-card-label">{label}</div>
     </div>
   );
 
   return tooltip ? (
-    <Tooltip
-      arrow
+    <AppTooltip
       placement="top"
       title={tooltip}
+      // The card only explains a number, so a tap shows the explanation
+      tapToShow
       slotProps={{
         popper: {
           modifiers: [
@@ -30,7 +41,7 @@ export function StatCard({
       }}
     >
       {card}
-    </Tooltip>
+    </AppTooltip>
   ) : (
     card
   );

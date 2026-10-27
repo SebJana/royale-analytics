@@ -4,10 +4,12 @@ import { useCardStats } from "../../hooks/useCardStats";
 import { usePageLoadingState } from "../../hooks/usePageLoadingState";
 import CircularProgress from "@mui/material/CircularProgress";
 import { useGameModes } from "../../hooks/useGameModes";
-import { round } from "../../utils/number";
+import { formatNumber, round } from "../../utils/number";
 import { pluralize } from "../../utils/plural";
+import { pageQueryState } from "../../utils/queryError";
 import { getCurrentFilterState } from "../../utils/filter";
-import { gameModesForQuery } from "../../utils/gameModes";
+import { getTimeRange } from "../../utils/seasons";
+import { gameModeQueryKey, gameModesForQuery } from "../../utils/gameModes";
 import { useEffect, useState } from "react";
 import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
 import { FilterContainer } from "../../components/filterContainer/filterContainer";
@@ -16,7 +18,29 @@ import { SortByContainer } from "../../components/sortByContainer/sortByContaine
 import { CardComponent } from "../../components/card/card";
 import { PlayerError } from "../../components/playerError/playerError";
 import type { CardStats } from "../../types/cardStats";
+import type { Card, CardMeta } from "../../types/cards";
+import {
+  getCardVariantName,
+  NO_SUPPORT_ID,
+} from "../../utils/getCardMetaFields";
+import rareOutlineImg from "../../assets/cards/rareOutline.png";
 import "./cards.css";
+import { AppTooltip } from "../../components/tooltip/tooltip";
+import { Sticker } from "../../components/sticker/sticker";
+
+/**
+ * Title of a card tile, e.g. "Evolution Knight".
+ *
+ * @param card Card from the statistics.
+ * @param cards The official card list, undefined while loading.
+ * @returns The official name, or for cards outside the list (event cards) the
+ *   name stored with the battles.
+ */
+function cardTitle(card: Card, cards: CardMeta[] | undefined): string {
+  if (card.id === NO_SUPPORT_ID) return "No Tower Data";
+  const name = cards?.find((c) => c.id === card.id)?.name ?? card.name;
+  return getCardVariantName(name || `#${card.id}`, card.evolutionLevel ?? 0);
+}
 
 function calculateAndFormatUsageRate(
   battleCount: number,
@@ -25,6 +49,110 @@ function calculateAndFormatUsageRate(
   const usageRate = (battleCount / totalBattles) * 100; // In percent
   const roundedUsageRate = round(usageRate, 1);
   return `${roundedUsageRate}%`;
+}
+
+type CardStat = CardStats["card_statistics"]["cards"][number];
+
+/**
+ * How many more battles a card won than an even record would have, doubled
+ * to stay an integer. A card has to win often AND be played often to score
+ * high: 11 of 13 beats 5 of 5, and 50% or worse never scores above zero.
+ *
+ * @param stat Statistics of the card.
+ * @returns Twice the wins above 50%
+ */
+function winsAboveEven(stat: CardStat): number {
+  return 2 * stat.wins - stat.usage;
+}
+
+/**
+ * The cards with the most wins above an even record. Tied cards share the
+ * title; no card is MVP when none won more than it lost.
+ *
+ * @param stats Card statistics, without tower troops.
+ * @returns The MVP cards' statistics, empty if there is none
+ */
+function findMvps(stats: CardStat[]): Set<CardStat> {
+  const best = Math.max(0, ...stats.map(winsAboveEven));
+  if (best === 0) return new Set();
+  return new Set(stats.filter((s) => winsAboveEven(s) === best));
+}
+
+/**
+ * Tile with one card's or tower troop's statistics.
+ *
+ * @param stat Statistics of the card or tower troop.
+ * @param cards The official card list, undefined while loading.
+ * @param totalBattles Battles in the filter, the usage rate's denominator.
+ * @param isMvp Whether the card is an MVP (see findMvps).
+ */
+function CardStatTile({
+  stat,
+  cards,
+  totalBattles,
+  isMvp = false,
+}: Readonly<{
+  stat: CardStat;
+  cards: CardMeta[] | undefined;
+  totalBattles: number;
+  isMvp?: boolean;
+}>) {
+  const title = cardTitle(stat.card, cards);
+  return (
+    <div className="card-item">
+      {isMvp && (
+        <AppTooltip title="Most wins above an even record" tapToShow>
+          <Sticker tone="gold" className="card-item-mvp">
+            mvp
+          </Sticker>
+        </AppTooltip>
+      )}
+      {/* The title is cut off when long; the tooltip shows it in full */}
+      <AppTooltip title={title} tapToShow>
+        <h3 className="card-item-title">{title}</h3>
+      </AppTooltip>
+      <div className="card-item-visual">
+        {stat.card.id === NO_SUPPORT_ID ? (
+          // Battles without tower data. Not a card, so no art lookup.
+          <img
+            className="card-item-none"
+            src={rareOutlineImg}
+            alt="No tower troop recorded"
+          />
+        ) : (
+          <CardComponent
+            card={stat.card}
+            cards={cards ?? []}
+            showTooltip={false}
+          />
+        )}
+      </div>
+      <div className="card-item-stats">
+        <div className="card-item-stat">
+          <span className="card-stat-value">{formatNumber(stat.usage)}</span>
+          <span className="card-stat-label">
+            {pluralize(stat.usage, "Battle", "Battles")}
+          </span>
+        </div>
+        <div className="card-item-stat">
+          <span className="card-stat-value">{formatNumber(stat.wins)}</span>
+          <span className="card-stat-label">
+            {pluralize(stat.wins, "Win", "Wins")}
+          </span>
+        </div>
+        <div className="card-item-stat">
+          <span className="card-stat-value">{round(stat.winRate, 1)}%</span>
+          <span className="card-stat-label">Win Rate</span>
+        </div>
+        <div className="card-item-stat">
+          <span className="card-stat-value">
+            {calculateAndFormatUsageRate(stat.usage, totalBattles)}
+          </span>
+          <span className="card-stat-label">Usage Rate</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // Type for card sorting that includes actual CardStat fields and computed fields
@@ -62,14 +190,14 @@ export default function PlayerCards() {
     isLoading: cardsLoading,
     isError: isCardsError,
     refetch: refetchCards,
-  } = useCards();
+  } = pageQueryState(useCards());
 
   const {
     data: gameModes,
     isLoading: gameModesLoading,
     isError: isGameModesError,
     refetch: refetchGameModes,
-  } = useGameModes();
+  } = pageQueryState(useGameModes());
 
   // Game mode initialization
   // Initialize selected game modes once when game modes are loaded
@@ -153,15 +281,12 @@ export default function PlayerCards() {
     isLoading: cardStatsLoading,
     isError: isCardStatsError,
     refetch: refetchCardStats,
-  } = useCardStats(
-    playerTag,
-    appliedFilters.startDate,
-    appliedFilters.endDate,
-    queryGameModes,
+  } = pageQueryState(
+    useCardStats(playerTag, getTimeRange(appliedFilters), queryGameModes),
   );
 
   // Use the modes actually sent to the API for the loading state dependency.
-  const modesKey = queryGameModes?.join("|") ?? "";
+  const modesKey = gameModeQueryKey(queryGameModes);
 
   // Loading state management
   // Determines when to show loading spinner vs content
@@ -170,9 +295,13 @@ export default function PlayerCards() {
     loadingStates: [cardsLoading, cardStatsLoading, gameModesLoading],
     errorStates: [isCardStatsError, isCardsError, isGameModesError],
     hasData: () =>
-      Boolean(cardStats && cardStats.card_statistics.cards.length > 0),
+      Boolean(
+        cardStats &&
+        (cardStats.card_statistics.cards.length > 0 ||
+          cardStats.card_statistics.supportCards.length > 0),
+      ),
     // Reset dependency ensures loading state recalculates when any backend filter changes
-    resetDependency: `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${modesKey}`,
+    resetDependency: `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${appliedFilters.season}-${modesKey}`,
   });
 
   const totalBattles = cardStats?.card_statistics.totalBattles ?? 0;
@@ -181,6 +310,11 @@ export default function PlayerCards() {
   // Only sort if card data exists, otherwise return empty array
   const sortedCards = cardStats?.card_statistics.cards
     ? sortCards(cardStats.card_statistics.cards)
+    : [];
+  const mvps = findMvps(sortedCards);
+  // Tower troops, sorted the same way
+  const sortedSupportCards = cardStats?.card_statistics.supportCards
+    ? sortCards(cardStats.card_statistics.supportCards)
     : [];
 
   if (isCardStatsError || isCardsError || isGameModesError) {
@@ -242,55 +376,41 @@ export default function PlayerCards() {
             {sortedCards.length > 0 && (
               <div className="cards-grid">
                 {sortedCards.map((c) => (
-                  <div
-                    className="card-item"
+                  <CardStatTile
                     key={`${c.card.id}-${c.card.evolutionLevel}`}
-                  >
-                    <div className="card-item-visual">
-                      <CardComponent
-                        card={c.card}
-                        cards={cards ?? []}
-                        showTooltip={false}
-                      />
-                    </div>
-                    <div className="card-item-stats">
-                      <div className="card-item-stat">
-                        <span className="card-stat-value">{c.usage}</span>
-                        <span className="card-stat-label">
-                          {pluralize(c.usage, "Battle", "Battles")}
-                        </span>
-                      </div>
-                      <div className="card-item-stat">
-                        <span className="card-stat-value">{c.wins}</span>
-                        <span className="card-stat-label">
-                          {pluralize(c.wins, "Win", "Wins")}
-                        </span>
-                      </div>
-                      <div className="card-item-stat">
-                        <span className="card-stat-value">
-                          {round(c.winRate, 1)}%
-                        </span>
-                        <span className="card-stat-label">Win Rate</span>
-                      </div>
-                      <div className="card-item-stat">
-                        <span className="card-stat-value">
-                          {calculateAndFormatUsageRate(c.usage, totalBattles)}
-                        </span>
-                        <span className="card-stat-label">Usage Rate</span>
-                      </div>
-                    </div>
-                  </div>
+                    stat={c}
+                    cards={cards}
+                    totalBattles={totalBattles}
+                    isMvp={mvps.has(c)}
+                  />
                 ))}
               </div>
+            )}
+            {/* Tower troops separately, so they do not mix with the cards */}
+            {sortedSupportCards.length > 0 && (
+              <section className="cards-tower-section">
+                <h2 className="cards-section-title">Tower Troops</h2>
+                <div className="cards-grid">
+                  {sortedSupportCards.map((c) => (
+                    <CardStatTile
+                      key={c.card.id}
+                      stat={c}
+                      cards={cards}
+                      totalBattles={totalBattles}
+                    />
+                  ))}
+                </div>
+              </section>
             )}
             <ScrollToTopButton />
 
             {/* Show message when no cards are found and not still loading */}
-            {(!cardStats || sortedCards.length === 0) &&
+            {(!cardStats ||
+              (sortedCards.length === 0 && sortedSupportCards.length === 0)) &&
               !cardsLoading &&
               !gameModesLoading &&
               !cardsLoading && (
-                <div className="no-cards-message">
+                <div className="player-status-message">
                   <p>No cards found with the current filters applied</p>
                 </div>
               )}

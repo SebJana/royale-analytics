@@ -1,29 +1,28 @@
-import threading
-
-
 class UniqueGameModes:
     """
-    A thread-safe container for collecting and managing unique game modes.
+    Collects the unique game modes seen in battle logs until they are flushed.
 
-    This class provides a thread-safe way to collect unique game mode strings,
-    typically used during data scraping operations where multiple threads are processing players concurrently and want to collect the unique game modes found in the battle logs.
+    All workers run on one asyncio event loop and the methods contain no
+    ``await``, so no lock is needed between ``add`` and ``drain``.
     """
 
     def __init__(self):
-        self._lock = threading.Lock()
         self._values = set()
 
     def add(self, game_mode: str):
         """Add game mode to set if not already present"""
-        with self._lock:
-            if game_mode not in self._values:
-                self._values.add(game_mode)
+        self._values.add(game_mode)
 
-    def get_values(self):
+    def drain(self):
         """
-        Get all unique game modes currently in values
+        Return all collected game modes and start a new, empty collection.
+
         Returns:
-            list: unique game modes
+            list: unique game modes since the previous drain
         """
-        with self._lock:
-            return list(self._values)
+        values, self._values = self._values, set()
+        return list(values)
+
+    def restore(self, game_modes: list):
+        """Put drained game modes back after a failed write."""
+        self._values.update(game_modes)

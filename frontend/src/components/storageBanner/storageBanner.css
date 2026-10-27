@@ -1,0 +1,68 @@
+/* Sticky in the page flow rather than fixed: it floats over the page while
+   scrolling, but at the end it takes its own space, so it never hides the
+   footer. Above the scroll-to-top button, below MUI dialogs. */
+.storage-banner {
+  position: sticky;
+  bottom: var(--spacing-lg);
+  z-index: calc(var(--z-fixed) + 1);
+  align-self: center;
+  box-sizing: border-box;
+  width: min(760px, 100%);
+  margin-top: var(--spacing-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background-color: var(--bg-dark);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px var(--shadow-medium);
+  text-align: left;
+}
+
+.storage-banner-text {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-base);
+}
+
+/* Reads as a link inside the sentence. */
+.storage-banner-settings,
+.storage-banner-settings:hover {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+.storage-banner-actions {
+  display: flex;
+  flex: none;
+  gap: var(--spacing-sm);
+}
+
+/* Not "all" like the global button transition: visibility would lag behind
+   the banner when the loading screen hides it (siteFooter.css). */
+.storage-banner button {
+  transition-property: background-color, border-color, color;
+}
+
+.storage-banner-actions button {
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .storage-banner {
+    flex-direction: column;
+    align-items: stretch;
+    bottom: var(--spacing-sm);
+    padding: var(--spacing-md);
+    gap: var(--spacing-md);
+  }
+
+  .storage-banner-actions button {
+    flex: 1;
+  }
+}

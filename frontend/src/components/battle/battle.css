@@ -4,6 +4,28 @@
   margin-bottom: var(--spacing-xl);
 }
 
+/* Reached from a bar of the form strip: shows which card the jump landed on */
+.battle-component-container.is-jump-target {
+  animation: battle-jump-target-glow 1600ms ease-out;
+}
+
+@keyframes battle-jump-target-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  40% {
+    box-shadow: 0 0 0 3px var(--border-active);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battle-component-container.is-jump-target {
+    animation: none;
+    outline: 2px solid var(--border-active);
+  }
+}
+
 .battle-component-header {
   display: flex;
   align-items: center;
@@ -65,6 +87,13 @@
   justify-content: flex-end;
 }
 
+.battle-component-badges,
+.battle-component-scoreline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
 .battle-component-crown {
   width: 24px;
   height: 24px;
@@ -80,6 +109,12 @@
   fill: var(--color-error);
 }
 
+/* Between the small row stickers and the big profile ones, so a result
+   badge reads at a glance next to the score */
+.battle-component-sticker {
+  font-size: var(--font-sm);
+}
+
 .battle-component-score-text {
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-xl);
@@ -91,6 +126,27 @@
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-lg);
   align-items: start;
+}
+
+/* Side by side, a deck without a tower troop keeps a blank slot, so its
+   cards stay as large as the other deck's. Stacked on mobile, the cards take
+   the full width instead (deck.css hides the slot). The stat bar ends with
+   the cards, not at the blank slot.
+   NOTE Keep the clamp equal to the flex basis of .deck-component-support. */
+@media (min-width: 769px) {
+  .battle-component-decks .deck-component-support.is-absent {
+    display: flex;
+    visibility: hidden;
+  }
+
+  .battle-component-decks .deck-component-footer.no-support {
+    margin-right: calc(clamp(34px, 13%, 84px) + var(--spacing-sm));
+  }
+
+  .battle-component-decks .deck-component-footer.no-support.support-left {
+    margin-right: 0;
+    margin-left: calc(clamp(34px, 13%, 84px) + var(--spacing-sm));
+  }
 }
 
 .battle-component-col {
@@ -107,6 +163,37 @@
 .battle-component-player-block {
   border-radius: var(--radius-lg);
   padding: var(--spacing-md);
+}
+
+/* The global a and a:hover rules would turn the deck's text blue */
+.battle-component-deck-link,
+.battle-component-deck-link:hover {
+  display: block;
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+  outline: none;
+}
+
+/* Only the cards and tower light up, not the stats bar. The shadow widens
+   the highlight without moving the cards, and stays below the bar's
+   spacing-lg top margin, so a gap remains. */
+.battle-component-deck-link .deck-component-body {
+  border-radius: var(--radius-md);
+  transition:
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.battle-component-deck-link:hover .deck-component-body {
+  background: var(--bg-overlay-light);
+  box-shadow: 0 0 0 var(--spacing-sm) var(--bg-overlay-light);
+}
+
+.battle-component-deck-link:focus-visible .deck-component-body {
+  box-shadow:
+    0 0 0 var(--spacing-sm) var(--bg-overlay-light),
+    0 0 0 calc(var(--spacing-sm) + 2px) var(--border-active);
 }
 
 .battle-component-player-info {
@@ -126,7 +213,7 @@
 .battle-component-player-name {
   margin: 0 0 var(--spacing-sm) 0;
   font-weight: var(--font-weight-semibold);
-  font-size: var(--font-2xl);
+  font-size: clamp(var(--font-lg), 0.96rem + 0.6vw, var(--font-2xl));
 }
 
 .battle-component-player-tag {
@@ -154,19 +241,37 @@
   }
 
   .battle-component-game-mode {
-    font-size: var(--font-2xl);
     text-align: center;
     order: 1;
   }
 
+  /* The score stays in the middle column, centered under the mode; the
+     badges take the left column, which the empty right one balances */
   .battle-component-score {
-    justify-content: center;
-    gap: var(--spacing-md);
+    container: battle-score / inline-size;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--spacing-sm) var(--spacing-md);
     order: 2;
   }
 
-  .battle-component-score-text {
-    font-size: var(--font-xl);
+  .battle-component-scoreline {
+    grid-column: 2;
+    gap: var(--spacing-md);
+  }
+
+  .battle-component-badges {
+    grid-row: 1;
+    grid-column: 1;
+    justify-self: end;
+  }
+
+  /* Two badges never fit beside the score */
+  .battle-component-badges:has(> :nth-child(2)) {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-self: center;
   }
 
   .battle-component-crown {
@@ -175,11 +280,17 @@
   }
 
   .battle-component-header-result {
-    font-size: var(--font-s);
     padding: var(--spacing-sm) var(--spacing-md);
   }
+}
 
-  .battle-component-battle-time {
-    font-size: var(--font-s);
+/* Too narrow for one badge beside the centered score, so it gets a row of
+   its own below. NOTE 400px fits the widest badge ("3 crowned") twice plus
+   the score; update it with the badge sizes. */
+@container battle-score (max-width: 400px) {
+  .battle-component-badges {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-self: center;
   }
 }

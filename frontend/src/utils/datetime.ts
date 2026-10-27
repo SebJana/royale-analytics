@@ -28,6 +28,27 @@ export function datetimeToLocale(time: string): string {
 }
 
 /**
+ * Like datetimeToLocale, but the date and the time separately, so they can
+ * wrap onto two lines without splitting either one.
+ * @param time ISO 8601 string (e.g. "2025-09-08T22:52:42")
+ * @returns Localized date and time strings, or null if invalid
+ */
+export function datetimeToLocaleParts(
+  time: string,
+): { date: string; time: string } | null {
+  if (!time) return null;
+
+  // Treat timestamps without an explicit timezone as UTC to avoid local-time parsing.
+  const d = new Date(/(Z|[+-]\d{2}:\d{2})$/i.test(time) ? time : `${time}Z`);
+  if (Number.isNaN(d.getTime())) return null;
+
+  return {
+    date: d.toLocaleDateString(undefined, { dateStyle: "medium" }),
+    time: d.toLocaleTimeString(undefined, { timeStyle: "short" }),
+  };
+}
+
+/**
  * Convert a local time string to UTC ISO format.
  * @param time Local time string
  * @returns UTC ISO string (e.g., "2025-09-16T14:30:00.000Z")
@@ -61,6 +82,34 @@ export function formatDateForInput(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Format a range of calendar dates in the user's locale, without repeating
+ * what both ends share: "Sep 26 – Oct 2, 2026".
+ * @param startDate Start date in YYYY-MM-DD format
+ * @param endDate End date in YYYY-MM-DD format
+ * @returns The formatted range, or null if a date is invalid
+ */
+export function formatDateRange(
+  startDate: string,
+  endDate: string,
+): string | null {
+  // Calendar dates in the browser's timezone, see isValidDateRange
+  const toDate = (value: string) => {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+  const start = toDate(startDate);
+  const end = toDate(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+  // formatRange throws when the start is after the end
+  if (start > end) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+  }).formatRange(start, end);
 }
 
 /**
@@ -133,4 +182,36 @@ export function isValidDateRange(
   }
   // TODO possibly limit time range (max N years)?
   return true;
+}
+
+/**
+ * Describe how long ago an API timestamp was, in minutes: "3 min ago".
+ * From one hour on hours are added, "5 h 12 min ago", which stays readable
+ * for data that is up to a day old. Past a day the minutes are noise and
+ * days lead: "2 d 5 h ago", and past a week only days: "12 d ago".
+ * Assumes UTC if no timezone is present, like datetimeToLocale.
+ * @param time ISO 8601 string (e.g. "2025-09-08T22:52:42")
+ * @param now Reference time in milliseconds (default: current time)
+ * @returns Relative time text, or null if the timestamp is missing or invalid
+ */
+export function formatTimeAgo(
+  time: string | null | undefined,
+  now: number = Date.now(),
+): string | null {
+  if (!time) return null;
+
+  const hasTZ = /(Z|[+-]\d{2}:\d{2})$/i.test(time);
+  const date = new Date(hasTZ ? time : time + "Z");
+  if (Number.isNaN(date.getTime())) return null;
+
+  // Small clock differences between server and browser must not read as
+  // a time in the future.
+  const minutes = Math.max(0, Math.floor((now - date.getTime()) / 60_000));
+  if (minutes < 1) return "less than 1 min ago";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ${minutes % 60} min ago`;
+  const days = Math.floor(hours / 24);
+  if (days >= 7 || hours % 24 === 0) return `${days} d ago`;
+  return `${days} d ${hours % 24} h ago`;
 }

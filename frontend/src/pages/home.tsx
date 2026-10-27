@@ -1,21 +1,27 @@
-import { useEffect, useState } from "react";
-import { LockKeyhole, LockKeyholeOpen, CircleCheck } from "lucide-react";
-import { useNavigate } from "react-router";
-import {
-  fetchAllTrackedPlayers,
-  fetchAllTrackedPlayersCount,
-  trackPlayer,
-  untrackPlayer,
-} from "../services/api/trackedPlayers";
-import { fetchTotalBattleCount } from "../services/api/battles";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { LockKeyhole, LockKeyholeOpen } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { trackPlayer, untrackPlayer } from "../services/api/trackedPlayers";
+import { getTrackingErrorStatus } from "../utils/trackingErrors";
+import { StatusMessage } from "../components/statusMessage/statusMessage";
+import type { Status } from "../types/status";
 import { pluralize } from "../utils/plural";
 import { formatNumberWithSuffix } from "../utils/number";
-import { validatePlayerTagSyntax } from "../utils/playerTag";
-import { useFetch } from "../hooks/useFetch";
+import {
+  ADD_PLAYER_PARAM,
+  ADD_PLAYER_SECTION_ID,
+  validatePlayerTagSyntax,
+} from "../utils/playerTag";
+import {
+  TRACKED_PLAYER_COUNT_QUERY_KEY,
+  useTrackedPlayerCount,
+} from "../hooks/useTrackedPlayerCount";
+import { useTotalBattleCount } from "../hooks/useTotalBattleCount";
 import { useAuth } from "../hooks/useAuthHook";
-import type { Players, PlayerCount } from "../types/players";
-import type { TotalBattleCount } from "../types/battles";
 import { PlayerSearch } from "../components/playerSearch/playerSearch";
+import { PLAYER_SEARCH_QUERY_KEY } from "../hooks/usePlayerSearch";
+import { TRACKED_STATE_QUERY_KEY } from "../hooks/useTrackedState";
 import { AuthModal } from "../components/auth/authModal";
 import Lottie from "lottie-react";
 import construction from "../assets/animations/construction.json";
@@ -23,86 +29,120 @@ import CircularProgress from "@mui/material/CircularProgress";
 import axios from "axios";
 import { StatCard } from "../components/statCard/statCard";
 import "./home.css";
+import { AppTooltip } from "../components/tooltip/tooltip";
 
-function getErrorMessage(error: unknown): string {
-  if (!axios.isAxiosError<{
-    detail?: string | { code?: string; message?: string };
-  }>(error)) {
-    return error instanceof Error
-      ? error.message
-      : "Something went wrong. Please try again.";
-  }
+// Module level, so the slot sees the same object while it stays open.
+const AUTH_STATUS: Status = {
+  tone: "success",
+  title: "Verification complete",
+  message: "Enter a player tag to remove.",
+};
 
-  if (!error.response) return "Could not reach the server. Please try again.";
+// NOTE: Match the removal token codes of require_remove_player_token in the
+// backend's core/deps.py.
+const REMOVAL_TOKEN_CODES = new Set([
+  "REMOVE_PLAYER_TOKEN_USED_UP",
+  "REMOVE_PLAYER_TOKEN_EXPIRED",
+]);
 
-  const { status, data } = error.response;
-  const detail = data?.detail;
-  const code = typeof detail === "object" ? detail?.code : undefined;
-
-  // Check the backend code first; a 502 can also come from Clash Royale.
-  if (code === "INVALID_PLAYER_TAG")
-    return "Invalid player tag. Enter a tag like #YYRJQY28.";
-  if (code === "PLAYER_NOT_FOUND")
-    return "Player not found. Check the tag and try again.";
-  if (code === "PLAYER_NOT_TRACKED") return "That player isn't being tracked.";
-  if (code === "CR_API_AUTH_FAILED")
-    return (
-      "Clash Royale rejected the API connection, so this player can't be tracked right now. " +
-      "Please try again later."
-    );
-  if (code === "CR_API_MAINTENANCE")
-    return (
-      "Clash Royale is currently undergoing maintenance, so this player can't be tracked right now. " +
-      "Please try again later."
-    );
-  if (code === "CR_API_UNAVAILABLE" || code === "CR_API_INVALID_RESPONSE")
-    return "Could not check the player with Clash Royale. Please try again later.";
-  if (status === 401 || status === 403)
-    return "Authorization failed. Please verify again.";
-  if (status === 429) return "Too many requests. Please try again shortly.";
-  if (status >= 500)
-    return "The server could not complete the request. Please try again later.";
-
-  return (
-    (typeof detail === "string" ? detail : detail?.message) ??
-    "Something went wrong. Please try again."
-  );
+/** Returns the backend's error code of a failed request, if it sent one. */
+function errorCode(error: unknown): string | undefined {
+  if (!axios.isAxiosError<{ detail?: { code?: string } | string }>(error))
+    return undefined;
+  const detail = error.response?.data?.detail;
+  return typeof detail === "object" ? detail?.code : undefined;
 }
 
 function HomePage() {
-  const {
-    data: players,
-    loading: playersLoading,
-    error: playersError,
-  } = useFetch<Players>(fetchAllTrackedPlayers, []);
+  const queryClient = useQueryClient();
+
+  // The window keeps its scroll position across routes, so coming from far
+  // down a player page would open home at its bottom, footer first. Before
+  // paint, so that position never shows.
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  // The API indexes adds and removes instantly; the cached count, search
+  // results and battle opponents' tracked states would still show the old one.
+  const refreshTrackedPlayers = () => {
+    void queryClient.invalidateQueries({
+      queryKey: [TRACKED_PLAYER_COUNT_QUERY_KEY],
+    });
+    void queryClient.invalidateQueries({ queryKey: [PLAYER_SEARCH_QUERY_KEY] });
+    void queryClient.invalidateQueries({ queryKey: [TRACKED_STATE_QUERY_KEY] });
+  };
 
   const {
     data: playerCount,
-    loading: playerCountLoading,
-    error: playerCountError,
-  } = useFetch<PlayerCount>(fetchAllTrackedPlayersCount, []);
+    isPending: playerCountPending,
+    isError: playerCountError,
+  } = useTrackedPlayerCount();
 
   const {
     data: battleCount,
-    loading: battleCountLoading,
-    error: battleCountError,
-  } = useFetch<TotalBattleCount>(fetchTotalBattleCount, []);
+    isPending: battleCountPending,
+    isError: battleCountError,
+  } = useTotalBattleCount();
 
   const [selectedPlayerTag, setSelectedPlayerTag] = useState("");
   const [addedPlayerTag, setAddedPlayerTag] = useState("");
   const [untrackedPlayerTag, setUntrackedPlayerTag] = useState("");
   const [trackingPlayer, setTrackingPlayer] = useState(false);
   const [untrackingPlayer, setUntrackingPlayer] = useState(false);
-  const [trackingError, setTrackingError] = useState<string | null>(null);
-  const [untrackingError, setUntrackingError] = useState<string | null>(null);
-  const [trackingSuccess, setTrackingSuccess] = useState<string | null>(null);
-  const [untrackingSuccess, setUntrackingSuccess] = useState<string | null>(
-    null
-  );
+  const [trackingStatus, setTrackingStatus] = useState<Status | null>(null);
+  const [untrackingStatus, setUntrackingStatus] = useState<Status | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showAuthSuccess, setShowAuthSuccess] = useState(false);
+  const trackingStatusId = useId();
+  const untrackingStatusId = useId();
   const navigate = useNavigate();
-  const { isAuthenticated, checkAuthStatus } = useAuth();
+  const { isAuthenticated, checkAuthStatus, logout } = useAuth();
+
+  // A battle's "add this player" link fills in the add form. The parameter
+  // is dropped right away, so a reload or a later visit starts empty.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedAddTag = searchParams.get(ADD_PLAYER_PARAM);
+  const addSectionRef = useRef<HTMLDivElement>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [highlightAdd, setHighlightAdd] = useState(false);
+
+  useEffect(() => {
+    if (!requestedAddTag) return;
+    setAddedPlayerTag(requestedAddTag);
+    setShowAddForm(true);
+    setSearchParams(
+      (params) => {
+        params.delete(ADD_PLAYER_PARAM);
+        return params;
+      },
+      { replace: true },
+    );
+  }, [requestedAddTag, setSearchParams]);
+
+  // The form only exists once the counts have loaded, so scrolling waits.
+  // The layout effect above has scrolled to the top by then.
+  const countsLoaded = !playerCountPending && !battleCountPending;
+  useEffect(() => {
+    if (!showAddForm || !countsLoaded) return;
+    setShowAddForm(false);
+    addSectionRef.current?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "center",
+    });
+    // Focused without a second scroll, so the smooth one is not cut short.
+    addInputRef.current?.focus({ preventScroll: true });
+    setHighlightAdd(true);
+  }, [showAddForm, countsLoaded]);
+
+  useEffect(() => {
+    if (!highlightAdd) return;
+    const timer = window.setTimeout(() => setHighlightAdd(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [highlightAdd]);
 
   useEffect(() => {
     if (!showAuthSuccess) return;
@@ -110,9 +150,13 @@ function HomePage() {
     return () => window.clearTimeout(timer);
   }, [showAuthSuccess]);
 
-  if (playersLoading || playerCountLoading || battleCountLoading)
+  // A visit without cached counts loads them behind this spinner; the count
+  // hooks keep them for a short while. A refetch keeps the page and its
+  // status messages.
+  if (playerCountPending || battleCountPending)
     return <CircularProgress className="home-loading-spinner" />;
-  if (playersError || playerCountError || battleCountError)
+  // A failed refetch keeps the previous counts on screen
+  if ((playerCountError && !playerCount) || (battleCountError && !battleCount))
     return (
       <>
         <Lottie
@@ -125,13 +169,6 @@ function HomePage() {
         </h2>
       </>
     );
-
-  const playerList = players
-    ? Object.entries(players.activePlayers).map(([tag, name]) => ({
-        tag,
-        name,
-      }))
-    : [];
 
   function canEnableViewButton() {
     /**
@@ -153,21 +190,42 @@ function HomePage() {
     }
   };
 
+  // Any field or button in use makes every shown outcome stale, so starting
+  // something new in one panel also clears the others.
+  const clearStatuses = () => {
+    setTrackingStatus(null);
+    setUntrackingStatus(null);
+    setShowAuthSuccess(false);
+  };
+
   const handleAddPlayerClick = async () => {
     if (!addedPlayerTag) return;
 
     setTrackingPlayer(true);
-    setTrackingError(null);
-    setTrackingSuccess(null);
+    clearStatuses();
 
     try {
       const result = await trackPlayer(addedPlayerTag);
-      setTrackingSuccess(`${result.status}: ${result.tag}`);
+      // The API stores the profile and puts the player first in the battle
+      // schedule, so the page is usually useful right away. Until the first
+      // battle sync lands, the battles page polls for it. Under heavy load or
+      // after a restart following long downtime, the schedule is crowded and
+      // that first sync can take a while.
+      setTrackingStatus({
+        tone: "success",
+        title: result.status,
+        message: result.tag,
+        link: {
+          to: `/player/${encodeURIComponent(result.tag)}/battles`,
+          label: "View Player",
+        },
+      });
+      refreshTrackedPlayers();
 
       // Clear the input field
       setAddedPlayerTag("");
     } catch (error) {
-      setTrackingError(getErrorMessage(error));
+      setTrackingStatus(getTrackingErrorStatus(error, "Couldn't add player"));
     } finally {
       setTrackingPlayer(false);
     }
@@ -175,12 +233,15 @@ function HomePage() {
 
   const handleUntrackPlayerClick = async () => {
     if (!untrackedPlayerTag) return;
+    clearStatuses();
     if (!validatePlayerTagSyntax(untrackedPlayerTag)) {
-      setUntrackingError("Invalid player tag. Enter a tag like #YYRJQY28.");
-      setUntrackingSuccess(null);
+      setUntrackingStatus({
+        tone: "error",
+        title: "Couldn't remove player",
+        message: "Invalid player tag. Enter a tag like #YYRJQY28.",
+      });
       return;
     }
-    setUntrackingError(null);
 
     // Check if user is authenticated
     if (!checkAuthStatus()) {
@@ -189,16 +250,26 @@ function HomePage() {
     }
 
     setUntrackingPlayer(true);
-    setUntrackingSuccess(null);
 
     try {
       const result = await untrackPlayer(untrackedPlayerTag);
-      setUntrackingSuccess(`${result.status}: ${result.tag}`);
+      setUntrackingStatus({
+        tone: "success",
+        title: result.status,
+        message: result.tag,
+      });
+      refreshTrackedPlayers();
 
       // Clear the input field
       setUntrackedPlayerTag("");
     } catch (error) {
-      setUntrackingError(getErrorMessage(error));
+      setUntrackingStatus(
+        getTrackingErrorStatus(error, "Couldn't remove player"),
+      );
+      // A spent or expired removal token is useless, so the next removal
+      // opens verification instead of failing again.
+      const code = errorCode(error);
+      if (code && REMOVAL_TOKEN_CODES.has(code)) logout();
     } finally {
       setUntrackingPlayer(false);
     }
@@ -206,9 +277,8 @@ function HomePage() {
 
   const handleAuthSuccess = () => {
     setShowAuthModal(false);
+    clearStatuses();
     setShowAuthSuccess(true);
-    setUntrackingError(null);
-    setUntrackingSuccess(null);
   };
 
   return (
@@ -220,24 +290,24 @@ function HomePage() {
             alt="Clash Royale Crown"
             className="home-icon"
           />
-          <h1 className="home-title">Clash Royale Analytics</h1>
+          <h1 className="home-title">Royale Analytics</h1>
           <div className="home-stat-cards-container">
             <StatCard
               value={formatNumberWithSuffix(
-                playerCount?.activePlayerCount ?? 0
+                playerCount?.activePlayerCount ?? 0,
               )}
               label={`Tracked ${pluralize(
                 playerCount?.activePlayerCount ?? 0,
                 "Player",
-                "Players"
+                "Players",
               )}`}
             />
             <StatCard
               value={formatNumberWithSuffix(battleCount?.totalBattleCount ?? 0)}
               label={`${pluralize(
-                playerCount?.activePlayerCount ?? 0,
+                battleCount?.totalBattleCount ?? 0,
                 "Battle",
-                "Battles"
+                "Battles",
               )} on record`}
             />
           </div>
@@ -250,9 +320,11 @@ function HomePage() {
               system.
             </p>
             <PlayerSearch
-              players={playerList}
-              selectedPlayerTag={selectedPlayerTag}
-              onSelectPlayer={(player) => setSelectedPlayerTag(player.tag)}
+              onSelectPlayer={(player) => {
+                setSelectedPlayerTag(player?.tag ?? "");
+                clearStatuses();
+              }}
+              onInput={clearStatuses}
             />
             <button
               className="view-button"
@@ -262,17 +334,28 @@ function HomePage() {
               View Player
             </button>
           </div>
-          <div className="adding-section">
+          <div
+            id={ADD_PLAYER_SECTION_ID}
+            ref={addSectionRef}
+            className={`adding-section${highlightAdd ? " adding-section-requested" : ""}`}
+          >
             <h2 className="section-header">Add New Player</h2>
             <p className="section-description">
               Enter a player tag to start tracking their battles, decks, and
               performance analytics.
             </p>
             <input
+              ref={addInputRef}
               type="text"
               placeholder="Enter player tag... (e.g. #YYRJQY28)"
               value={addedPlayerTag}
-              onChange={(e) => setAddedPlayerTag(e.target.value)}
+              aria-invalid={trackingStatus?.tone === "error"}
+              aria-describedby={trackingStatus ? trackingStatusId : undefined}
+              onChange={(e) => {
+                setAddedPlayerTag(e.target.value);
+                // The outcome belongs to the submitted tag, not the new one.
+                clearStatuses();
+              }}
             />
             <button
               className="add-button"
@@ -282,33 +365,37 @@ function HomePage() {
               {trackingPlayer ? "Adding Player..." : "Add Player"}
             </button>
 
-            {trackingError && (
-              <div className="home-error-message">{trackingError}</div>
-            )}
-
-            {trackingSuccess && (
-              <div className="home-success-message">{trackingSuccess}</div>
-            )}
+            <StatusMessage
+              className="home-status-slot"
+              status={trackingStatus}
+              id={trackingStatusId}
+            />
           </div>
           <div
             className={`untrack-section${showAuthSuccess && isAuthenticated ? " untrack-section-unlocked" : ""}`}
           >
             <h2 className="section-header">
               Remove Tracked Player
-              <span
-                className={`untrack-auth-status${isAuthenticated ? " is-unlocked" : ""}`}
-                role="img"
-                aria-label={isAuthenticated ? "Verified" : "Verification required"}
+              <AppTooltip
                 title={isAuthenticated ? "Verified" : "Verification required"}
+                tapToShow
               >
-                <span className="untrack-auth-icon" aria-hidden="true">
-                  {isAuthenticated ? (
-                    <LockKeyholeOpen size={24} />
-                  ) : (
-                    <LockKeyhole size={24} />
-                  )}
+                <span
+                  className={`untrack-auth-status${isAuthenticated ? " is-unlocked" : ""}`}
+                  role="img"
+                  aria-label={
+                    isAuthenticated ? "Verified" : "Verification required"
+                  }
+                >
+                  <span className="untrack-auth-icon" aria-hidden="true">
+                    {isAuthenticated ? (
+                      <LockKeyholeOpen size={24} />
+                    ) : (
+                      <LockKeyhole size={24} />
+                    )}
+                  </span>
                 </span>
-              </span>
+              </AppTooltip>
             </h2>
             <p className="section-description">
               {isAuthenticated
@@ -324,10 +411,15 @@ function HomePage() {
                   aria-label="Player tag to remove"
                   placeholder="Enter player tag... (e.g. #YYRJQY28)"
                   value={untrackedPlayerTag}
+                  aria-invalid={untrackingStatus?.tone === "error"}
+                  aria-describedby={
+                    untrackingStatus ? untrackingStatusId : undefined
+                  }
                   onChange={(e) => {
-                    const tag = e.target.value;
-                    setUntrackedPlayerTag(tag);
-                    if (validatePlayerTagSyntax(tag)) setUntrackingError(null);
+                    setUntrackedPlayerTag(e.target.value);
+                    // The outcome belongs to the submitted tag, and the
+                    // verification hint has done its job once typing starts.
+                    clearStatuses();
                   }}
                 />
                 <button
@@ -347,22 +439,15 @@ function HomePage() {
               </button>
             )}
 
-            <div className="untrack-auth-feedback" role="status" aria-atomic="true">
-              {showAuthSuccess && isAuthenticated && (
-                <div className="home-success-message untrack-auth-success">
-                  <CircleCheck size={20} aria-hidden="true" />
-                  <span>Verification complete! Enter a player tag to remove.</span>
-                </div>
-              )}
-            </div>
-
-            {untrackingError && (
-              <div className="home-error-message">{untrackingError}</div>
-            )}
-
-            {untrackingSuccess && (
-              <div className="home-success-message">{untrackingSuccess}</div>
-            )}
+            <StatusMessage
+              className="home-status-slot"
+              status={showAuthSuccess && isAuthenticated ? AUTH_STATUS : null}
+            />
+            <StatusMessage
+              className="home-status-slot"
+              status={untrackingStatus}
+              id={untrackingStatusId}
+            />
           </div>
         </div>
 

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scraper monitoring</title>
+    <!-- Inline SVG, so the icon needs neither a file nor an outside request. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>"
+    />
+    <!--
+  Served by metrics.py on the loopback-only status port: this page at /,
+  api.html (the API's route timings) at /api. This page reads /status (latest
+  snapshot) and /history?range=<seconds> (samples). Both pages share
+  dashboard.css and dashboard.js, which picks the page's content from
+  body[data-page]. build.mjs copies them with
+  uPlot and the font into dist/assets, so the page loads nothing from outside
+  the scraper. The theme script stays inline: it has to run before the first
+  paint.
+-->
+    <script>
+      // Runs before the first paint, so a stored dark theme never flashes light.
+      (() => {
+        let choice = "auto";
+        try {
+          choice = localStorage.getItem("scraper-dashboard:theme") || "auto";
+        } catch {}
+        const dark =
+          choice === "dark" ||
+          (choice === "auto" &&
+            matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.dataset.themeChoice = choice;
+      })();
+    </script>
+    <link rel="stylesheet" href="assets/uPlot.min.css" />
+    <script src="assets/uPlot.iife.min.js"></script>
+    <link rel="stylesheet" href="assets/dashboard.css" />
+  </head>
+  <body data-page="scraper">
+    <main>
+      <div class="top">
+        <div class="title">
+          <h1>Scraper monitoring</h1>
+          <nav class="segmented pages" aria-label="Dashboards">
+            <a href="./" aria-current="page">Scraper</a>
+            <a href="api">API</a>
+          </nav>
+          <span class="status" id="status"><i></i><span>Loading</span></span>
+        </div>
+        <div class="actions">
+          <span id="updated"></span>
+          <div
+            class="segmented"
+            id="ranges"
+            role="group"
+            aria-label="Time range"
+          ></div>
+          <div
+            class="segmented icons"
+            id="theme"
+            role="group"
+            aria-label="Theme"
+          ></div>
+        </div>
+      </div>
+      <div id="error"></div>
+      <div class="kpis" id="kpis"></div>
+      <div id="sections"></div>
+      <footer>
+        Rates are per minute. Percentiles come from bucketed histograms and are
+        exact to the bucket. Breaks in a line mean no samples were written.
+        Longer ranges merge samples: counts and histograms add up, backlogs keep
+        the worst value of each period.
+      </footer>
+    </main>
+    <script src="assets/dashboard.js"></script>
+  </body>
+</html>

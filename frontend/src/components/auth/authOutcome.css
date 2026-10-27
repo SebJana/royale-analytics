@@ -1,58 +1,69 @@
-/* Keep these selectors stronger than each game's button styles so changing
-   stages doesn't change the look or touch size of Continue and Try Again. */
-.auth-modal .MuiButton-root.auth-action-button {
+/* The app's buttons, regular case, one size, ranked by emphasis: blue for
+   the one main action of a view (index.css), gray for a supporting one
+   like the filters' Reset (filterContainer.css), subtle like the close
+   button (closeButton.css) for leaving. Color ranks the actions; label
+   and icon tell what they do, a retry by its restart icon.
+   Scoped to the modal and kept stronger than each game's button styles, so
+   changing stages never changes their look or touch size. */
+.auth-modal .auth-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
+  gap: var(--spacing-sm);
+  min-width: 120px;
+  max-width: 100%;
   min-height: 44px;
   box-sizing: border-box;
-  padding: 10px 16px;
-  border: 1px solid var(--color-primary);
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.4;
-  text-transform: none;
-  white-space: normal;
-  box-shadow: none;
-  transition:
-    background-color 150ms ease,
-    border-color 150ms ease;
-}
-.auth-modal .auth-action-button :is(.MuiButton-startIcon, .MuiButton-endIcon) {
-  margin: 0;
-  flex: none;
-}
-.auth-modal
-  .auth-action-button
-  :is(.MuiButton-startIcon, .MuiButton-endIcon)
-  svg {
-  display: block;
-  width: 18px;
-  height: 18px;
-}
-.auth-modal .auth-action-button.is-continue {
+  padding: var(--spacing-md) var(--spacing-2xl);
+  border: none;
+  border-radius: var(--radius-md);
   background: var(--color-primary);
-  color: #fff;
+  color: white;
+  font-size: var(--font-md);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+  text-transform: none;
+  overflow-wrap: anywhere;
+  transition:
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
-.auth-modal .auth-action-button.is-continue:hover {
+.auth-modal .auth-button svg {
+  flex: none;
+  transition: transform var(--transition-fast);
+}
+/* The arrow nudges forward like the View Player link's (home.css) */
+.auth-modal
+  .auth-button:is(:hover, :focus-visible):not(:disabled)
+  .auth-button-arrow {
+  transform: translateX(2px);
+}
+.auth-modal .auth-button:hover:not(:disabled) {
   background: var(--color-primary-hover);
 }
-.auth-modal .auth-action-button.is-retry {
-  background: rgba(52, 152, 219, 0.12);
-  color: var(--color-primary);
+.auth-modal .auth-button.is-secondary {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
 }
-.auth-modal .auth-action-button.is-retry:hover {
-  background: rgba(52, 152, 219, 0.22);
+.auth-modal .auth-button.is-secondary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #5a6268, #454d55);
+  box-shadow: 0 4px 8px var(--shadow-light);
 }
-.auth-modal .auth-action-button.Mui-disabled {
+.auth-modal .auth-button.is-subtle {
+  background: none;
+  color: var(--text-secondary);
+}
+.auth-modal .auth-button.is-subtle:hover:not(:disabled) {
+  background: var(--bg-overlay-strong);
+  color: var(--text-primary);
+}
+/* The shorthand, so a secondary button's gradient goes too */
+.auth-modal .auth-button:disabled {
+  background: var(--color-disabled);
+  color: white;
   opacity: 0.6;
+  cursor: not-allowed;
 }
-.auth-modal .auth-action-button:focus-visible {
+.auth-modal .auth-button:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
@@ -98,7 +109,7 @@
   font-size: 14px;
   line-height: 1.4;
 }
-.auth-modal .auth-outcome-panel .wordle-solved-title svg {
+.auth-modal .auth-outcome-panel .word-guess-solved-title svg {
   width: 20px;
   height: 20px;
 }

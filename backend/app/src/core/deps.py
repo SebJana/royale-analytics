@@ -1,10 +1,17 @@
+from dataclasses import dataclass
+from datetime import datetime
+from core.settings import settings
 from fastapi import Depends, Request, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Annotated
-from helpers.jwt import validate_access_token, AvailableTokenTypes
+from helpers.jwt import AvailableTokenTypes, get_access_token_claims
+from helpers.token_budget import charge_token
 from redis_service import CacheRedisConn, RedisConn
 from clash_royale_api import ClashRoyaleAPI
-from mongo import MongoConn, check_player_tracked
+from mongo import MongoConn, get_tracked_player_cache_state
+from scrape_schedule import Schedule
+from player_search import PlayerSearchService
+from redis.asyncio import Redis
 
 
 # Dependency that returns the database connection
@@ -24,7 +31,7 @@ def get_redis(request: Request) -> CacheRedisConn:
 
 
 def get_auth_state_redis(request: Request) -> RedisConn:
-    """Return the isolated store for active CAPTCHA and Wordle challenges."""
+    """Return the isolated store for active CAPTCHA and Word Guess challenges."""
 
     r = getattr(request.app.state, "auth_state_redis", None)
     if r is None:
@@ -32,11 +39,11 @@ def get_auth_state_redis(request: Request) -> RedisConn:
     return r
 
 
-def get_card_image_redis(request: Request) -> RedisConn:
-    """Return the binary client for the existing Redis cache server.
+def get_media_redis(request: Request) -> RedisConn:
+    """Return the binary client for the media Redis.
 
-    The pool size and future preload count come from settings and game rules;
-    this connection only reads and writes the associated image bytes.
+    It holds the pre-rendered Fruit Buzz cards and CAPTCHAs; the API picks
+    and claims them but never adds any (see helpers/media_pool).
 
     Args:
         request (Request): Request whose app owns the Redis connection.
@@ -44,9 +51,18 @@ def get_card_image_redis(request: Request) -> RedisConn:
     Returns:
         RedisConn: Connection that returns raw image bytes.
     """
-    r = getattr(request.app.state, "card_image_redis", None)
+    r = getattr(request.app.state, "media_redis", None)
     if r is None:
-        raise HTTPException(status_code=500, detail="Card image Redis not initialized")
+        raise HTTPException(status_code=500, detail="Media Redis not initialized")
+    return r
+
+
+def get_views_redis(request: Request) -> RedisConn:
+    """Return the store for profile view counting (helpers/profile_views.py)."""
+
+    r = getattr(request.app.state, "views_redis", None)
+    if r is None:
+        raise HTTPException(status_code=500, detail="Views Redis not initialized")
     return r
 
 
@@ -59,18 +75,106 @@ def get_cr_api(request: Request) -> ClashRoyaleAPI:
     return api
 
 
+@dataclass(frozen=True)
+class ScrapeSchedules:
+    """The data scraper's per-player schedules and the Redis they live in.
+
+    The API only adds and removes players and reads the published capacity;
+    the data scraper claims and processes the players.
+    """
+
+    battles: Schedule
+    profiles: Schedule
+    redis: Redis
+
+
+# Dependency that returns the per-player scraping schedules
+def get_scrape_schedules(request: Request) -> ScrapeSchedules:
+    schedules = getattr(request.app.state, "scrape_schedules", None)
+    if schedules is None:
+        raise HTTPException(status_code=500, detail="Scrape schedules not initialized")
+    return schedules
+
+
+def get_player_search(request: Request) -> PlayerSearchService:
+    """Return the in-memory player search, which holds every tracked and parked player."""
+
+    search = getattr(request.app.state, "player_search", None)
+    if search is None:
+        raise HTTPException(status_code=500, detail="Player search not initialized")
+    return search
+
+
 # Global dependencies for usage in the routes
 CrApi = Annotated[ClashRoyaleAPI, Depends(get_cr_api)]
 DbConn = Annotated[MongoConn, Depends(get_mongo)]
 RedConn = Annotated[CacheRedisConn, Depends(get_redis)]
 AuthStateConn = Annotated[RedisConn, Depends(get_auth_state_redis)]
-CardImageConn = Annotated[RedisConn, Depends(get_card_image_redis)]
+MediaConn = Annotated[RedisConn, Depends(get_media_redis)]
+ViewsConn = Annotated[RedisConn, Depends(get_views_redis)]
+Schedules = Annotated[ScrapeSchedules, Depends(get_scrape_schedules)]
+PlayerSearch = Annotated[PlayerSearchService, Depends(get_player_search)]
+
+
+@dataclass(frozen=True)
+class TrackedPlayer:
+    """A validated, tracked player and the version of its stored battle data.
+
+    sync_version changes whenever the data scraper stores new battles for the
+    player. Cache keys built with it are invalidated per player, not globally.
+    first_sync_pending is True from tracking until the first battle sync ends,
+    never while parked.
+    last_battles_sync_at is when the scraper last checked the battle log (naive
+    UTC), whether or not it found new battles. last_battle_time is the newest
+    battle the player's own syncs found (naive UTC), None before the first.
+    Battles stored by other players' syncs can be newer. tracked_since is the date the
+    player was first tracked (YYYY-MM-DD), None if unknown.
+    passive_range is the (start, end) time range of the battles on record
+    from before the player was tracked, which came from other tracked
+    players, None if unknown (tracked before this was recorded). Each
+    tracking gap has the same as "passiveRange" for the untracked period.
+    tracking_gaps
+    lists untracked periods long enough to have lost battles, as
+    {"from", "to"} dates (YYYY-MM-DD) and their length in whole "hours".
+    explore_rank is the player's place in the explore list (1 is the most
+    viewed), None if unranked. views_30d are its counted views in the
+    ranking window, as of the last ranking.
+    parked marks a player taken off the schedules to make room. Its stored
+    data is still served, and its views still count, so it can rank its way
+    out of the parking order again. parked_since is when that happened (naive
+    UTC), None while tracked or if unknown.
+    regular is True if the player is wanted for its own sake, so it stays
+    tracked once it leaves the top players. top_finish is {"season", "rank"}
+    while it is one of the last finished season's top players, which
+    protects it from parking and removal, otherwise None.
+    """
+
+    tag: str
+    name: str | None
+    sync_version: int
+    first_sync_pending: bool
+    last_battles_sync_at: datetime | None
+    last_battle_time: datetime | None
+    tracked_since: str | None
+    passive_range: tuple | None
+    tracking_gaps: list[dict]
+    explore_rank: int | None
+    views_30d: int
+    parked: bool
+    parked_since: datetime | None
+    regular: bool
+    top_finish: dict | None
 
 
 # Dependency that ensures the given player tag is active in the players collection
-async def require_tracked_player(player_tag: str, cr_api: CrApi, mongo_conn: DbConn):
+async def require_tracked_player(
+    player_tag: str, cr_api: CrApi, mongo_conn: DbConn
+) -> TrackedPlayer:
     """
-    FastAPI dependency that ensures a given player tag is valid and currently tracked.
+    FastAPI dependency that ensures a given player tag is valid and tracked or parked.
+
+    FastAPI caches the result per request, so a router-level dependency and a
+    TrackedPlayerDep route parameter share one Mongo lookup.
 
     Args:
         player_tag (str): Player tag from the path.
@@ -78,14 +182,16 @@ async def require_tracked_player(player_tag: str, cr_api: CrApi, mongo_conn: DbC
         mongo_conn (DbConn): Injected Mongo connection (for tracked/active check).
 
     Returns:
-        str: The player tag when validation succeeds.
+        TrackedPlayer: The player tag and its sync version when validation succeeds.
 
     Raises:
         HTTPException 403 with a specific code if the tag is invalid or untracked.
     """
 
-    # Check the syntax is valid (takes load off of db and ensures tag is mongo query safe)
-    if not cr_api.check_tag_syntax(player_tag):
+    # Check the syntax is valid (takes load off of db and ensures tag is mongo query safe).
+    # The syntax check ignores surrounding whitespace, but the routes query and
+    # build cache keys with the tag as sent, so only the exact form passes.
+    if player_tag != player_tag.strip() or not cr_api.check_tag_syntax(player_tag):
         raise HTTPException(
             status_code=403,
             detail={
@@ -95,7 +201,8 @@ async def require_tracked_player(player_tag: str, cr_api: CrApi, mongo_conn: DbC
         )
 
     # Check if the player is in players collection and active
-    if not await check_player_tracked(mongo_conn, player_tag):
+    state = await get_tracked_player_cache_state(mongo_conn, player_tag)
+    if state is None:
         raise HTTPException(
             status_code=403,
             detail={
@@ -104,7 +211,81 @@ async def require_tracked_player(player_tag: str, cr_api: CrApi, mongo_conn: DbC
             },
         )
 
-    return player_tag  # When its a valid and tracked player, return the tag
+    # When its a valid and tracked player, return it with its data version
+    return TrackedPlayer(
+        tag=player_tag,
+        name=state["playerName"],
+        sync_version=state["syncVersion"],
+        first_sync_pending=state["firstSyncPending"],
+        last_battles_sync_at=state["lastBattlesSyncAt"],
+        last_battle_time=state["lastBattleTime"],
+        # insertedAt is stored as "YYYY-MM-DD HH-MM-SS"; the date is enough
+        tracked_since=str(state["insertedAt"])[:10] if state["insertedAt"] else None,
+        passive_range=_passive_range(None, state["ownBattlesFrom"]),
+        tracking_gaps=_relevant_tracking_gaps(state["trackingGaps"]),
+        explore_rank=state["exploreRank"],
+        views_30d=state["views30d"],
+        parked=state["parked"],
+        parked_since=_parse_stored_time(state["parkedSince"]),
+        regular=state["regular"],
+        top_finish=state["topFinish"],
+    )
+
+
+def _parse_stored_time(value) -> datetime | None:
+    """A "YYYY-MM-DD HH-MM-SS" timestamp of the player document, None if unreadable."""
+
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H-%M-%S")
+    except (TypeError, ValueError):
+        return None
+
+
+def _passive_range(start, own_battles_from) -> tuple | None:
+    """The range of passive battles before an ownBattlesFrom value.
+
+    None (pending first sync) leaves the end open: no own battle is stored
+    yet. Absent ("unknown" from the read, or no key on a gap) is unknown.
+    """
+
+    if own_battles_from == "unknown":
+        return None
+    return (start, own_battles_from)
+
+
+def _relevant_tracking_gaps(gaps: list[dict]) -> list[dict]:
+    """Keep untracked periods of at least TRACKING_GAP_HINT_MIN_S, as dates.
+
+    Timestamps are stored as "YYYY-MM-DD HH-MM-SS" strings.
+    """
+
+    relevant = []
+    for gap in gaps:
+        try:
+            start = datetime.strptime(gap["from"], "%Y-%m-%d %H-%M-%S")
+            end = datetime.strptime(gap["to"], "%Y-%m-%d %H-%M-%S")
+        except (KeyError, TypeError, ValueError):
+            continue
+        seconds = (end - start).total_seconds()
+        if seconds >= settings.TRACKING_GAP_HINT_MIN_S:
+            relevant.append(
+                {
+                    "from": gap["from"][:10],
+                    "to": gap["to"][:10],
+                    # A gap within one day is described by its length instead
+                    "hours": max(1, round(seconds / 3600)),
+                    # Battles from the untracked period older than the first
+                    # own log after it; gaps from before it was recorded have
+                    # no ownBattlesFrom
+                    "passiveRange": _passive_range(
+                        start, gap.get("ownBattlesFrom", "unknown")
+                    ),
+                }
+            )
+    return relevant
+
+
+TrackedPlayerDep = Annotated[TrackedPlayer, Depends(require_tracked_player)]
 
 
 # OAuth2 scheme used only for extracting "Authorization: Bearer <token>"
@@ -112,17 +293,46 @@ async def require_tracked_player(player_tag: str, cr_api: CrApi, mongo_conn: DbC
 auth_scheme = HTTPBearer()
 
 
-# Dependency that ensures authorization token is received and validated
-def require_remove_player_token(credentials: HTTPAuthorizationCredentials = Depends(auth_scheme)):
-    """
-    Validates a Bearer token provided via the Authorization header.
-    """
-    token = credentials.credentials
+# Dependency that ensures authorization token is received, validated and charged
+async def require_remove_player_token(
+    auth_state_conn: AuthStateConn,
+    credentials: HTTPAuthorizationCredentials = Depends(auth_scheme),
+) -> dict:
+    """Validate the removal token and spend one of its removals.
 
-    if not validate_access_token(token, AvailableTokenTypes.REMOVE_PLAYER_TOKEN.value):
+    Declare it after the route's other checks: FastAPI resolves dependencies in
+    order, so a rejected player tag then costs no removal.
+
+    Args:
+        auth_state_conn (AuthStateConn): Auth-state Redis with the budgets.
+        credentials (HTTPAuthorizationCredentials): Bearer removal token.
+
+    Returns:
+        dict: The token's verified claims, for a refund if the removal fails.
+
+    Raises:
+        HTTPException: 403 for an invalid or expired token
+            (REMOVE_PLAYER_TOKEN_EXPIRED) or a spent budget
+            (REMOVE_PLAYER_TOKEN_USED_UP).
+    """
+    claims = get_access_token_claims(
+        credentials.credentials, AvailableTokenTypes.REMOVE_PLAYER_TOKEN
+    )
+    if claims is None:
         raise HTTPException(
             status_code=403,
-            detail="No authorization, invalid or expired auth token.",
+            detail={
+                "code": "REMOVE_PLAYER_TOKEN_EXPIRED",
+                "message": "Your verification expired. Verify again.",
+            },
+        )
+    if not await charge_token(auth_state_conn, claims):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "REMOVE_PLAYER_TOKEN_USED_UP",
+                "message": "This verification removed the most players it can. Verify again.",
+            },
         )
 
-    return token
+    return claims

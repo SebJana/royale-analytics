@@ -1,3 +1,88 @@
+/* Card rows on the left, the small tower troop column on the right. */
+.deck-component-body {
+  display: flex;
+  align-items: stretch;
+  gap: var(--spacing-sm);
+}
+
+.deck-component-cards {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* A bit over half a card column wide, vertically centred across both rows.
+   The minimum keeps the tower recognizable in narrow 2v2 columns on phones. */
+.deck-component-support {
+  flex: 0 0 clamp(34px, 13%, 84px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding-left: var(--spacing-sm);
+  /* A divider that fades out at both ends, lighter than a full-height line */
+  border-left: 1px solid;
+  border-image: linear-gradient(
+      transparent,
+      var(--border-medium) 25%,
+      var(--border-medium) 75%,
+      transparent
+    )
+    1;
+  /* Lets the label hide when the column is at its minimum width. The column's
+     width comes from its flex basis, never from its content, so the
+     containment cannot collapse it. */
+  container-type: inline-size;
+}
+
+/* Mirrored: the tower on the left, e.g. the left deck of a battle */
+.deck-component-body.support-left {
+  flex-direction: row-reverse;
+}
+
+.deck-component-body.support-left .deck-component-support {
+  padding-left: 0;
+  padding-right: var(--spacing-sm);
+  border-left: none;
+  border-right: 1px solid;
+}
+
+.deck-component-support .card-component-card {
+  position: relative;
+  width: 100%;
+}
+
+/* A deck without a tower troop gives the cards the full width. Only decks
+   placed side by side keep the slot as a blank (see battle.css). */
+.deck-component-support.is-absent {
+  display: none;
+}
+
+.deck-component-support-label {
+  font-size: var(--font-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+
+/* Matches the cards' level labels in battles */
+.deck-component-support-label.is-level {
+  font-size: var(--font-sm);
+  font-weight: inherit;
+  color: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* Too narrow for the label; the tooltip still names the tower. */
+@container (max-width: 44px) {
+  .deck-component-support-label {
+    display: none;
+  }
+}
+
 .deck-component-deck-row {
   display: flex;
   flex-wrap: nowrap;
@@ -49,13 +134,17 @@
   pointer-events: none;
 }
 
-.deck-component-deck-row .card-component-card.is-matched .card-component-wrap {
+.deck-component-deck-row .card-component-card.is-matched .card-component-wrap,
+.deck-component-support .card-component-card.is-matched .card-component-wrap {
   border-radius: var(--radius-md);
   background: rgba(52, 152, 219, 0.15);
 }
 
 /* Keep the match border inside each card so cards in both rows stay separate. */
 .deck-component-deck-row
+  .card-component-card.is-matched
+  .card-component-wrap::after,
+.deck-component-support
   .card-component-card.is-matched
   .card-component-wrap::after {
   content: "";
@@ -102,15 +191,16 @@
   text-align: center;
 }
 
+/* Grows from its phone to its desktop size, like the stat cards */
 .deck-component-stat-value {
-  font-size: var(--font-2xl);
+  font-size: clamp(var(--font-lg), 0.96rem + 0.6vw, var(--font-2xl));
   font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
   margin: 0;
 }
 
 .deck-component-stat-label {
-  font-size: var(--font-sm);
+  font-size: clamp(var(--font-xs), 0.64rem + 0.2vw, var(--font-sm));
   font-weight: var(--font-weight-medium);
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -125,12 +215,5 @@
   }
   .deck-component-stats {
     gap: var(--spacing-md);
-  }
-
-  .deck-component-stat-value {
-    font-size: var(--font-lg);
-  }
-  .deck-component-stat-label {
-    font-size: var(--font-xs);
   }
 }

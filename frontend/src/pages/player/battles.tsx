@@ -1,18 +1,36 @@
 import { useParams } from "react-router-dom";
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import { useCards } from "../../hooks/useCards";
+import { useGameModes } from "../../hooks/useGameModes";
 import { usePlayerBattlesInfinite } from "../../hooks/useLastBattles";
 import { usePageLoadingState } from "../../hooks/usePageLoadingState";
 import { BattleComponent } from "../../components/battle/battle";
 import { PlayerError } from "../../components/playerError/playerError";
+import { RecentForm } from "../../components/recentForm/recentForm";
+import { kingLevelTimeline } from "../../utils/towers";
+import { pageQueryState } from "../../utils/queryError";
 import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
 import {
   localeToUTC,
   getTodayDateTime,
   getClashRoyaleReleaseDate,
 } from "../../utils/datetime";
+import { getBattleDeckFilterState, saveFilterState } from "../../utils/filter";
+import { readBattlesView, writeBattlesView } from "../../utils/battlesView";
+import type { Battle, Player } from "../../types/lastBattles";
 import CircularProgress from "@mui/material/CircularProgress";
 import "./battles.css";
+
+// Element id of the battle at an index of the list, the target of the form
+// strip's jumps
+const battleAnchorId = (index: number) => `battle-${index}`;
 
 /**
  * PlayerBattles Component
@@ -27,13 +45,18 @@ export default function PlayerBattles() {
   // Extract player tag from URL parameters
   const { playerTag = "" } = useParams();
 
+  // Read once: the saved view only restores the state this page mounts with
+  const [savedView] = useState(() => readBattlesView(playerTag));
+
   // Filter state: date input field value (in local timezone)
-  const [beforeDate, setBeforeDate] = useState(getTodayDateTime()); // Pre-fill with today's date and time
+  const [beforeDate, setBeforeDate] = useState(
+    savedView?.beforeDate ?? getTodayDateTime(), // Pre-fill with today's date and time
+  );
 
   // Applied filter state: the actual filter being used for API calls (in UTC)
   const [appliedBeforeDate, setAppliedBeforeDate] = useState<
     string | undefined
-  >(undefined);
+  >(savedView?.appliedBeforeDate);
 
   // Validation state: tracks if the current date input is valid
   const [isValidFilterDate, setIsValidFilterDate] = useState(true); // Initially true since filter starts with today's date
@@ -60,7 +83,22 @@ export default function PlayerBattles() {
     isLoading: cardsLoading,
     isError: isCardsError,
     refetch: refetchCards,
-  } = useCards();
+  } = pageQueryState(useCards());
+
+  // Only needed to select a battle's whole game mode group on the decks page,
+  // so its loading or failing never blocks the battles
+  const { data: gameModes } = useGameModes();
+
+  // The decks page starts from the stored filters, the same way filters carry
+  // over between the player pages
+  const handleOwnDeckOpen = useCallback(
+    (battle: Battle, player: Player) => {
+      saveFilterState(
+        getBattleDeckFilterState(battle, player, gameModes, cards ?? []),
+      );
+    },
+    [gameModes, cards],
+  );
 
   // Fetch battles with infinite pagination
   const {
@@ -71,17 +109,27 @@ export default function PlayerBattles() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = usePlayerBattlesInfinite(
-    playerTag,
-    battlesPageSize,
-    true,
-    appliedBeforeDate,
+  } = pageQueryState(
+    usePlayerBattlesInfinite(
+      playerTag,
+      battlesPageSize,
+      true,
+      appliedBeforeDate,
+    ),
   );
   // Flatten paginated battle data into a single array for easier rendering
   const battlesList = useMemo(
     () => battles?.pages.flatMap((p) => p.last_battles.battles) ?? [],
     [battles],
   );
+  // The King Level at each loaded battle, from all of them: more battles
+  // give more chances of an untouched King Tower
+  const kingLevels = useMemo(
+    () => kingLevelTimeline(battlesList),
+    [battlesList],
+  );
+  // A just-tracked player has no battles until its first sync finished
+  const firstSyncPending = battles?.pages[0]?.first_sync_pending === true;
 
   // Use loading state logic
   const { isInitialLoad } = usePageLoadingState({
@@ -90,6 +138,55 @@ export default function PlayerBattles() {
     hasData: () => battlesList.length > 0,
     resetDependency: `${playerTag}-${appliedBeforeDate}`,
   });
+
+  // Restores the saved scroll position once the battles are on screen. With
+  // fewer pages than back then (the cache expired), the position would point
+  // past the loaded battles, so the page stays at the top.
+  const pageCount = battles?.pages.length ?? 0;
+  const scrollRestoredRef = useRef(false);
+  // Starts at the top like the other player pages (layout.tsx). Declared
+  // before the restore, which runs after it when the battles are cached.
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+  useLayoutEffect(() => {
+    if (scrollRestoredRef.current || isInitialLoad || pageCount === 0) return;
+    scrollRestoredRef.current = true;
+    if (savedView && pageCount >= savedView.pageCount) {
+      window.scrollTo({ top: savedView.scrollY, behavior: "instant" });
+    }
+  }, [isInitialLoad, pageCount, savedView]);
+
+  // Saved on every scroll instead of on unmount: by the time the page
+  // unmounts, the next page may have already shrunk the document and moved
+  // the scroll position.
+  const viewRef = useRef({ beforeDate, appliedBeforeDate, pageCount });
+  viewRef.current = { beforeDate, appliedBeforeDate, pageCount };
+  useEffect(() => {
+    if (!scrollRestoredRef.current) return;
+    writeBattlesView(playerTag, {
+      ...viewRef.current,
+      scrollY: window.scrollY,
+    });
+  }, [playerTag, beforeDate, appliedBeforeDate, pageCount, isInitialLoad]);
+  useEffect(() => {
+    let frame = 0;
+    const onScroll = () => {
+      if (frame || !scrollRestoredRef.current) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        writeBattlesView(playerTag, {
+          ...viewRef.current,
+          scrollY: window.scrollY,
+        });
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
+  }, [playerTag]);
 
   // Intersection Observer for auto-loading more battles when user scrolls near bottom
   useEffect(() => {
@@ -136,6 +233,58 @@ export default function PlayerBattles() {
     isFetchingNextPage,
     isInitialLoad,
   ]);
+
+  // The battle a bar of the form strip jumped to, flashed once on arrival
+  const [jumpTarget, setJumpTarget] = useState<number | null>(null);
+  useEffect(() => {
+    if (jumpTarget === null) return;
+    const timer = window.setTimeout(() => setJumpTarget(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [jumpTarget]);
+
+  /**
+   * Scrolls to a battle of the list, clear of the sticky player navigation.
+   * @param index - The battle's index in battlesList
+   */
+  const scrollToBattle = useCallback((index: number) => {
+    const card = document.getElementById(battleAnchorId(index));
+    if (!card) return;
+    // Measured, since its height changes with the screen width (layout.css).
+    // The pinned form strip shows there too once the jump has scrolled.
+    const nav = document.querySelector(".player-nav-container");
+    const pinnedStrip = document.querySelector(".recent-form-pinned");
+    const offset =
+      (nav?.getBoundingClientRect().height ?? 0) +
+      (pinnedStrip?.getBoundingClientRect().height ?? 0) +
+      16;
+    const top = card.getBoundingClientRect().top + window.scrollY - offset;
+    window.scrollTo({
+      top,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+    // Flashes on arrival, a long smooth scroll would otherwise use up most of
+    // it. The timer covers browsers without scrollend. Cleared first, so a
+    // repeated jump flashes again.
+    setJumpTarget(null);
+    let flashed = false;
+    const flash = () => {
+      if (flashed) return;
+      flashed = true;
+      window.removeEventListener("scrollend", flash);
+      window.clearTimeout(fallback);
+      setJumpTarget(index);
+    };
+    window.addEventListener("scrollend", flash, { once: true });
+    const fallback = window.setTimeout(flash, 1500);
+    // Already there (or clamped at the page end): no scroll, no scrollend
+    const maxScroll =
+      document.documentElement.scrollHeight - window.innerHeight;
+    if (Math.abs(Math.min(Math.max(top, 0), maxScroll) - window.scrollY) < 1) {
+      requestAnimationFrame(flash);
+    }
+  }, []);
 
   /**
    * Validates if a date string represents a valid date
@@ -232,6 +381,20 @@ export default function PlayerBattles() {
     setBeforeDate(getTodayDateTime());
   };
 
+  const firstPage = battles?.pages[0]?.last_battles.battles ?? [];
+  const renderBattle = (b: Battle, i: number) => (
+    <BattleComponent
+      key={`${b.battleTime}-${playerTag}-${i}`} // More stable unique ID
+      battle={b}
+      cards={cards ?? []} // fall back to empty list, if cards don't exist
+      playerTag={playerTag}
+      onOwnDeckOpen={handleOwnDeckOpen}
+      kingLevel={kingLevels[i]}
+      id={battleAnchorId(i)}
+      highlighted={i === jumpTarget}
+    />
+  );
+
   if (isCardsError || isBattlesError) {
     return (
       <PlayerError
@@ -292,16 +455,29 @@ export default function PlayerBattles() {
             {/* Show battles if there is any data to display */}
             {battlesList.length > 0 && (
               <>
-                {battlesList.map((b, i) => (
-                  <BattleComponent
-                    key={`${b.battleTime}-${playerTag}-${i}`} // More stable unique ID
-                    battle={b}
-                    cards={cards ?? []} // fall back to empty list, if cards don't exist
+                {/* The form's pinned strip is sticky within this wrapper,
+                    so it stays only while the battles it shows do */}
+                <div>
+                  {/* Only the first page, so the record does not shift while
+                      scrolling loads more. Being the first page, its indices
+                      are battlesList's too. */}
+                  <RecentForm
+                    battles={firstPage}
+                    beforeDate={appliedBeforeDate}
+                    onSelect={scrollToBattle}
+                    battleElementId={battleAnchorId}
+                    ongoing={battles?.pages[0]?.includes_newest_battle === true}
                   />
-                ))}
+                  {battlesList.slice(0, firstPage.length).map(renderBattle)}
+                </div>
+                {battlesList
+                  .slice(firstPage.length)
+                  .map((b, i) => renderBattle(b, firstPage.length + i))}
 
-                {/* Infinite Scroll Trigger - Hidden element that triggers loading when visible */}
-                {hasNextPage && (
+                {/* Infinite Scroll Trigger - Hidden element that triggers loading when visible.
+                    Gone at the loading cap too: nothing loads there anymore, and the
+                    footer stays hidden while this element exists (siteFooter.css). */}
+                {hasNextPage && !loadingCapReached && (
                   <div ref={loadMoreRef} className="battles-load-more-trigger">
                     {isFetchingNextPage && (
                       <div className="battles-loading-more">
@@ -314,7 +490,7 @@ export default function PlayerBattles() {
 
                 {/* End of List Message - Show when all battles have been loaded */}
                 {!hasNextPage && (
-                  <div className="battles-end-user-message">
+                  <div className="player-status-message">
                     <p>No more battles to load</p>
                   </div>
                 )}
@@ -324,7 +500,7 @@ export default function PlayerBattles() {
 
             {/* Show message when loading cap is reached */}
             {battlesList.length !== 0 && loadingCapReached && (
-              <div className="battles-end-user-message">
+              <div className="player-status-message">
                 <p>
                   You’ve reached the maximum number of battles shown. Adjust the
                   filter to view earlier ones.
@@ -333,11 +509,19 @@ export default function PlayerBattles() {
             )}
 
             {/* Show message when no battles are found and not loading */}
-            {battlesList.length === 0 && !battlesLoading && !cardsLoading && (
-              <div className="battles-end-user-message">
-                <p>No battles found</p>
-              </div>
-            )}
+            {battlesList.length === 0 &&
+              !battlesLoading &&
+              !cardsLoading &&
+              (firstSyncPending ? (
+                <div className="player-status-message">
+                  <CircularProgress className="battles-loading-spinner" />
+                  <p>Fetching this player's battles for the first time...</p>
+                </div>
+              ) : (
+                <div className="player-status-message">
+                  <p>No battles found with the current filter applied</p>
+                </div>
+              ))}
           </>
         )}
       </div>

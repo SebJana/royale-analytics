@@ -1,44 +1,154 @@
-import type { CardMeta } from "../types/cards";
+import type { Card, CardMeta } from "../types/cards";
 
 export function getCardName(cardID: number, cards: CardMeta[]): string {
   return cards.find((c) => c.id === cardID)?.name ?? `#${cardID}`;
+}
+
+// Variants by the evolutionLevel of a played card, with the iconUrls key of
+// their art. A played card is always one variant. The card list's
+// maxEvolutionLevel 3 means a card has both. The API also reports level 3 on
+// ClanWar_BoatBattle defenses, but the data scraper drops defense levels, so
+// no stored battle has one (if this is ever adjusted, there needs to be reworking
+// of various files and modules here and in the backend).
+// NOTE: A level missing here (a variant added after this table) still renders,
+// labelled "Variant <level>" with a placeholder, never as the regular card.
+// Add it here and in createCardList (cardFilter.tsx).
+const CARD_VARIANTS: Record<number, { label: string; iconKey: string }> = {
+  0: { label: "", iconKey: "medium" },
+  1: { label: "Evolution", iconKey: "evolutionMedium" },
+  2: { label: "Hero", iconKey: "heroMedium" },
+};
+
+/**
+ * Label of a card variant, empty for the regular card.
+ *
+ * @param evolutionLevel 1 for the evolution, 2 for the hero, 0 otherwise.
+ * @returns The label, or "Variant <level>" for a level this app does not know.
+ */
+export function getCardVariantLabel(evolutionLevel: number): string {
+  return CARD_VARIANTS[evolutionLevel]?.label ?? `Variant ${evolutionLevel}`;
 }
 
 export function getCardVariantName(
   name: string,
   evolutionLevel: number,
 ): string {
-  if (evolutionLevel === 1) return `Evolution ${name}`;
-  if (evolutionLevel === 2) return `Hero ${name}`;
-  return name;
+  const label = getCardVariantLabel(evolutionLevel);
+  return label ? `${label} ${name}` : name;
+}
+
+/**
+ * Key of a card variant in the deck card filter: "<cardId>-<evolutionLevel>",
+ * e.g. "26000000-1" for the evolved Knight. Any future level fits the form.
+ * NOTE: The backend parses this form (CARD_FILTER_KEY_PATTERN in validate.py).
+ *
+ * @param card The card, without evolutionLevel for the regular variant.
+ * @returns The filter key.
+ */
+export function getCardFilterKey(card: Card): string {
+  return `${card.id}-${card.evolutionLevel ?? 0}`;
 }
 
 export function getCardRarity(cardID: number, cards: CardMeta[]): string {
   return cards.find((c) => c.id === cardID)?.rarity ?? `#${cardID}`;
 }
 
+// Mirror costs the previously played card +1, so the card list has no
+// elixirCost for it. Like the game, deck statistics count it as 1.5 elixir:
+// since the May 2016 update the in-game Average Elixir Cost treats Mirror as a
+// 1.5 elixir card (before that, it was left out as if the deck had 7 cards).
+// The game shows no 4-card cycle. There Mirror costs the average of the three
+// cheapest other cards +1, since in a cycle it copies one of those cheap cards
+// (see calculateFourCardCycle in deck.tsx).
+// Source: https://clashroyale.fandom.com/wiki/Mirror (Trivia, History)
+export const MIRROR_ID = 28000006;
+const MIRROR_DECK_ELIXIR_COST = 1.5;
+
+/**
+ * Elixir cost of a card for the deck's average elixir cost.
+ *
+ * @returns The cost, 1.5 for Mirror, or 0 if unknown. Check
+ *   hasKnownElixirCost before showing a result based on it.
+ */
 export function getCardElixirCost(cardID: number, cards: CardMeta[]): number {
+  if (cardID === MIRROR_ID) return MIRROR_DECK_ELIXIR_COST;
   return cards.find((c) => c.id === cardID)?.elixirCost ?? 0;
 }
 
-export function getCardIcon(
+/**
+ * Whether getCardElixirCost knows the card's cost: Mirror, or a card the card
+ * list has an elixirCost for. Event cards outside the list have none.
+ */
+export function hasKnownElixirCost(cardID: number, cards: CardMeta[]): boolean {
+  return (
+    cardID === MIRROR_ID ||
+    cards.find((c) => c.id === cardID)?.elixirCost != null
+  );
+}
+
+// Tower troop id of a deck whose battles report no tower troop. That is no
+// missing data: Clan War (river race, boat battles), friendlies and
+// tournaments use a special or fixed tower, so it must not be shown as Tower
+// Princess. Ranked and Ladder battles always report one. Clash Royale ids are
+// never 0.
+export const NO_SUPPORT_ID = 0;
+
+// Default tower troop, e.g. for copy links of decks without one, since the
+// game needs a tower to copy a deck
+export const TOWER_PRINCESS_ID = 159000000;
+
+/**
+ * Tower troop id of a deck, NO_SUPPORT_ID if its battles report none.
+ *
+ * @param support The deck's support cards (at most one in practice).
+ * @returns The id of the first support card, or NO_SUPPORT_ID.
+ */
+export function getSupportId(support: Card[] | undefined): number {
+  return support?.[0]?.id ?? NO_SUPPORT_ID;
+}
+
+/**
+ * Whether a card list entry is a tower troop. Decided by the list's category,
+ * never by a missing elixir cost.
+ */
+export function isSupportCard(card: CardMeta): boolean {
+  return card.category === "support";
+}
+
+/**
+ * Lists the image URLs of a card variant, best first: the self-hosted WebP
+ * copy, then the Clash Royale CDN original. The caller moves on to the next
+ * URL when one fails to load. The CDN is skipped for a variant the self-hosted
+ * images of the card lack, since the data scraper found it missing there.
+ *
+ * A missing variant does not fall back to the base art, which would pass a
+ * new evolution or hero off as the regular card. The caller shows a labelled
+ * placeholder instead.
+ *
+ * @param cardID Card id from the battle or deck.
+ * @param evolutionLevel 1 for the evolution, 2 for the hero, 0 otherwise.
+ * @param cards The card list.
+ * @returns The URLs, empty if the card or its variant has no art (yet).
+ */
+export function getCardIconSources(
   cardID: number,
   evolutionLevel: number,
   cards: CardMeta[],
-): string {
-  // Return the evolution icon version for the specified card
-  if (evolutionLevel === 2) {
-    return (
-      cards.find((c) => c.id === cardID)?.iconUrls.heroMedium ?? `#${cardID}`
-    );
-  }
-  // Return the evolution icon version for the specified card
-  if (evolutionLevel === 1) {
-    return (
-      cards.find((c) => c.id === cardID)?.iconUrls.evolutionMedium ??
-      `#${cardID}`
-    );
-  }
-  // Use the regular icon for the rest
-  return cards.find((c) => c.id === cardID)?.iconUrls.medium ?? `#${cardID}`;
+): string[] {
+  const card = cards.find((c) => c.id === cardID);
+  const key = CARD_VARIANTS[evolutionLevel]?.iconKey;
+  if (!card || !key) return [];
+  // A card with self-hosted images but without this variant means the data
+  // scraper found it missing on the CDN (the card list names art before
+  // Clash Royale publishes it). Requesting the CDN would only log a 404 on
+  // every page with the card, so the placeholder shows until the scraper's
+  // retry mirrors it. Only cards without any self-hosted image (no set yet,
+  // e.g. a fresh install) fall back to the CDN. A source change shows the
+  // placeholder too, until the scraper mirrors the new art.
+  if (card.imageUrls && !card.imageUrls[key]) return [];
+  // iconUrls is guarded too: an entry without art falls back to the
+  // placeholder instead of breaking every deck it appears in
+  return [card.imageUrls?.[key], card.iconUrls?.[key]].filter(
+    (url): url is string => Boolean(url),
+  );
 }

@@ -12,6 +12,7 @@ import {
 import { Line } from "react-chartjs-2";
 import type { ChartData, Plugin, TooltipItem } from "chart.js";
 import { useLayoutEffect, useRef, useState } from "react";
+import { TOOLTIP_STYLE } from "../tooltip/tooltipStyle";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const toUtcDay = (date: string) => Date.parse(`${date}T00:00:00Z`) / DAY_MS;
@@ -41,6 +42,9 @@ ChartJS.register(
   Legend,
   Filler,
 );
+// Axis labels and legends draw on a canvas, which cannot inherit the page
+// font; Chart.js would use its own Helvetica stack
+ChartJS.defaults.font.family = TOOLTIP_STYLE.fontFamily;
 
 const gradientCache = new WeakMap<
   CanvasRenderingContext2D,
@@ -138,7 +142,7 @@ function drawGroupRow(
   }
 
   ctx.save();
-  ctx.font = "12px sans-serif";
+  ctx.font = `12px ${TOOLTIP_STYLE.fontFamily}`;
   ctx.fillStyle = color;
   ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
   ctx.textAlign = "center";
@@ -162,6 +166,25 @@ function drawGroupRow(
   }
   ctx.restore();
 }
+
+// Room between the legend and the plot, in pixels. Chart.js has no option
+// for it, so the legend reports a taller box after measuring itself.
+const LEGEND_GAP = 16;
+
+const legendGap: Plugin<"line"> = {
+  id: "legendGap",
+  // Runs after the legend plugin's own beforeInit, which creates the legend
+  beforeInit(chart) {
+    const legend = chart.legend;
+    if (!legend) return;
+    const fit = legend.fit.bind(legend);
+    legend.fit = () => {
+      fit();
+      // A hidden legend measures 0 and needs no gap
+      if (legend.height > 0) legend.height += LEGEND_GAP;
+    };
+  },
+};
 
 export function LineChart({
   config,
@@ -260,7 +283,8 @@ export function LineChart({
                   : undefined,
             }
           : undefined,
-        tension: config.labels.length > 100 ? 0 : 0.2,
+        // Straight segments, so a line never overshoots between two values.
+        tension: 0,
         // Dense plots keep the line and hover targets without drawing every marker.
         pointRadius:
           config.labels.length > 250 ? 0 : config.labels.length > 60 ? 3 : 6,
@@ -343,13 +367,24 @@ export function LineChart({
           pointStyle: "circle",
         },
       },
+      // The site's tooltip look (TOOLTIP_STYLE), the border in the line color
       tooltip: {
-        backgroundColor: "rgba(0, 0, 0, 0.8)",
-        titleColor: "#ffffff",
-        bodyColor: "#ffffff",
-        borderColor: config.datasets[0]?.color || "#ffffff",
+        backgroundColor: TOOLTIP_STYLE.background,
+        titleColor: TOOLTIP_STYLE.color,
+        bodyColor: TOOLTIP_STYLE.color,
+        titleFont: {
+          family: TOOLTIP_STYLE.fontFamily,
+          size: TOOLTIP_STYLE.fontSizePx,
+          weight: "bold" as const,
+        },
+        bodyFont: {
+          family: TOOLTIP_STYLE.fontFamily,
+          size: TOOLTIP_STYLE.fontSizePx,
+        },
+        padding: { x: TOOLTIP_STYLE.paddingX, y: TOOLTIP_STYLE.paddingY },
+        borderColor: config.datasets[0]?.color || TOOLTIP_STYLE.color,
         borderWidth: 1,
-        cornerRadius: 8,
+        cornerRadius: TOOLTIP_STYLE.radiusPx,
         displayColors: true,
         caretPadding: 10,
         callbacks: {
@@ -445,7 +480,7 @@ export function LineChart({
         key={chartKey}
         data={data}
         options={options}
-        plugins={[hierarchyAxis]}
+        plugins={[hierarchyAxis, legendGap]}
       />
     </div>
   );

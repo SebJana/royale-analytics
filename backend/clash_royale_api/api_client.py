@@ -1,4 +1,10 @@
+import asyncio
+from datetime import datetime, timezone
+from urllib.parse import quote, urlencode
+
 import httpx
+
+from api_key_store import KeyStore, LEASE_CLEANUP_MARGIN_S
 
 CLASH_BASE_URL = "https://api.clashroyale.com/v1"
 ALPHABET = set("0289PYLQGRJCUV")  # Supercell tag alphabet
@@ -49,23 +55,27 @@ class ClashRoyaleInvalidResponseError(ClashRoyalePlayerCheckError):
 
 class ClashRoyaleAPI:
     """
-    Async Clash Royale API client (single API key, no rotation).
-    Reuses one httpx.AsyncClient per instance for connection pooling.
+    Async Clash Royale API client backed by a shared key store.
+
+    Reuses one httpx.AsyncClient for connection pooling. A lease is acquired
+    for each outbound request, so concurrent callers do not reserve a token
+    while they are still validating input, reading the cache, or writing data.
     """
 
     def __init__(
-        self, api_key: str, base_url: str = CLASH_BASE_URL, timeout_s: float = 5.0
+        self,
+        key_store: KeyStore,
+        base_url: str = CLASH_BASE_URL,
+        timeout_s: float = 5.0,
     ):
-        if not api_key or not api_key.strip():
-            raise ValueError("API key must be a non-empty string.")
-        self._api_key = api_key.strip()
+        self.key_store = key_store
         self._base_url = base_url.rstrip("/")  # Always remove trailing "/" of base url
         self._client: httpx.AsyncClient = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=httpx.Timeout(
                 connect=timeout_s, read=timeout_s, write=timeout_s, pool=timeout_s
             ),
-            headers={"Accept": "application/json", "User-Agent": "cr-analytics"},
+            headers={"Accept": "application/json", "User-Agent": "royale-analytics"},
         )
 
     # --- helpers -------------------------------------------------------------
@@ -134,6 +144,57 @@ class ClashRoyaleAPI:
                 "Clash Royale API is in maintenance mode. Try again later."
             )
 
+    @staticmethod
+    def _retry_after(response: httpx.Response) -> float:
+        """Read Retry-After seconds or an HTTP date; the store applies its cap."""
+        value = response.headers.get("Retry-After")
+        if not value:
+            return 0.0
+        try:
+            return max(0.0, float(value))
+        except ValueError:
+            # HTTP dates commonly use IMF-fixdate. Accept the two older HTTP
+            # date forms as well.
+            formats = (
+                "%a, %d %b %Y %H:%M:%S GMT",
+                "%A, %d-%b-%y %H:%M:%S GMT",
+                "%a %b %d %H:%M:%S %Y",
+            )
+            for date_format in formats:
+                try:
+                    date = datetime.strptime(value, date_format).replace(
+                        tzinfo=timezone.utc
+                    )
+                except ValueError:
+                    continue
+                return max(0.0, (date - datetime.now(timezone.utc)).total_seconds())
+            return 0.0
+
+    async def probe_key(self, key: str) -> str:
+        """Test one key directly for startup validation or maintenance recovery.
+
+        The store calls this only under its distributed validator/probe lock.
+        A 401/403 is a key or IP authorization failure. A 429, network error,
+        or maintenance response is temporary and must not invalidate the key.
+        """
+        try:
+            response = await self._client.get(
+                "/cards", headers={"Authorization": f"Bearer {key}"}
+            )
+            try:
+                self._check_maintenance(response.json())
+            except ValueError:
+                pass
+            if response.status_code in (401, 403):
+                return "invalid"
+            if response.status_code == 429:
+                return "rate_limited"
+            return "usable" if response.is_success else "temporary"
+        except ClashRoyaleMaintenanceError:
+            return "maintenance"
+        except httpx.RequestError:
+            return "temporary"
+
     async def _request(self, endpoint: str):
         """
         Makes an authenticated HTTP GET request to the Clash Royale API.
@@ -160,35 +221,84 @@ class ClashRoyaleAPI:
                 "HTTP client is closed. Create a new instance or call within an async context."
             )
 
-        resp = await self._client.get(
-            endpoint,
-            headers={"Authorization": f"Bearer {self._api_key}"},
+        # A 429 or rejected token can move this request to another eligible
+        # key. Every attempt shares one deadline, so retries cannot multiply
+        # the configured maximum waiting time.
+        deadline = (
+            asyncio.get_running_loop().time() + self.key_store.config.request_budget_s
         )
-        # An error response can still contain the maintenance reason.
-        if resp.is_error:
+        for attempt in range(3):
+            lease = await self.key_store.acquire(deadline)
+            outcome = "other"
+            retry_after = 0.0
             try:
-                self._check_maintenance(resp.json())
-            except ValueError:
-                pass
-        resp.raise_for_status()  # will raise httpx.HTTPStatusError on 4xx/5xx
-
-        payload = resp.json()
-        self._check_maintenance(payload)
-        return payload
+                # The Redis lease has an expiry to recover from dead workers.
+                # Finish this HTTP attempt before that expiry, including when
+                # a caller configured a longer overall request budget.
+                request_time_left = max(
+                    0.01,
+                    min(
+                        deadline - asyncio.get_running_loop().time(),
+                        self.key_store.config.lease_s - LEASE_CLEANUP_MARGIN_S,
+                    ),
+                )
+                try:
+                    async with asyncio.timeout(request_time_left):
+                        resp = await self._client.get(
+                            endpoint, headers={"Authorization": f"Bearer {lease.key}"}
+                        )
+                except TimeoutError as exc:
+                    raise httpx.ReadTimeout(
+                        "Clash Royale request deadline exceeded"
+                    ) from exc
+                try:
+                    payload = resp.json()
+                    # Maintenance can be reported in an error body. Detect it
+                    # before raise_for_status turns it into a generic 5xx.
+                    self._check_maintenance(payload)
+                except ValueError:
+                    payload = None
+                if resp.status_code == 429:
+                    outcome = "rate_limited"
+                    retry_after = self._retry_after(resp)
+                elif resp.status_code in (401, 403):
+                    outcome = "auth_failed"
+                elif resp.is_success:
+                    outcome = "success"
+                if resp.status_code in (401, 403, 429) and attempt < 2:
+                    # The finally block still reports the outcome and frees
+                    # the lease before the next key is requested.
+                    continue
+                resp.raise_for_status()
+                return payload if payload is not None else resp.json()
+            except ClashRoyaleMaintenanceError:
+                outcome = "maintenance"
+                raise
+            finally:
+                # Cancellation and network failures also release the key.
+                # Shielding lets the Redis release finish if this task stops.
+                await asyncio.shield(
+                    self.key_store.release(lease, outcome, retry_after)
+                )
 
     async def check_connection(self):
-        await self.get_cards()
+        """Initialize the shared inventory and return configured/usable counts."""
+        return await self.key_store.initialize(self.probe_key)
 
     async def check_existing_player(self, player_tag: str):
         """
         Validates the tag syntax and verifies the a player with that tag exists
         by fetching the player profile from the Clash Royale API.
 
+        The full profile is returned, so the caller can store it as the first
+        profile snapshot without a second request.
+
         Args:
             player_tag (str): The player tag starting with '#' (e.g., "#YYRJQY28")
 
         Returns:
-            str: The player's name when the API confirms the player exists.
+            dict: The player's profile (with a non-empty "name") when the API
+                confirms the player exists.
 
         Raises:
             ClashRoyalePlayerCheckError: If the tag or API response is invalid,
@@ -219,7 +329,7 @@ class ClashRoyaleAPI:
         if not isinstance(player_info, dict) or not player_info.get("name"):
             raise ClashRoyaleInvalidResponseError()
 
-        return player_info["name"]
+        return player_info
 
     async def get_player_battle_logs(self, player_tag: str):
         """
@@ -285,6 +395,40 @@ class ClashRoyaleAPI:
         """
 
         return await self._request("/cards")
+
+    async def get_path_of_legend_season_rankings(
+        self, season_id: str, limit: int, after: str | None = None
+    ):
+        """
+        Fetches one page of a finished season's global Path of Legend leaderboard.
+
+        Path of Legend is the ranked mode, with a leaderboard that resets
+        every season; the trophy road has its own, separate rankings.
+
+        Args:
+            season_id (str): Season id as "YYYY-MM" (e.g., "2026-09")
+            limit (int): Players in the page
+            after (str | None): paging.cursors.after of the previous page,
+                None for the first page
+
+        Returns:
+            dict: {"items": [{"tag", "name", "rank", ...}], "paging":
+                {"cursors": {"after"?}}}, without "after" on the last page
+
+        Raises:
+            HTTPError: If the API request fails (4xx/5xx status codes), e.g.
+                404 for a season without a leaderboard
+            RequestException: If there are network connectivity issues
+        """
+
+        params = {"limit": limit}
+        if after is not None:
+            params["after"] = after
+        # The cursor is opaque and may contain characters a URL reserves
+        return await self._request(
+            f"/locations/global/pathoflegend/{quote(season_id, safe='')}"
+            f"/rankings/players?{urlencode(params)}"
+        )
 
     async def close(self):
         """

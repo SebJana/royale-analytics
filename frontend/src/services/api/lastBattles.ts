@@ -7,7 +7,7 @@ const DEFAULT_LIMIT = 10;
 export async function fetchLastBattles(
   playerTag: string,
   before?: string,
-  limit: number = DEFAULT_LIMIT
+  limit: number = DEFAULT_LIMIT,
 ): Promise<LastBattles> {
   // Throw error if an invalid player tag was passed
   if (!validatePlayerTagSyntax(playerTag)) {

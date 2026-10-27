@@ -9,10 +9,8 @@
 }
 
 .player-page-error.is-compact {
-  align-items: flex-start;
   min-height: 0;
-  padding: 0;
-  text-align: left;
+  padding: var(--spacing-xl) 0;
 }
 
 .player-page-error-icon {
@@ -42,7 +40,6 @@
 }
 
 .player-page-error.is-compact .player-page-error-actions {
-  justify-content: flex-start;
   margin-top: var(--spacing-md);
 }
 

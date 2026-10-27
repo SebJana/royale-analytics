@@ -1,7 +1,10 @@
+/* Sizes grow with the viewport from their phone value (390px wide) to their
+   desktop value (1200px wide) instead of jumping at breakpoints */
 .stat-card {
   background: var(--bg-overlay-medium);
   border-radius: var(--radius-lg);
-  padding: var(--spacing-xl) var(--spacing-lg);
+  padding: clamp(var(--spacing-xs), 2vw - 4px, var(--spacing-xl))
+    clamp(var(--spacing-xs), 1.5vw - 2px, var(--spacing-lg));
   text-align: center;
   transition: all var(--transition-normal);
 }
@@ -13,14 +16,14 @@
 }
 
 .stat-card-number {
-  font-size: var(--font-3xl);
+  font-size: clamp(var(--font-base), 0.47rem + 1.78vw, var(--font-3xl));
   font-weight: var(--font-weight-bold);
   margin: 0 0 var(--spacing-sm) 0;
   color: var(--text-muted);
 }
 
 .stat-card-label {
-  font-size: var(--font-base);
+  font-size: clamp(var(--font-xs), 0.6rem + 0.4vw, var(--font-base));
   font-weight: var(--font-weight-medium);
   color: var(--text-secondary);
   text-transform: uppercase;

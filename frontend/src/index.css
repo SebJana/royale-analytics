@@ -32,6 +32,7 @@
   --color-success-active: #3d8b40;
   --color-error: #ef4444;
   --color-error-alt: #ff6b6b;
+  --color-error-dark: #dc2626;
   --color-warning: #ff9500;
   --color-info: #3b82f6;
   --color-disabled: #7f8c8d;
@@ -41,10 +42,10 @@
   --shadow-light: rgba(0, 0, 0, 0.2);
   --shadow-medium: rgba(0, 0, 0, 0.3);
 
-  /* Wordle colors */
-  --wordle-correct: #538d4e;
-  --wordle-present: #b59f3b;
-  --wordle-absent: #3a3a3c;
+  /* Word Guess colors */
+  --word-guess-correct: #538d4e;
+  --word-guess-present: #b59f3b;
+  --word-guess-absent: #3a3a3c;
 
   /* === TYPOGRAPHY === */
   /* Font sizes */
@@ -100,8 +101,20 @@
   --z-popover: 1050;
   --z-tooltip: 1060;
 
+  /* Fonts: Rubik reads well down to the smallest labels and has every
+     weight; Lilita One, heavy and in a single weight, carries the big and
+     bold text (see the display rule below).
+     NOTE --font-body matches TOOLTIP_STYLE.fontFamily (tooltipStyle.ts) */
+  --font-body:
+    "Rubik Variable", system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --font-display: "Lilita One", system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* Shadow of the display text. Colored titles take the soft one: on the
+     blue the full one reads as a dark smear. */
+  --shadow-display: 2px 2px 0 rgba(0, 0, 0, 0.45);
+  --shadow-display-soft: 1px 1px 0 rgba(0, 0, 0, 0.3);
+
   /* Legacy font settings */
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body);
   line-height: var(--line-height-normal);
   font-weight: var(--font-weight-normal);
 
@@ -137,6 +150,34 @@ h1 {
   line-height: var(--line-height-tight);
 }
 
+/* Browsers give form controls a font of their own (Arial on Windows)
+   instead of the page's. Their open popups (a calendar, a select's list on
+   macOS and phones) are drawn by the browser or the system and keep it. */
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* Big and bold text: headings, player names (headings as well) and the
+   large figures. Lilita One has a single weight, which font-synthesis
+   (:root) keeps from being faked bolder. The hard shadow is the stickers'
+   (sticker.css), so headings, figures and stickers read as one set. */
+h1,
+h2,
+h3,
+.stat-card-number,
+.recent-form-record,
+.recent-form-rate,
+.battle-component-score-text,
+.plot-title-summary,
+.decks-card-match-value,
+.card-stat-value,
+.player-info-component-info-value {
+  font-family: var(--font-display);
+  text-shadow: var(--shadow-display);
+}
+
 button {
   border-radius: var(--radius-md);
   border: 1px solid transparent;
@@ -162,6 +203,17 @@ button:disabled {
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
+}
+
+/* Tooltips stay hidden while the page scrolls (scrollRest.ts) and fade
+   back in once it rests, if the pointer is still on their anchor */
+.MuiTooltip-popper {
+  transition: opacity 0.15s ease;
+}
+html.is-page-scrolling .MuiTooltip-popper {
+  opacity: 0;
+  pointer-events: none;
+  transition: none;
 }
 
 /* Define the default size and position of the used lottie animations across all pages */

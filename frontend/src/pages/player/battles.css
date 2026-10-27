@@ -89,7 +89,7 @@
   border-radius: var(--radius-md);
   color: white;
   padding: var(--spacing-sm) var(--spacing-lg);
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -132,13 +132,6 @@
   justify-content: center;
   color: var(--text-secondary);
   font-size: var(--font-base);
-}
-
-.battles-end-user-message {
-  text-align: center;
-  color: var(--text-secondary);
-  font-style: italic;
-  margin: var(--spacing-xl) 0;
 }
 
 .battles-load-more-trigger {

@@ -3,19 +3,27 @@ import type { DailyStats } from "../../types/dailyStats";
 import { useDailyStats } from "../../hooks/useDailyStats";
 import { usePageLoadingState } from "../../hooks/usePageLoadingState";
 import CircularProgress from "@mui/material/CircularProgress";
-import Tooltip from "@mui/material/Tooltip";
+import { AppTooltip } from "../../components/tooltip/tooltip";
 import { useGameModes } from "../../hooks/useGameModes";
 import { getCurrentFilterState } from "../../utils/filter";
-import { gameModesForQuery } from "../../utils/gameModes";
+import { getTimeRange } from "../../utils/seasons";
+import { pageQueryState } from "../../utils/queryError";
+import { formatDateForInput } from "../../utils/datetime";
+import { gameModeQueryKey, gameModesForQuery } from "../../utils/gameModes";
 import { useEffect, useState } from "react";
 import { ScrollToTopButton } from "../../components/scrollToTop/scrollToTop";
 import type { DateLevel } from "../../types/chart";
 import { LineChart } from "../../components/lineChart/lineChart";
 import { PlayerError } from "../../components/playerError/playerError";
-import { buildPlotConfig, PLOT_DEFINITIONS } from "../../utils/plotConfig";
+import {
+  buildPlotConfig,
+  PLOT_DEFINITIONS,
+  summarizePlot,
+} from "../../utils/plotConfig";
 import type { PlotDefinition } from "../../utils/plotConfig";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { FilterContainer } from "../../components/filterContainer/filterContainer";
+import { SegmentedControl } from "../../components/segmentedControl/segmentedControl";
 import type { FilterState } from "../../components/filterContainer/filterContainer";
 import "./plots.css";
 
@@ -38,8 +46,10 @@ function PlotPanel({
   const [dateSpacing, setDateSpacing] = useState<DateSpacing>("recorded");
   const levelIndex = DATE_LEVELS.indexOf(dateLevel);
   const config = buildPlotConfig(definition, stats, dateLevel);
+  const summary = summarizePlot(definition, stats);
   const previousLevel = DATE_LEVELS[levelIndex - 1];
   const nextLevel = DATE_LEVELS[levelIndex + 1];
+  const Icon = definition.icon;
 
   return (
     <section
@@ -52,8 +62,7 @@ function PlotPanel({
           role="group"
           aria-label={`${config.title} date hierarchy`}
         >
-          <Tooltip
-            arrow
+          <AppTooltip
             title={
               previousLevel ? `Drill up to ${previousLevel}` : "Already at year"
             }
@@ -68,12 +77,11 @@ function PlotPanel({
                 <ArrowUp size={18} />
               </button>
             </span>
-          </Tooltip>
+          </AppTooltip>
           <span className="plots-drill-level" aria-live="polite">
             {dateLevel.charAt(0).toUpperCase() + dateLevel.slice(1)}
           </span>
-          <Tooltip
-            arrow
+          <AppTooltip
             title={nextLevel ? `Drill down to ${nextLevel}` : "Already at day"}
           >
             <span className="plots-drill-button-wrap">
@@ -86,40 +94,45 @@ function PlotPanel({
                 <ArrowDown size={18} />
               </button>
             </span>
-          </Tooltip>
+          </AppTooltip>
         </div>
-        <div
-          className={`plots-date-spacing-toggle${dateSpacing === "calendar" ? " is-calendar" : ""}`}
-        >
-          <span>Recorded</span>
-          <Tooltip
-            arrow
-            title={
-              dateSpacing === "calendar"
-                ? "Calendar spacing; dots mark missing periods"
-                : "Even spacing for recorded periods"
-            }
-          >
-            <label
-              className="plots-date-spacing-switch"
-              aria-label="Use calendar spacing"
-            >
-              <input
-                type="checkbox"
-                checked={dateSpacing === "calendar"}
-                onChange={(event) =>
-                  setDateSpacing(event.target.checked ? "calendar" : "recorded")
-                }
-              />
-              <span className="plots-date-spacing-slider" />
-            </label>
-          </Tooltip>
-          <span>Calendar</span>
-        </div>
+        <SegmentedControl
+          ariaLabel="Date spacing"
+          options={[
+            { value: "recorded", label: "Recorded" },
+            { value: "calendar", label: "Calendar" },
+          ]}
+          value={dateSpacing}
+          onChange={setDateSpacing}
+          tooltip={
+            dateSpacing === "calendar"
+              ? "Calendar spacing; dots mark missing periods"
+              : "Even spacing for recorded periods"
+          }
+        />
       </div>
-      <h2 className="plot-title" id={`plot-${definition.id}-title`}>
-        {config.title}
-      </h2>
+      <div className="plot-heading">
+        {/* Solid tile with a hard shadow, the stickers' look without their
+            loudness */}
+        <span
+          className="plot-title-icon"
+          style={{ backgroundColor: definition.series[0].color }}
+          aria-hidden="true"
+        >
+          <Icon size={18} strokeWidth={2.5} />
+        </span>
+        <h2 className="plot-title" id={`plot-${definition.id}-title`}>
+          {config.title}
+        </h2>
+        <span className="plot-title-summary">
+          {summary.map((s, i) => (
+            <span key={s.label}>
+              {i > 0 && <span className="plot-title-summary-vs"> vs </span>}
+              <span style={{ color: s.color }}>{s.value}</span>
+            </span>
+          ))}
+        </span>
+      </div>
       <LineChart
         className="plot-canvas"
         config={config}
@@ -152,7 +165,7 @@ export default function PlayerPlots() {
     isLoading: gameModesLoading,
     isError: isGameModesError,
     refetch: refetchGameModes,
-  } = useGameModes();
+  } = pageQueryState(useGameModes());
 
   // Game mode initialization
   // Initialize selected game modes once when game modes are loaded
@@ -182,15 +195,16 @@ export default function PlayerPlots() {
     isLoading: statsLoading,
     isError: isStatsError,
     refetch: refetchStats,
-  } = useDailyStats(
-    playerTag,
-    appliedFilters.startDate,
-    appliedFilters.endDate,
-    queryGameModes,
+  } = pageQueryState(
+    useDailyStats(playerTag, getTimeRange(appliedFilters), queryGameModes),
   );
 
   // Use the modes actually sent to the API for the loading state dependency.
-  const modesKey = queryGameModes?.join("|") ?? "";
+  const modesKey = gameModeQueryKey(queryGameModes);
+  // The current season ends in the future, the days after today have no data
+  const today = formatDateForInput(new Date());
+  const chartEndDate =
+    appliedFilters.endDate < today ? appliedFilters.endDate : today;
 
   // Loading state management
   // Determines when to show loading spinner vs content
@@ -200,7 +214,7 @@ export default function PlayerPlots() {
     errorStates: [isStatsError, isGameModesError],
     hasData: () => Boolean(stats && stats.daily_statistics.daily.length > 0),
     // Reset dependency ensures loading state recalculates when any backend filter changes
-    resetDependency: `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${modesKey}`,
+    resetDependency: `${playerTag}-${appliedFilters.startDate}-${appliedFilters.endDate}-${appliedFilters.season}-${modesKey}`,
   });
 
   if (isStatsError || isGameModesError) {
@@ -251,7 +265,7 @@ export default function PlayerPlots() {
                     definition={definition}
                     stats={stats}
                     startDate={appliedFilters.startDate}
-                    endDate={appliedFilters.endDate}
+                    endDate={chartEndDate}
                   />
                 ))}
               </div>
@@ -262,7 +276,7 @@ export default function PlayerPlots() {
               !statsLoading &&
               !gameModesLoading &&
               !statsLoading && (
-                <div className="no-plots-message">
+                <div className="player-status-message">
                   <p>No statistics found with the current filters applied</p>
                 </div>
               )}

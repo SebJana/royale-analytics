@@ -15,22 +15,15 @@ export function PlayerError({
   message,
   title = "Couldn't load this page",
   compact = false,
-  retryAttempts: controlledRetryAttempts,
-  onRetryAttempt,
 }: Readonly<{
   sources: PlayerErrorSource[];
   message?: string;
   title?: string;
   compact?: boolean;
-  retryAttempts?: number;
-  onRetryAttempt?: () => void;
 }>) {
   const [isRetrying, setIsRetrying] = useState(false);
-  const [localRetryAttempts, setLocalRetryAttempts] = useState(0);
-  // The profile keeps this count in the layout so a fresh ping cannot reset it.
-  const retryAttempts = controlledRetryAttempts ?? localRetryAttempts;
-  const retriesExhausted =
-    retryAttempts >= MAX_RETRY_ATTEMPTS && !isRetrying;
+  const [retryAttempts, setRetryAttempts] = useState(0);
+  const retriesExhausted = retryAttempts >= MAX_RETRY_ATTEMPTS && !isRetrying;
   const failedSources = sources.filter((source) => source.failed);
   const names = failedSources.map((source) => source.label);
   const sourceList =
@@ -40,11 +33,7 @@ export function PlayerError({
 
   const retry = async () => {
     if (isRetrying || retryAttempts >= MAX_RETRY_ATTEMPTS) return;
-    if (controlledRetryAttempts === undefined) {
-      setLocalRetryAttempts((attempts) => attempts + 1);
-    } else {
-      onRetryAttempt?.();
-    }
+    setRetryAttempts((attempts) => attempts + 1);
     setIsRetrying(true);
     // Retry every failed request; one successful request should not hide another failure.
     try {
@@ -66,8 +55,8 @@ export function PlayerError({
           ? `Still couldn't load the ${sourceList}. Please try again later.`
           : retryAttempts > 0 && !isRetrying
             ? `Trying again didn't work. The ${sourceList} still couldn't load.`
-          : (message ??
-            `Looks like the ${sourceList} went missing on the way here. Try again in a moment.`)}
+            : (message ??
+              `Looks like the ${sourceList} went missing on the way here. Try again in a moment.`)}
       </p>
       {!retriesExhausted && (
         <div className="player-page-error-actions">

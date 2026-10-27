@@ -39,12 +39,195 @@
 }
 
 .player-info-component-clan,
-.player-info-component-arena,
+.player-info-component-arena {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-md);
+  margin: var(--spacing-xs) 0;
+  color: var(--text-secondary);
+}
+
+/* Only the most viewed players have it, gold for the top three. The look
+   comes from the shared Sticker. */
+/* One row of stickers, a little roomier than elsewhere as the banner's main
+   marks. On a phone they may use the full row instead of wrapping. */
+.player-info-component-badges {
+  display: flex;
+  gap: var(--spacing-md);
+  margin: var(--spacing-sm) 0 var(--spacing-md) 0;
+}
+
+.player-info-component-badges > .sticker {
+  padding: 6px 12px;
+}
+
+/* As tall as the figure's digits, so the crown reads as part of the rank */
+.player-info-component-legend-crown {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.5;
+}
+
+@media (max-width: 600px) {
+  .player-info-component-badges {
+    gap: var(--spacing-sm);
+    /* Into the room the header keeps for the section toggle, which sits
+       above the badges, so the row spans the whole card */
+    margin-right: calc(-1 * (var(--spacing-2xl) + var(--spacing-lg)));
+  }
+
+  /* Their own width, as on a desktop. Only when two do not fit side by
+     side do they shrink and wrap their captions. */
+  .player-info-component-badges > .sticker {
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: 6px 8px;
+  }
+
+  /* Two stickers are slightly wider than a phone's row. A size smaller,
+     without the crown, both fit with every caption on its two lines; the
+     purple still marks the finish. */
+  .player-info-component-badges:has(> :nth-child(2)) > .sticker {
+    gap: 4px;
+    padding: 6px;
+  }
+
+  .player-info-component-badges:has(> :nth-child(2)) .sticker-figure {
+    font-size: var(--font-xl);
+  }
+
+  .player-info-component-badges:has(> :nth-child(2)) .sticker-caption {
+    font-size: 0.62rem;
+    white-space: nowrap;
+  }
+
+  .player-info-component-badges:has(> :nth-child(2))
+    .player-info-component-legend-crown {
+    display: none;
+  }
+}
+
+/* Below the smallest common phones the lines no longer fit; wrapping beats
+   running out of the sticker. */
+@media (max-width: 359px) {
+  .player-info-component-badges:has(> :nth-child(2)) .sticker-caption {
+    white-space: normal;
+  }
+}
+
 .player-info-component-trophies {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   font-size: var(--font-lg);
   margin: var(--spacing-xs) 0;
   color: var(--text-muted);
   font-weight: var(--font-weight-medium);
+}
+
+/* Long clan or arena names wrap next to the icon instead of squeezing it. */
+.player-info-component-icon {
+  flex-shrink: 0;
+}
+
+.player-info-component-clan-icon {
+  color: var(--color-accent);
+}
+
+.player-info-component-arena-icon {
+  color: #b794f6;
+}
+
+.player-info-component-trophy-icon {
+  color: #ffc93c;
+}
+
+/* Small hint how old the shown data is. Each part stays on one line and
+   wraps as a whole, so narrow screens show one part per line. */
+.player-info-component-sync-hint {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--spacing-md);
+  row-gap: var(--spacing-xs);
+  margin: var(--spacing-sm) 0 0 0;
+  font-size: var(--font-sm);
+  font-style: italic;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
+.player-info-component-sync-hint span {
+  white-space: nowrap;
+}
+
+/* Untracked periods: styled like the sync hint. Each period stays on one
+   line and the list wraps between them, separated by a dot. */
+.player-info-component-tracking-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--spacing-sm);
+  row-gap: var(--spacing-xs);
+  margin: 0;
+  padding: 0 var(--spacing-xs);
+  text-align: left;
+  font-size: var(--font-sm);
+  font-style: italic;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
+.player-info-component-tracking-hint > span {
+  white-space: nowrap;
+}
+
+.player-info-component-tracking-hint-label {
+  display: inline;
+}
+
+/* A dot after every period but the last. After rather than before, so a
+   wrapped line ends with one instead of starting with one. */
+.player-info-component-tracking-hint-period:not(:last-child)::after {
+  content: "·";
+  margin-left: var(--spacing-sm);
+}
+
+/* Placed from the text's baseline and sized in em, not centered on the line
+   box: fonts differ in the space above and below their letters (system-ui is
+   Roboto on Android, SF Pro on iOS), so a centered icon sits too high or low
+   on some. -0.25em puts the circle's middle at about 0.32em above the
+   baseline, between the middle of the lowercase letters and the capitals.
+   The padding enlarges the tap target; the negative margin keeps it from
+   moving the icon or the line. */
+.player-info-component-tracking-hint-icon {
+  display: inline-block;
+  vertical-align: -0.25em;
+  /* The left padding alone is the gap to the text */
+  padding: var(--spacing-xs);
+  margin-block: calc(-1 * var(--spacing-xs));
+  margin-right: calc(-1 * var(--spacing-xs));
+  cursor: help;
+}
+
+.player-info-component-tracking-hint-icon svg {
+  display: block;
+  width: 1.15em;
+  height: 1.15em;
+}
+
+/* Narrow screens: one period per line, the label above them */
+@media (max-width: 767px) {
+  .player-info-component-tracking-hint {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  /* As specific as the rule that adds the dot */
+  .player-info-component-tracking-hint-period:not(:last-child)::after {
+    content: none;
+  }
 }
 
 .player-info-component-details {
@@ -75,6 +258,7 @@
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--spacing-lg) 0;
   color: var(--color-primary);
+  text-shadow: var(--shadow-display-soft);
   border-bottom: 2px solid var(--color-primary);
   padding-bottom: var(--spacing-sm);
 }
@@ -109,10 +293,54 @@
   color: var(--text-muted);
 }
 
+/* Sits before the date, so the dates of all rows stay right-aligned */
+.player-info-component-og {
+  margin-right: var(--spacing-sm);
+  vertical-align: 2px;
+}
+
+/* A tile is never narrower than its number: a 6-digit total moves to the
+   next row instead of being cut to "100,...". The row length comes from the
+   section's own width: five in a row, else three and two (never four and a
+   lone one), else two per row. */
 .player-info-component-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  container-type: inline-size;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--spacing-lg);
+}
+
+.player-info-component-stats-grid .stat-card {
+  /* Bases below the exact share, so sub-pixel rounding never pushes the
+     last tile of a row into the next one. Growing fills the rest. */
+  flex: 1 1 30%;
+  /* The percentages include the padding */
+  box-sizing: border-box;
+  min-width: max-content;
+  padding-inline: var(--spacing-sm);
+}
+
+@container (min-width: 760px) {
+  .player-info-component-stats-grid .stat-card {
+    flex-basis: 18%;
+  }
+}
+
+@container (max-width: 420px) {
+  .player-info-component-stats-grid {
+    gap: var(--spacing-sm);
+  }
+
+  .player-info-component-stats-grid .stat-card {
+    flex-basis: 40%;
+    border-radius: var(--radius-md);
+  }
+}
+
+/* The label wraps inside the width the number sets, so a long label such as
+   "Three Crown Wins" does not widen its tile */
+.player-info-component-stats-grid .stat-card-label {
+  contain: inline-size;
 }
 
 /* Allow StatCard labels to wrap in playerInfo component */
@@ -126,23 +354,32 @@
   .player-info-component-container {
     padding: var(--spacing-3xl);
   }
-
-  .player-info-component-stats-grid {
-    grid-template-columns: repeat(5, 1fr);
-  }
 }
 
 @media (min-width: 768px) {
   .player-info-component-details {
     grid-template-columns: 1fr 2fr;
+    grid-template-areas:
+      "account battles"
+      "tracking tracking";
+  }
+
+  .player-info-component-account-info-section {
+    grid-area: account;
+  }
+
+  .player-info-component-battle-stats-section {
+    grid-area: battles;
+  }
+
+  .player-info-component-tracking-hint {
+    grid-area: tracking;
+    /* The grid gap spaces boxes; the hint has none, so it sits closer */
+    margin-top: calc(-1 * var(--spacing-md));
   }
 
   .player-info-component-info-grid {
     grid-template-columns: 1fr;
-  }
-
-  .player-info-component-stats-grid {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }
 
   .player-info-component-info-label {
@@ -203,22 +440,24 @@
 }
 
 /* Collapsible content */
+/* Animates between no height and the content's own height. A max-height
+   transition needs a fixed cap, which clips taller content such as the
+   stats stacked on narrow screens. */
 .player-info-component-collapsible-content {
-  transition: all 0.3s ease;
-  overflow: hidden;
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 0.3s ease,
+    opacity 0.3s ease;
 }
 
 .player-info-component-collapsible-content.collapsed {
-  max-height: 0;
+  grid-template-rows: 0fr;
   opacity: 0;
-  margin-bottom: 0;
 }
 
-.player-info-component-collapsible-content:not(.collapsed) {
-  max-height: 1000px;
-  opacity: 1;
-}
-
-.player-info-component-details.collapsed {
-  margin-bottom: 0;
+.player-info-component-collapsible-inner {
+  min-height: 0;
+  overflow: hidden;
 }

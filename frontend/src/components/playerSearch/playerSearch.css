@@ -40,29 +40,308 @@
   color: var(--color-primary);
 }
 
-/* Dropdown styling */
-.player-search .MuiAutocomplete-paper {
-  background-color: var(--bg-dark);
+/* Dropdown styling. MUI renders the dropdown in a portal outside
+   .player-search, so these rules target the paper's own class. */
+/* The page's card tone (a section's 5% white over the page), but opaque, as
+   it floats over other content. The input's corner radius, and a small gap
+   below it like between the page's controls. */
+.player-search-paper.MuiAutocomplete-paper {
+  /* The tabs switch to two rows by the dropdown's own width, which follows
+     the input, not the screen. */
+  container: player-search-dropdown / inline-size;
+  margin-top: var(--spacing-xs);
+  background-color: color-mix(in srgb, var(--bg-primary), white 5%);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
   box-shadow: 0 8px 32px var(--shadow-medium);
 }
 
-.player-search .MuiAutocomplete-option {
+.player-search-paper .MuiAutocomplete-option {
   padding: var(--spacing-md) var(--spacing-lg);
   color: var(--text-primary);
   border-bottom: 1px solid var(--border-light);
 }
 
-.player-search .MuiAutocomplete-option:last-child {
+.player-search-paper .MuiAutocomplete-option:last-child {
   border-bottom: none;
 }
 
-.player-search .MuiAutocomplete-option:hover {
+.player-search-paper .MuiAutocomplete-option:hover,
+.player-search-paper .MuiAutocomplete-option.Mui-focused {
   background-color: var(--bg-overlay-medium);
 }
 
-.player-search .MuiListItemText-secondary {
+.player-search-paper .MuiListItemText-secondary {
   color: var(--text-secondary);
   font-size: var(--font-sm);
+}
+
+.player-search-paper .MuiAutocomplete-noOptions,
+.player-search-paper .MuiAutocomplete-loading {
+  color: var(--text-secondary);
+}
+
+.player-search-more-hint {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-top: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  cursor: default;
+}
+
+/* "Open #TAG" is an action, not a search result: accent color, a bar on the
+   left and a dashed line apart from the results. */
+.player-search-paper .MuiAutocomplete-option.player-search-typed-tag {
+  border-left: 3px solid var(--color-primary);
+  border-top: 1px dashed var(--border-medium);
+  background-color: var(--bg-overlay-light);
+}
+
+.player-search-paper
+  .MuiAutocomplete-option.player-search-typed-tag:first-child {
+  border-top: none;
+  border-bottom: 1px dashed var(--border-medium);
+}
+
+.player-search-paper .MuiAutocomplete-option.player-search-typed-tag:hover,
+.player-search-paper
+  .MuiAutocomplete-option.player-search-typed-tag.Mui-focused {
+  background-color: var(--bg-overlay-strong);
+}
+
+/* Same arrow as the Continue buttons (authOutcome.css): after the label,
+   18px icon and 8px gap at 14px text, kept as ratios of the font size. */
+.player-search-typed-tag-action {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(8em / 14);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.player-search-typed-tag-action svg {
+  display: block;
+  flex: none;
+  width: calc(18em / 14);
+  height: calc(18em / 14);
+}
+
+.player-search-paper .player-search-typed-tag .MuiListItemText-secondary {
+  font-style: italic;
+}
+
+/* Tabs that switch the dropdown between its lists (search, recent, most
+   viewed). They sit above MUI's listbox, inside the paper. */
+/* NOTE Styled as the segmented controls of the player pages
+   (segmentedControl.css): a bordered group on the dark page color, the
+   selected segment tinted. Update both together. */
+/* NOTE Four columns, one per entry of LISTS in playerSearch.tsx, and two
+   rows of two below the breakpoint. Update both with a new list. */
+.player-search-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  margin: var(--spacing-sm);
+  padding: 2px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-primary);
+  cursor: default;
+}
+
+.player-search-tab,
+.player-search-tab:hover {
+  /* Icon above the label: large to hit with a thumb, and four tabs fit
+     the dropdown's width on most phones. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 52px;
+  padding: var(--spacing-xs);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--font-md);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.player-search-tab:hover:not(.is-active) {
+  color: var(--text-primary);
+  background-color: var(--bg-overlay-light);
+}
+
+.player-search-tab.is-active {
+  border-color: var(--color-primary);
+  background-color: rgba(52, 152, 219, 0.15);
+  color: var(--color-primary);
+}
+
+.player-search-tab svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+/* Too narrow for four labels: two rows of two, the icon beside the label,
+   so the tabs still fill the width and grow less than twice as tall. */
+@container player-search-dropdown (max-width: 340px) {
+  .player-search-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .player-search-tab,
+  .player-search-tab:hover {
+    flex-direction: row;
+    gap: var(--spacing-sm);
+    min-height: 40px;
+  }
+}
+
+/* A caption or action row of the shown list, e.g. Clear for recent players. */
+.player-search-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  cursor: default;
+}
+
+/* The tabs, header and hints sit outside MUI's listbox, so its vertical
+   padding would open a gap between them and the rows they belong to. */
+.player-search-paper .MuiAutocomplete-listbox {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Inline actions in the dropdown read as links, not as the global buttons. */
+.player-search-text-button,
+.player-search-text-button:hover {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: inherit;
+}
+
+/* Underlined only inside a sentence, where color alone would not set the link
+   apart from the text around it. */
+.player-search-text-button:hover {
+  text-decoration: underline;
+}
+
+/* Clear stands alone, so it hovers like the remove buttons beside it. The
+   negative margin keeps its text on the header's padding edge. */
+.player-search-list-header .player-search-text-button {
+  margin: calc(-1 * var(--spacing-sm)) calc(-1 * var(--spacing-md));
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  font-size: var(--font-md);
+  font-weight: var(--font-weight-medium);
+}
+
+.player-search-list-header .player-search-text-button:hover {
+  background-color: var(--bg-overlay-strong);
+  text-decoration: none;
+}
+
+/* The look comes from CloseButton; this keeps the icon on the row's right
+   padding edge. */
+.player-search-recent-remove {
+  margin: calc(-1 * var(--spacing-xs)) calc(-1 * var(--spacing-sm))
+    calc(-1 * var(--spacing-xs)) 0;
+}
+
+/* Most viewed players: rank, name and tag, views on the right. Every rank
+   gets the same centered box, so the names stay in one column next to the
+   gold stickers of the top three. */
+.player-search-paper .MuiAutocomplete-option.player-search-ranked {
+  gap: var(--spacing-md);
+}
+
+.player-search-rank {
+  flex: none;
+  box-sizing: border-box;
+  justify-content: center;
+  /* em, not ch: ch grows with the bolder weight of the stickers */
+  min-width: 3.25em;
+  padding: 2px 6px;
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-bold);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The shared Sticker sets the look, the list keeps its text size */
+.player-search-rank.sticker {
+  font-size: inherit;
+}
+
+.player-search-popular-views {
+  flex: none;
+  font-weight: var(--font-weight-medium);
+}
+
+.player-search-popular-views-label {
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-normal);
+}
+
+/* "Show more" is the last row of a paged list, so the arrow keys reach
+   it. Styled as an action, centered and in the link color. */
+.player-search-paper .MuiAutocomplete-option.player-search-show-more {
+  justify-content: center;
+  min-height: 48px;
+  color: var(--color-primary);
+  font-size: var(--font-md);
+  font-weight: var(--font-weight-medium);
+}
+
+/* An empty list's note, laid out like a player row: the same padding and
+   left edge, the icon where a rank sits, the rows' two text sizes. Muted and
+   without hover, so it reads as a note, not as a field to type into. Shown
+   by MUI as the "no options" content, or by the paper when the list only
+   holds the hidden selection. */
+.player-search-paper .MuiAutocomplete-noOptions {
+  padding: 0;
+}
+
+.player-search-empty-state {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: default;
+}
+
+.player-search-empty-state svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  opacity: 0.8;
+}
+
+.player-search-empty-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.player-search-empty-title {
+  font-size: var(--font-md);
+}
+
+.player-search-empty-hint {
+  font-size: var(--font-sm);
+  opacity: 0.8;
 }

@@ -32,3 +32,32 @@ export function formatNumberWithSuffix(num: number): string {
   // Return number as string for values below 10k
   return String(num);
 }
+
+// The site is English, so numbers use English separators everywhere
+// ("54,552", "54.6%"), whatever the browser's locale. The browser's thousands
+// separator next to the dot decimals of the percentages would make e.g. a
+// German "54.552" wins read like a decimal number.
+const NUMBER_LOCALE = "en-US";
+
+/**
+ * Formats a number with English thousands separators, e.g. 54552 as "54,552".
+ *
+ * @param num - The number to format
+ * @returns The formatted number
+ */
+export function formatNumber(num: number): string {
+  return num.toLocaleString(NUMBER_LOCALE);
+}
+
+/**
+ * Formats a count compactly, e.g. 950 as "950", 1200 as "1.2k", 3400000 as
+ * "3.4M".
+ *
+ * @param num - The count to format
+ * @returns The formatted count
+ */
+export function formatCompactNumber(num: number): string {
+  if (num >= 1_000_000) return `${round(num / 1_000_000, 1)}M`;
+  if (num >= 1_000) return `${round(num / 1_000, 1)}k`;
+  return String(num);
+}

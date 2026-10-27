@@ -1,87 +1,143 @@
 import { Outlet, NavLink, useParams, useLocation } from "react-router-dom";
-import { usePlayerProfile } from "../../hooks/usePlayerProfile";
+import {
+  usePlayerProfile,
+  getProfileErrorCode,
+} from "../../hooks/usePlayerProfile";
 import { House, Menu, X, ChevronLeft } from "lucide-react";
 import { PlayerInfo } from "../../components/playerInfo/playerInfo";
 import { PlayerInfoPlaceholder } from "../../components/playerInfo/playerInfoPlaceholder";
+import { ParkedNotice } from "../../components/parkedNotice/parkedNotice";
+import { TopPlayerNotice } from "../../components/topPlayerNotice/topPlayerNotice";
 import { PlayerErrorBoundary } from "../../components/playerError/playerErrorBoundary";
-import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useLayoutEffect, useState } from "react";
 import axios from "axios";
-import { fetchAllTrackedPlayers } from "../../services/api/trackedPlayers";
-import { pingApi } from "../../services/api/ping";
+import {
+  recordRecentPlayer,
+  removeRecentPlayer,
+} from "../../hooks/useRecentPlayers";
+import { normalizePlayerTag } from "../../utils/playerTag";
+import { useProfileView } from "../../hooks/useProfileView";
+import { useSyncVersionRefresh } from "../../hooks/useSyncVersionRefresh";
+import { clearBattlesView } from "../../utils/battlesView";
 import Lottie from "lottie-react";
 import emptyBox from "../../assets/animations/emptyBox.json";
 import genericError from "../../assets/animations/404.json";
 
 import CircularProgress from "@mui/material/CircularProgress";
+import type { PlayerTracking } from "../../types/player";
 import "./layout.css";
+
+/**
+ * Whether the top player on this page was just kept, so its notice stays to
+ * show the outcome after the refetched profile reports it as regular.
+ * Forgotten on another player: opened again, a kept player is regular and
+ * needs no notice.
+ *
+ * @param playerTag - The player's tag as in the page URL
+ * @returns Whether it was kept here, and the callback that marks it
+ */
+function useKeptPlayer(playerTag: string): readonly [boolean, () => void] {
+  const [keptTag, setKeptTag] = useState<string | null>(null);
+  // Adjusted while rendering, like derived state
+  if (keptTag && keptTag !== playerTag) setKeptTag(null);
+  return [keptTag === playerTag, () => setKeptTag(playerTag)] as const;
+}
 
 export default function PlayerLayout() {
   const { playerTag = "" } = useParams();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [profileRetryAttempts, setProfileRetryAttempts] = useState(0);
+  // The player tracked again on this page, until it is parked anew.
+  // confirmed: the profile has reported it as tracked since.
+  const [resumed, setResumed] = useState<{
+    tag: string;
+    confirmed: boolean;
+  } | null>(null);
+  // Remounts the notice for a new pause, so a past success does not stay
+  const [noticeEpisode, setNoticeEpisode] = useState(0);
+  const [kept, markKept] = useKeptPlayer(playerTag);
   const encodedTag = encodeURIComponent(playerTag ?? "");
   const { pathname } = useLocation();
 
   // Close menu after navigation
   useEffect(() => setMenuOpen(false), [pathname]);
 
+  // The window keeps its scroll position across routes, so a page opened
+  // from far down the battles would start at its own bottom. The battles
+  // page is left out: it restores its own position (battles.tsx), and this
+  // effect runs after the page's, so it would undo that.
+  useLayoutEffect(() => {
+    if (/\/(decks|cards|plots)\/?$/.test(pathname)) window.scrollTo(0, 0);
+  }, [pathname]);
+
   const {
     data: player,
-    isLoading: playerLoading,
-    isFetched: profileFetched,
+    // Not isLoading: while the persisted cache restores, the query is paused,
+    // which isLoading reports as not loading. The layout then rendered empty
+    // for a frame, footer included, before the spinner.
+    isPending: playerLoading,
     isError: isPlayerError,
     error: playerError,
-    errorUpdatedAt: profileErrorUpdatedAt,
-    refetch: refetchPlayer,
   } = usePlayerProfile(playerTag ?? "");
+  // The pages' cached battles and statistics follow the profile's version
+  useSyncVersionRefresh(playerTag ?? "", player?.syncInfo?.syncVersion);
 
-  // Keep the count while the placeholder briefly unmounts for a fresh API check.
-  useEffect(() => setProfileRetryAttempts(0), [playerTag, player]);
-
-  const errorDetail = axios.isAxiosError<{
-    detail?: { code?: string };
+  // The profile comes from the database, so a failure means the player is
+  // unknown, has no profile snapshot yet, or the backend has a problem.
+  const errorCode = getProfileErrorCode(playerError);
+  const isNotFound =
+    playerError?.message === "Invalid player tag" ||
+    errorCode === "INVALID_PLAYER_TAG" ||
+    errorCode === "PLAYER_NOT_TRACKED";
+  // Players inserted without the API (e.g. in bulk) have no profile until
+  // the scraper's first refresh. The rest of the page works without it.
+  const profileNotSynced = errorCode === "PROFILE_NOT_SYNCED";
+  const notSyncedDetail = axios.isAxiosError<{
+    detail?: { name?: string; tracking?: PlayerTracking };
   }>(playerError)
     ? playerError.response?.data?.detail
     : undefined;
-  // Only invalid and untracked tags need the full-page error.
-  const isNotFound =
-    playerError?.message === "Invalid player tag" ||
-    (axios.isAxiosError(playerError) &&
-      playerError.response?.status === 403 &&
-      (errorDetail?.code === "INVALID_PLAYER_TAG" ||
-        errorDetail?.code === "PLAYER_NOT_TRACKED"));
-  const { isError: isApiDown, isSuccess: isApiReachable } = useQuery({
-    // Check each profile failure against the current backend state, not an old ping.
-    queryKey: ["apiPing", playerTag, profileErrorUpdatedAt],
-    queryFn: pingApi,
-    enabled: isPlayerError && !isNotFound,
-    retry: false,
-    staleTime: 0,
-    gcTime: 60_000,
-    // Keep the placeholder visible while checking the backend again.
-    placeholderData: (previousData) => previousData,
-  });
-  const showProfilePlaceholder =
-    !isNotFound &&
-    isApiReachable &&
-    (isPlayerError || (profileFetched && !player));
+  const notSyncedName = notSyncedDetail?.name;
+  // Parked before its first profile refresh: nothing loads until it is
+  // tracked again, so the page offers that instead of a loading hint.
+  const tracking =
+    player?.tracking ??
+    (profileNotSynced ? notSyncedDetail?.tracking : undefined);
+  const isParked = tracking?.state === "parked";
+  // Adjusted while rendering, like derived state: another player, the
+  // profile confirming the resume, or a new pause after it.
+  if (resumed && resumed.tag !== playerTag) setResumed(null);
+  else if (resumed && !resumed.confirmed && tracking?.state === "active")
+    setResumed({ tag: resumed.tag, confirmed: true });
+  else if (resumed?.confirmed && isParked) {
+    setResumed(null);
+    setNoticeEpisode((episode) => episode + 1);
+  }
 
-  // The tracked-player list can supply the name when the live profile fails.
-  const { data: trackedPlayers } = useQuery({
-    queryKey: ["trackedPlayers"],
-    queryFn: fetchAllTrackedPlayers,
-    enabled: showProfilePlaceholder && !player,
-    staleTime: 5 * 60_000,
-    refetchOnWindowFocus: false,
-  });
-  const knownName = player?.name ?? trackedPlayers?.activePlayers[playerTag];
+  // Recorded when the page loads, not when picked in the search, so links and
+  // typed tags count too.
+  const viewedTag =
+    player?.tag ?? (profileNotSynced ? normalizePlayerTag(playerTag) : null);
+  const viewedName = player?.name ?? notSyncedName ?? "";
+  useEffect(() => {
+    if (viewedTag) recordRecentPlayer({ tag: viewedTag, name: viewedName });
+  }, [viewedTag, viewedName]);
+  // Once per player page, for the explore ranking and the popular badge
+  useProfileView(viewedTag);
 
-  if (playerLoading && !profileFetched)
+  // The battles position only serves switching between this player's pages.
+  // Leaving the player (home, another player) drops it.
+  useEffect(() => () => clearBattlesView(playerTag), [playerTag]);
+
+  // A tag that stopped resolving would only lead back to this error page.
+  useEffect(() => {
+    const tag = normalizePlayerTag(playerTag);
+    if (isNotFound && tag) removeRecentPlayer(tag);
+  }, [isNotFound, playerTag]);
+
+  if (playerLoading)
     return <CircularProgress className="layout-loading-spinner" />;
-  if (isPlayerError && !isNotFound && !isApiReachable && !isApiDown)
-    return <CircularProgress className="layout-loading-spinner" />;
-  if (isPlayerError && (isNotFound || isApiDown)) {
+  // A failed refetch keeps the previously loaded profile on screen
+  if (isPlayerError && !player && !profileNotSynced) {
     console.log(playerError);
 
     const displayMessage = isNotFound
@@ -167,16 +223,41 @@ export default function PlayerLayout() {
         </div>
       </nav>
       <header className="player-header">
-        {showProfilePlaceholder ? (
-          <PlayerInfoPlaceholder
-            tag={playerTag}
-            name={knownName}
-            retry={refetchPlayer}
-            retryAttempts={profileRetryAttempts}
-            onRetryAttempt={() => setProfileRetryAttempts((count) => count + 1)}
+        {/* Stays after "Track again" to show its outcome, until the
+            player is left or parked anew */}
+        {(isParked || resumed?.tag === playerTag) && (
+          <ParkedNotice
+            // A new player or a new pause starts without the old outcome
+            key={`${playerTag}:${noticeEpisode}`}
+            playerTag={playerTag}
+            since={tracking?.since}
+            onResumed={() => setResumed({ tag: playerTag, confirmed: false })}
           />
+        )}
+        {/* Only while nobody keeps the player, and also without a profile:
+            the leaderboard adds players the scraper refreshes only within
+            hours. Stays after "Keep tracking" to show its outcome. A
+            missing regular (profiles cached before it) counts as kept. */}
+        {tracking?.topFinish &&
+          !isParked &&
+          (tracking.regular === false || kept) && (
+            <TopPlayerNotice
+              key={playerTag}
+              playerTag={playerTag}
+              topFinish={tracking.topFinish}
+              onKept={markKept}
+            />
+          )}
+        {player ? (
+          <PlayerInfo player={player} />
         ) : (
-          player && <PlayerInfo player={player} />
+          profileNotSynced && (
+            <PlayerInfoPlaceholder
+              tag={playerTag}
+              name={notSyncedName}
+              parked={isParked}
+            />
+          )
         )}
       </header>
       <main className="player-content">

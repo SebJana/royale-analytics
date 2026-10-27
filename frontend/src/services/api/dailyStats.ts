@@ -1,12 +1,15 @@
 import api from "./axios";
 import { validatePlayerTagSyntax } from "../../utils/playerTag";
+import { setTimeRangeParams } from "./seasons";
+import { setGameModeParams } from "./gameModes";
 import type { DailyStats } from "../../types/dailyStats";
+import type { TimeRange } from "../../types/seasons";
+import type { GameModeQuery } from "../../types/gameModes";
 
 export async function fetchDailyStats(
   playerTag: string,
-  startDate: string,
-  endDate: string,
-  gameModes?: string[]
+  range: TimeRange,
+  gameModes?: GameModeQuery,
 ): Promise<DailyStats> {
   // Throw error if an invalid player tag was passed
   if (!validatePlayerTagSyntax(playerTag)) {
@@ -15,16 +18,9 @@ export async function fetchDailyStats(
 
   const tag = encodeURIComponent(playerTag);
   const params = new URLSearchParams();
-  params.set("start_date", startDate);
-  params.set("end_date", endDate);
+  setTimeRangeParams(params, range);
 
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  params.set("timezone", timeZone);
-
-  // Append game modes if they exist as param
-  if (gameModes?.length) {
-    gameModes.forEach((mode) => params.append("game_modes", mode));
-  }
+  setGameModeParams(params, gameModes);
 
   const url = `/players/${tag}/stats/daily?${params.toString()}`;
 

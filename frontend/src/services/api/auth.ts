@@ -3,12 +3,12 @@ import type {
   CaptchaResponse,
   CaptchaVerifyRequest,
   CaptchaTokenResponse,
-  WordleResponse,
-  HalliGalliGameResponse,
-  HalliGalliStatusResponse,
-  HalliGalliRevealResponse,
-  HalliGalliRoundResponse,
-  WordleVerifyRequest,
+  WordGuessResponse,
+  FruitBuzzGameResponse,
+  FruitBuzzStatusResponse,
+  FruitBuzzRevealResponse,
+  FruitBuzzRoundResponse,
+  WordGuessVerifyRequest,
   SecurityQuestionsRequest,
   SecurityTokenResponse,
   RemovePlayerTokenResponse,
@@ -16,15 +16,25 @@ import type {
 
 // Capability tokens authorize the next authentication step. Every HTTP call
 // that consumes one sends it as Authorization: Bearer <token>, never in JSON.
+// NOTE: Each token only opens a few next steps (budgets in the backend's
+// settings.py); a used-up one answers with a *_TOKEN_USED_UP code.
 
-// Step 1: Captcha
-// Step 1.1: Get captcha ID
+/**
+ * Step 1.1: claims a CAPTCHA challenge.
+ *
+ * @returns The challenge ID, which also names its image
+ */
 export async function getCaptchaId(): Promise<CaptchaResponse> {
-  const response = await api.get<CaptchaResponse>("/auth/captcha_id");
+  const response = await api.post<CaptchaResponse>("/auth/captcha_id");
   return response.data;
 }
 
-// Step 1.2: Get captcha image
+/**
+ * Step 1.2: loads a claimed CAPTCHA's image, available for a minute.
+ *
+ * @param captchaId - ID from getCaptchaId
+ * @returns The PNG
+ */
 export async function getCaptchaImage(captchaId: string): Promise<Blob> {
   const response = await api.get(`/auth/captcha_image/${captchaId}`, {
     responseType: "blob",
@@ -32,7 +42,12 @@ export async function getCaptchaImage(captchaId: string): Promise<Blob> {
   return response.data;
 }
 
-// Step 1.3: Verify captcha and get captcha token
+/**
+ * Step 1.3: checks the CAPTCHA answer.
+ *
+ * @param request - Challenge ID and the typed text
+ * @returns The CAPTCHA token for the Word Guess step
+ */
 export async function verifyCaptcha(
   request: CaptchaVerifyRequest,
 ): Promise<CaptchaTokenResponse> {
@@ -43,112 +58,159 @@ export async function verifyCaptcha(
   return response.data;
 }
 
-// Step 2: Wordle
-// Step 2.1: Get wordle challenge ID
-export async function getWordleId(
+/**
+ * Step 2.1: opens a Word Guess session, spending one of the CAPTCHA token's
+ * sessions.
+ *
+ * @param captchaToken - Token from verifyCaptcha
+ * @returns The Word Guess session ID
+ */
+export async function getWordGuessId(
   captchaToken: string,
-): Promise<WordleResponse> {
-  const response = await api.get<WordleResponse>("/auth/wordle_id", {
-    headers: {
-      Authorization: `Bearer ${captchaToken}`,
-    },
-  });
-  return response.data;
-}
-
-// Step 2.2: Submit wordle guess and get evaluation/feedback
-export async function submitWordleGuess(
-  captchaToken: string,
-  request: WordleVerifyRequest,
-): Promise<{
-  evaluation: unknown;
-  remaining_guesses: number;
-  is_solution: boolean;
-  wordle_token?: string;
-  solution?: string;
-}> {
-  const response = await api.post("/auth/verify_wordle", request, {
-    headers: {
-      Authorization: `Bearer ${captchaToken}`,
-    },
-  });
-  return response.data;
-}
-
-// Step 3: Halli Galli. Start it after latency calibration. Build instructions from this
-// game's public rules. Keep up to rules.max_preloaded_cards future card images
-// ready from initial_cards, then use next_card_interval_ms after each reveal
-// to schedule the next one.
-export async function getHalliGalliGame(
-  wordleToken: string,
-  calibrationId: string,
-): Promise<HalliGalliGameResponse> {
-  const response = await api.get<HalliGalliGameResponse>(
-    "/auth/halli_galli_id",
+): Promise<WordGuessResponse> {
+  const response = await api.post<WordGuessResponse>(
+    "/auth/word_guess_id",
+    undefined,
     {
-      // Initial card generation can take longer than the normal API timeout.
-      timeout: 20000,
       headers: {
-        Authorization: `Bearer ${wordleToken}`,
-        "X-Halli-Galli-Calibration": calibrationId,
+        Authorization: `Bearer ${captchaToken}`,
       },
     },
   );
   return response.data;
 }
 
-// Fetch the encrypted bytes for a card listed by this game's start response.
-// Each fetch rotates that round's key. If requests complete out of order, keep
-// the response with the highest version for the later reveal.
-export async function getHalliGalliCard(
-  gameId: string,
-  roundIndex: number,
-): Promise<{ image: Blob; imageVersion: number }> {
-  const response = await api.post<Blob>(
-    `/auth/halli_galli_card/${gameId}/${roundIndex}`,
-    undefined,
-    { responseType: "blob", timeout: 10000 },
-  );
-  return {
-    image: response.data,
-    imageVersion: Number(response.headers["x-halli-galli-image-version"]),
-  };
+/**
+ * Step 2.2: submits one Word Guess attempt.
+ *
+ * @param captchaToken - Token from verifyCaptcha
+ * @param request - Session ID and the guess
+ * @returns The evaluation, guesses left and, once solved, the Word Guess token
+ */
+export async function submitWordGuess(
+  captchaToken: string,
+  request: WordGuessVerifyRequest,
+): Promise<{
+  evaluation: unknown;
+  remaining_guesses: number;
+  is_solution: boolean;
+  word_guess_token?: string;
+  solution?: string;
+}> {
+  const response = await api.post("/auth/verify_word_guess", request, {
+    headers: {
+      Authorization: `Bearer ${captchaToken}`,
+    },
+  });
+  return response.data;
 }
 
-// Read the saved outcome and lives after a lost action response. A finished
-// player win also returns the same Halli Galli token saved with the game.
-export async function getHalliGalliStatus(
-  gameId: string,
-): Promise<HalliGalliStatusResponse> {
-  const response = await api.get<HalliGalliStatusResponse>(
-    `/auth/halli_galli_status/${gameId}`,
+/**
+ * Step 3: starts a Fruit Buzz game after latency calibration. Instructions
+ * come from the game's public rules. Keep up to rules.max_preloaded_cards
+ * future card images ready from initial_cards, then use
+ * next_card_interval_ms after each reveal to schedule the next one. Spends
+ * one of the Word Guess token's games.
+ *
+ * @param wordGuessToken - Token from submitWordGuess
+ * @param calibrationId - ID of the finished latency calibration
+ * @returns The game, its rules and the first card IDs
+ */
+export async function getFruitBuzzGame(
+  wordGuessToken: string,
+  calibrationId: string,
+): Promise<FruitBuzzGameResponse> {
+  const response = await api.post<FruitBuzzGameResponse>(
+    "/auth/fruit_buzz_id",
+    { calibration_id: calibrationId },
+    {
+      headers: {
+        Authorization: `Bearer ${wordGuessToken}`,
+      },
+    },
   );
   return response.data;
 }
 
-// The key decrypts the image with the same image_version. Reveal starts the
-// server's round timer once; retrying it returns the same key and version.
-export async function revealHalliGalliRound(
+/**
+ * Fetches the encrypted bytes of a card listed by the game's start response.
+ * Each fetch rotates that round's key. If requests complete out of order,
+ * keep the response with the highest version for the later reveal.
+ *
+ * @param gameId - Game from getFruitBuzzGame
+ * @param roundIndex - Round of the card
+ * @returns The encrypted image and its version
+ */
+export async function getFruitBuzzCard(
   gameId: string,
   roundIndex: number,
-): Promise<HalliGalliRevealResponse> {
-  const response = await api.post<HalliGalliRevealResponse>(
-    `/auth/halli_galli_action/${gameId}/${roundIndex}`,
+): Promise<{ image: Blob; imageVersion: number }> {
+  const response = await api.post<Blob>(
+    `/auth/fruit_buzz_card/${gameId}/${roundIndex}`,
+    undefined,
+    { responseType: "blob" },
+  );
+  return {
+    image: response.data,
+    imageVersion: Number(response.headers["x-fruit-buzz-image-version"]),
+  };
+}
+
+/**
+ * Reads the saved outcome and lives after a lost action response. A finished
+ * player win also returns the same Fruit Buzz token saved with the game.
+ *
+ * @param gameId - Game from getFruitBuzzGame
+ * @returns The game's status
+ */
+export async function getFruitBuzzStatus(
+  gameId: string,
+): Promise<FruitBuzzStatusResponse> {
+  const response = await api.get<FruitBuzzStatusResponse>(
+    `/auth/fruit_buzz_status/${gameId}`,
+  );
+  return response.data;
+}
+
+/**
+ * Reveals a round. The key decrypts the image with the same image_version.
+ * Reveal starts the server's round timer once; retrying it returns the same
+ * key and version.
+ *
+ * @param gameId - Game from getFruitBuzzGame
+ * @param roundIndex - Round to reveal
+ * @returns The decryption key and its image version
+ */
+export async function revealFruitBuzzRound(
+  gameId: string,
+  roundIndex: number,
+): Promise<FruitBuzzRevealResponse> {
+  const response = await api.post<FruitBuzzRevealResponse>(
+    `/auth/fruit_buzz_action/${gameId}/${roundIndex}`,
     { action: "reveal" },
   );
   return response.data;
 }
 
-// Send the clicked card ID and a point normalized to that card's dimensions.
-export async function buzzHalliGalliRound(
+/**
+ * Buzzes on a round.
+ *
+ * @param gameId - Game from getFruitBuzzGame
+ * @param roundIndex - Current round
+ * @param clickedCardId - Card that was clicked
+ * @param clickX - Click position, normalized to the card's width
+ * @param clickY - Click position, normalized to the card's height
+ * @returns The round's outcome
+ */
+export async function buzzFruitBuzzRound(
   gameId: string,
   roundIndex: number,
   clickedCardId: string,
   clickX: number,
   clickY: number,
-): Promise<HalliGalliRoundResponse> {
-  const response = await api.post<HalliGalliRoundResponse>(
-    `/auth/halli_galli_action/${gameId}/${roundIndex}`,
+): Promise<FruitBuzzRoundResponse> {
+  const response = await api.post<FruitBuzzRoundResponse>(
+    `/auth/fruit_buzz_action/${gameId}/${roundIndex}`,
     {
       action: "buzz",
       clicked_card_id: clickedCardId,
@@ -159,22 +221,34 @@ export async function buzzHalliGalliRound(
   return response.data;
 }
 
-// Move on only after the deadline. A missed winning count loses a life. A
-// finished round returns lives, whether cards should clear, and the next IDs.
-export async function nextHalliGalliRound(
+/**
+ * Moves on to the next round, only after the deadline. A missed winning
+ * count loses a life.
+ *
+ * @param gameId - Game from getFruitBuzzGame
+ * @param roundIndex - Current round
+ * @returns Lives, whether cards should clear, and the next IDs
+ */
+export async function nextFruitBuzzRound(
   gameId: string,
   roundIndex: number,
-): Promise<HalliGalliRoundResponse> {
-  const response = await api.post<HalliGalliRoundResponse>(
-    `/auth/halli_galli_action/${gameId}/${roundIndex}`,
+): Promise<FruitBuzzRoundResponse> {
+  const response = await api.post<FruitBuzzRoundResponse>(
+    `/auth/fruit_buzz_action/${gameId}/${roundIndex}`,
     { action: "next" },
   );
   return response.data;
 }
 
-// Step 4: Verify security questions using the Halli Galli win token.
+/**
+ * Step 4: checks the security answers.
+ *
+ * @param fruitBuzzToken - Token of a won Fruit Buzz game
+ * @param request - The answers
+ * @returns The security token
+ */
 export async function verifySecurityQuestions(
-  halliGalliToken: string,
+  fruitBuzzToken: string,
   request: SecurityQuestionsRequest,
 ): Promise<SecurityTokenResponse> {
   const response = await api.post<SecurityTokenResponse>(
@@ -182,31 +256,44 @@ export async function verifySecurityQuestions(
     request,
     {
       headers: {
-        Authorization: `Bearer ${halliGalliToken}`,
+        Authorization: `Bearer ${fruitBuzzToken}`,
       },
     },
   );
   return response.data;
 }
 
-// Step 5: Get the final player-removal token
+/**
+ * Step 5: gets the player-removal token.
+ *
+ * @param securityToken - Token from verifySecurityQuestions
+ * @returns The removal token
+ */
 export async function getRemovePlayerToken(
   securityToken: string,
 ): Promise<RemovePlayerTokenResponse> {
-  const response = await api.post<RemovePlayerTokenResponse>("/auth/remove_player_token", undefined, {
-    headers: {
-      Authorization: `Bearer ${securityToken}`,
+  const response = await api.post<RemovePlayerTokenResponse>(
+    "/auth/remove_player_token",
+    undefined,
+    {
+      headers: {
+        Authorization: `Bearer ${securityToken}`,
+      },
     },
-  });
+  );
   return response.data;
 }
 
-// Utility: Set player-removal token in axios headers
+/**
+ * Sends the removal token with every following API request.
+ *
+ * @param token - Token from getRemovePlayerToken
+ */
 export function setRemovePlayerToken(token: string): void {
   api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 }
 
-// Utility: Clear player-removal token from axios headers
+/** Stops sending the removal token. */
 export function clearRemovePlayerToken(): void {
   delete api.defaults.headers.common["Authorization"];
 }

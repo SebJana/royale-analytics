@@ -1,0 +1,4 @@
+# Installed and built inside the image (see data_scraper/Dockerfile).
+**/node_modules/
+**/dist/
+**/__pycache__/

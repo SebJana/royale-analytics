@@ -1,0 +1,57 @@
+/* Looks like the text it replaces, the caller's class sets size and color */
+.copyable-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* The global button rules would paint it blue on hover and outline it
+   after every click */
+.copyable-tag:hover {
+  color: var(--text-primary);
+  background: none;
+  border-color: transparent;
+}
+
+.copyable-tag:focus {
+  outline: none;
+}
+
+.copyable-tag:focus-visible {
+  outline: 2px solid var(--border-active);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Faint until hovered, so a list of battles does not fill up with icons */
+.copyable-tag-icon {
+  width: 0.9em;
+  height: 0.9em;
+  opacity: 0.4;
+  transition: opacity var(--transition-fast);
+}
+
+.copyable-tag:hover .copyable-tag-icon,
+.copyable-tag:focus-visible .copyable-tag-icon {
+  opacity: 1;
+}
+
+.copyable-tag-icon.is-copied {
+  color: var(--color-success);
+  opacity: 1;
+}
+
+.copyable-tag-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

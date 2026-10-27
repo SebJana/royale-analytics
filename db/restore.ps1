@@ -28,10 +28,18 @@ $MONGO_USER = if ($MONGO_APP_USER) { $MONGO_APP_USER } else { "data_scraper" }
 $MONGO_PWD = if ($MONGO_APP_PWD) { $MONGO_APP_PWD } else { "secret" }
 $MONGO_AUTH_DB = if ($MONGO_APP_DB) { $MONGO_APP_DB } else { "clash_royale" }
 
-Write-Host "[restore] restoring $DumpDir -> $MONGO_DB on ${MONGO_HOST}:${MONGO_PORT}"
-
 # Get absolute path for Docker volume mount
 $AbsoluteDumpDir = (Resolve-Path $DumpDir).Path
+
+# Backups are written with mongodump --gzip. A dump without compressed files is
+# refused here, before mongorestore drops any collection.
+if (-not (Get-ChildItem -LiteralPath $AbsoluteDumpDir -Recurse -File -Filter '*.bson.gz' |
+    Select-Object -First 1)) {
+    Write-Host "[restore] error: $DumpDir contains no compressed (*.bson.gz) dump"
+    exit 1
+}
+
+Write-Host "[restore] restoring $DumpDir -> $MONGO_DB on ${MONGO_HOST}:${MONGO_PORT}"
 
 # Run mongorestore using Docker
 docker run --rm `
@@ -45,6 +53,7 @@ docker run --rm `
     --authenticationDatabase $MONGO_AUTH_DB `
     --nsInclude="${MONGO_DB}.*" `
     --drop `
+    --gzip `
     /dump
 
 if ($LASTEXITCODE -eq 0) {

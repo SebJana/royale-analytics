@@ -1,4 +1,5 @@
 from .api_client import (
+    ALPHABET,
     ClashRoyaleAPI,
     ClashRoyaleMaintenanceError,
     ClashRoyalePlayerCheckError,
@@ -10,6 +11,7 @@ from .api_client import (
 )
 
 __all__ = [
+    "ALPHABET",
     "ClashRoyaleAPI",
     "ClashRoyaleMaintenanceError",
     "ClashRoyalePlayerCheckError",

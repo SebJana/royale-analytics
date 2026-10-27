@@ -52,14 +52,35 @@
   padding: var(--spacing-sm) 0;
   color: var(--color-primary);
   line-height: 1.2;
+  text-shadow: var(--shadow-display-soft);
 }
 
+/* NOTE Width matches .search-section and friends at every breakpoint, so the
+   stat row lines up with the panels below it. */
 .home-stat-cards-container {
   display: flex;
   gap: var(--spacing-lg);
   justify-content: center;
-  align-items: center;
-  flex-wrap: wrap;
+  align-items: stretch;
+  width: 90%;
+  max-width: 400px;
+}
+
+/* The shared stat card shrinks with the viewport so dense rows fit on the
+   player pages. Home only shows two cards, so they keep their full size. The
+   container prefix outranks statCard.css regardless of stylesheet order. */
+.home-stat-cards-container .stat-card {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: var(--spacing-xl) var(--spacing-lg);
+}
+
+.home-stat-cards-container .stat-card-number {
+  font-size: var(--font-3xl);
+}
+
+.home-stat-cards-container .stat-card-label {
+  font-size: var(--font-sm);
 }
 
 .player-selection {
@@ -125,37 +146,47 @@
   animation: untrack-unlock-pop 1100ms ease-out;
 }
 
-.untrack-auth-success {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  text-align: left;
-  margin-top: 0;
-  font-size: var(--font-sm);
-}
-
-.untrack-auth-feedback:empty {
-  display: none;
-}
-
-.untrack-auth-success svg {
-  flex-shrink: 0;
-}
-
 @keyframes untrack-unlock-pop {
-  0% { transform: scale(0.7) rotate(-15deg); }
-  50% { transform: scale(1.25) rotate(8deg); }
-  100% { transform: scale(1) rotate(0); }
+  0% {
+    transform: scale(0.7) rotate(-15deg);
+  }
+  50% {
+    transform: scale(1.25) rotate(8deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
 }
 
 @keyframes untrack-unlock-glow {
-  0%, 100% { box-shadow: 0 0 0 0 transparent; }
-  40% { box-shadow: 0 0 0 4px var(--color-success); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  40% {
+    box-shadow: 0 0 0 4px var(--color-success);
+  }
+}
+
+/* Opened from a battle's "add this player" link: shows where the tag landed */
+.adding-section-requested {
+  animation: adding-requested-glow 1600ms ease-out;
+}
+
+@keyframes adding-requested-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  40% {
+    box-shadow: 0 0 0 4px var(--color-info);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .untrack-section-unlocked,
-  .untrack-section-unlocked .untrack-auth-icon {
+  .untrack-section-unlocked .untrack-auth-icon,
+  .adding-section-requested {
     animation: none;
   }
 }
@@ -249,6 +280,12 @@
   background-color: var(--bg-overlay-medium);
 }
 
+/* Marks the tag that caused the error next to the callout under it. */
+.adding-section input[aria-invalid="true"],
+.untrack-section input[aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+
 .adding-section input::placeholder {
   color: var(--text-secondary);
 }
@@ -313,22 +350,16 @@
   align-self: flex-start;
 }
 
-.home-error-message {
-  text-align: center;
-  margin-top: var(--spacing-md);
-  color: var(--color-error);
-  font-size: var(--font-base);
-  max-width: 400px;
-  width: 100%;
+/* Same width as the inputs above, so the callout reads as part of the form
+   rather than floating under the button. The negative margin cancels the
+   section's flex gap while closed, so an empty slot adds no space. */
+.home-status-slot {
+  max-width: 320px;
+  margin-top: calc(-1 * var(--spacing-md));
 }
 
-.home-success-message {
-  text-align: center;
-  margin-top: var(--spacing-md);
-  color: var(--color-success);
-  font-size: var(--font-base);
-  max-width: 400px;
-  width: 100%;
+.home-status-slot.is-open {
+  margin-top: var(--spacing-xs);
 }
 
 /* Responsive design */
@@ -345,6 +376,10 @@
   .adding-section,
   .untrack-section {
     padding: var(--spacing-lg);
+    width: 95%;
+  }
+
+  .home-stat-cards-container {
     width: 95%;
   }
 
@@ -388,6 +423,15 @@
     width: 100%;
     max-width: 320px;
     margin-inline: auto;
+  }
+
+  .home-stat-cards-container {
+    width: 98%;
+    gap: var(--spacing-md);
+  }
+
+  .home-stat-cards-container .stat-card {
+    padding: var(--spacing-lg) var(--spacing-sm);
   }
 
   .section-header {

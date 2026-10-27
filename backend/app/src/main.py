@@ -1,9 +1,12 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from fastapi_limiter import FastAPILimiter
 from redis.asyncio import Redis
+from pymongo.errors import PyMongoError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.responses import JSONResponse
 
 from routers import (
     players_details,
@@ -11,13 +14,37 @@ from routers import (
     cards,
     game_modes,
     total_battles,
+    seasons,
     auth,
 )
 from core.settings import settings
 from redis_service import CacheRedisConn, RedisConn
 from clash_royale_api import ClashRoyaleAPI
+from api_key_store import (
+    KeyStore,
+    KeyStoreConfig,
+    NoKeyAvailable,
+    KeyStoreUnavailable,
+    keys_from_env,
+)
+from scrape_schedule import Schedule, BATTLES_SCHEDULE, PROFILES_SCHEDULE
+from core.deps import ScrapeSchedules
+from core.mongo_deadline import (
+    MONGO_TIMEOUT_RESPONSES,
+    MongoDeadlineMiddleware,
+    http_error_handler,
+    mongo_error_handler,
+)
+from helpers.media_pool import MediaPoolEmpty
+from core.route_timing import (
+    RouteTimingMiddleware,
+    RouteTimings,
+    publish_route_timings,
+)
 from mongo import MongoConn
+from player_search import PlayerSearchService
 from helpers.ip_utils import rate_limit_key_func
+from helpers.profile_views import create_views_indexes, retry_views_indexes
 
 # NOTE time response from Clash Royale/MongoDB is in UTC so frontend needs conversion logic
 # both for the query parameter time but also the times the user gets back, which needs to be displayed in their local time
@@ -26,8 +53,6 @@ from helpers.ip_utils import rate_limit_key_func
 # TODO add internal for whole backend via logger and don't send full error detail as HttpException
 # TODO timestamp based logging
 
-# TODO (potentially) add optional query param to tracked players
-# so that user can search the players with a name/tag or a substring of them
 # TODO (potentially) add own game mode id to keep query params short
 
 
@@ -74,10 +99,44 @@ async def retry_async(func, name):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    # Retry Clash Royale API
-    cr_api = ClashRoyaleAPI(api_key=settings.API_TOKEN)
-    await retry_async(cr_api.check_connection, name="Clash Royale API")
+    # This Redis is deliberately separate from response/media cache Redis:
+    # evicting a lease or cooldown could make a busy key appear available.
+    # app and scraper use the same Redis server but different pool namespaces.
+    # Timeouts keep a hung Redis from blocking key acquisition indefinitely
+    key_redis = Redis(
+        host=settings.KEY_STORE_REDIS_HOST,
+        port=settings.REDIS_PORT,
+        password=settings.REDIS_PASSWORD,
+        decode_responses=True,
+        socket_connect_timeout=3,
+        socket_timeout=5,
+    )
+    await retry_async(key_redis.ping, name="key store Redis")
+    key_store = KeyStore(
+        "app",
+        keys_from_env("app"),
+        key_redis,
+        KeyStoreConfig(
+            requests_per_second=settings.CR_KEY_REQUESTS_PER_SECOND,
+            pool_requests_per_second=settings.CR_KEY_POOL_REQUESTS_PER_SECOND,
+        ),
+    )
+    cr_api = ClashRoyaleAPI(key_store=key_store)
+    # Startup probes are coordinated in Redis. Multiple API workers should
+    # reuse one validation pass and see the same usable-key count.
+    inventory = await retry_async(
+        cr_api.check_connection, name="Clash Royale key inventory"
+    )
+    print(f"[INFO] App Clash Royale keys: {inventory}")
     app.state.cr_api = cr_api
+    app.state.key_store = key_store
+    # The scraping schedules live in the same non-evicting Redis. The API only
+    # adds and removes players; the data scraper claims and processes them.
+    app.state.scrape_schedules = ScrapeSchedules(
+        battles=Schedule(key_redis, BATTLES_SCHEDULE),
+        profiles=Schedule(key_redis, PROFILES_SCHEDULE),
+        redis=key_redis,
+    )
 
     # Retry Redis
     redis_conn = CacheRedisConn(
@@ -88,20 +147,19 @@ async def lifespan(app: FastAPI):
     await retry_async(redis_conn.connect, name="cache Redis")
     app.state.redis = redis_conn
 
-    # Both clients use the same redis-cache server and keyspace. Card templates
-    # contain raw PNG bytes, so this client disables UTF-8 response decoding
-    # used by the ordinary JSON cache connection.
-    card_image_redis = RedisConn(
-        host=settings.CACHE_REDIS_HOST,
+    # Pre-rendered Fruit Buzz cards and CAPTCHAs from the media worker. They
+    # are raw PNG bytes, so this client disables UTF-8 response decoding.
+    media_redis = RedisConn(
+        host=settings.MEDIA_REDIS_HOST,
         port=settings.REDIS_PORT,
         password=settings.REDIS_PASSWORD,
         decode_responses=False,
     )
-    await retry_async(card_image_redis.connect, name="card image Redis")
-    app.state.card_image_redis = card_image_redis
+    await retry_async(media_redis.connect, name="media Redis")
+    app.state.media_redis = media_redis
 
     # Challenge state is isolated from evictable response/media cache entries.
-    # A cache memory spike can no longer remove a valid CAPTCHA or Wordle game.
+    # A cache memory spike can no longer remove a valid CAPTCHA or Word Guess game.
     auth_state_redis = RedisConn(
         host=settings.AUTH_STATE_REDIS_HOST,
         port=settings.REDIS_PORT,
@@ -110,10 +168,51 @@ async def lifespan(app: FastAPI):
     await retry_async(auth_state_redis.connect, name="auth state Redis")
     app.state.auth_state_redis = auth_state_redis
 
+    # Profile view counting keeps its salt and visit state apart from the
+    # evicting caches, so an eviction never counts a visitor twice. Optional:
+    # without it the API still starts and only counts no views (the view
+    # routes catch RedisError); the client reconnects on its next command.
+    views_redis = RedisConn(
+        host=settings.VIEWS_REDIS_HOST,
+        port=settings.REDIS_PORT,
+        password=settings.REDIS_PASSWORD,
+    )
+    try:
+        await views_redis.connect()
+    except Exception as e:
+        print(f"[WARNING] Views Redis unreachable, views are not counted: {e}")
+    app.state.views_redis = views_redis
+
     # Retry MongoDB
-    mongo_conn = MongoConn(app_name=settings.MONGO_CLIENT_NAME)
+    mongo_conn = MongoConn(
+        app_name=settings.MONGO_CLIENT_NAME,
+        max_pool_size=settings.MONGO_MAX_POOL_SIZE,
+    )
     await retry_async(mongo_conn.connect, name="MongoDB")
     app.state.mongo = mongo_conn
+
+    # Views are only counted once the unique index exists, see
+    # ensure_player_views_indexes. A failure leaves the API serving with
+    # counting off, and a background task keeps trying.
+    app.state.views_indexes_ready = await create_views_indexes(mongo_conn)
+    views_indexes_task = None
+    if not app.state.views_indexes_ready:
+        views_indexes_task = asyncio.create_task(
+            retry_views_indexes(app.state, mongo_conn)
+        )
+
+    # Loaded or built before serving, so the first visitors can already
+    # search. A failed build does not stop startup; search answers 503 until
+    # a retry succeeds.
+    player_search = PlayerSearchService(
+        mongo_conn,
+        refresh_interval_s=settings.SEARCH_REFRESH_INTERVAL_S,
+        full_refresh_interval_s=settings.SEARCH_FULL_REFRESH_INTERVAL_S,
+        retry_s=settings.SEARCH_BUILD_RETRY_S,
+        snapshot_interval_s=settings.SEARCH_SNAPSHOT_INTERVAL_S,
+    )
+    await player_search.start()
+    app.state.player_search = player_search
 
     async def initialize_rate_limit_redis() -> Redis:
         """Connect rate limiting separately so it cannot reuse auth/cache clients."""
@@ -133,18 +232,77 @@ async def lifespan(app: FastAPI):
         initialize_rate_limit_redis, name="rate-limit Redis"
     )
 
+    # Next to the scraper's own history, which the same dashboard reads.
+    route_timing_task = asyncio.create_task(
+        publish_route_timings(
+            route_timings,
+            key_redis,
+            settings.ROUTE_METRICS_INTERVAL_S,
+            settings.ROUTE_METRICS_RETENTION_S,
+        )
+    )
+
     yield
 
     # Shutdown
+    # Before the key store closes: cancelling writes the last partial minute.
+    if views_indexes_task is not None:
+        views_indexes_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await views_indexes_task
+    route_timing_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await route_timing_task
+    await player_search.close()
     await app.state.cr_api.close()
+    await app.state.key_store.close()
     mongo_conn.close()
     await redis_conn.close()
-    await card_image_redis.close()
+    await media_redis.close()
     await auth_state_redis.close()
+    await views_redis.close()
     await rate_limit_redis.aclose()
 
 
-app = FastAPI(lifespan=lifespan)
+# Created with the app, not in lifespan: the middleware below needs it first.
+route_timings = RouteTimings()
+
+app = FastAPI(lifespan=lifespan, responses=MONGO_TIMEOUT_RESPONSES)
+
+app.add_exception_handler(PyMongoError, mongo_error_handler)
+app.add_exception_handler(StarletteHTTPException, http_error_handler)
+
+
+@app.exception_handler(NoKeyAvailable)
+async def no_key_available(_request: Request, exc: NoKeyAvailable):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "No Clash Royale API key is currently available"},
+        headers={"Retry-After": str(max(1, int(exc.retry_after)))},
+    )
+
+
+@app.exception_handler(KeyStoreUnavailable)
+async def key_store_unavailable(_request: Request, _exc: KeyStoreUnavailable):
+    return JSONResponse(
+        status_code=503, content={"detail": "Clash Royale key store unavailable"}
+    )
+
+
+@app.exception_handler(MediaPoolEmpty)
+async def media_pool_empty(_request: Request, exc: MediaPoolEmpty):
+    # Requests never render; the media worker refills the pool, so the client
+    # retries instead of the API drawing.
+    return JSONResponse(
+        status_code=503,
+        content={"detail": {"code": "IMAGES_NOT_READY", "message": str(exc)}},
+        headers={"Retry-After": str(exc.retry_after)},
+    )
+
+
+# Added first, so it is the innermost middleware: only the request's own
+# handling counts against the deadline.
+app.add_middleware(MongoDeadlineMiddleware, timeout_s=settings.MONGO_REQUEST_TIMEOUT_S)
 
 # Add CORS middleware for local development
 app.add_middleware(
@@ -158,8 +316,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Halli-Galli-Image-Version"],
+    expose_headers=["X-Fruit-Buzz-Image-Version"],
 )
+
+# Added last, so it is the outermost middleware: the time covers CORS and the
+# error handlers too, and a request CORS answers itself still counts.
+app.add_middleware(RouteTimingMiddleware, timings=route_timings)
 
 # Include routers
 app.include_router(players_tracked.router, prefix="/api")
@@ -167,9 +329,37 @@ app.include_router(players_details.router, prefix="/api")
 app.include_router(cards.router, prefix="/api")
 app.include_router(game_modes.router, prefix="/api")
 app.include_router(total_battles.router, prefix="/api")
+app.include_router(seasons.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 
 
 @app.get("/api/ping")
 async def ping():
     return {"status": "ok"}
+
+
+@app.get("/api/ready")
+async def ready():
+    # Ping only proves this process is running. Readiness also needs a usable
+    # key and a closed maintenance circuit; counts never include raw tokens.
+    try:
+        inventory = await app.state.key_store.inventory()
+        maintenance = await app.state.key_store.in_maintenance()
+    except (AttributeError, KeyStoreUnavailable):
+        return JSONResponse(
+            status_code=503, content={"status": "key_store_unavailable"}
+        )
+    if maintenance:
+        return JSONResponse(
+            status_code=503, content={"status": "maintenance", "keys": inventory}
+        )
+    if inventory["usable"] == 0:
+        state = (
+            "no_valid_keys"
+            if inventory["invalid"] == inventory["configured"]
+            else "validation_pending"
+        )
+        return JSONResponse(
+            status_code=503, content={"status": state, "keys": inventory}
+        )
+    return {"status": "ok", "keys": inventory}

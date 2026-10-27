@@ -5,13 +5,20 @@ from urllib.parse import quote
 from datetime import date, datetime, time
 import random
 
+# The data scraper is the only writer of the card list (see jobs/cards.py) and
+# refreshes it on a timer, so the key has no version. The API only reads it.
+CARDS_CACHE_KEY = "crApi:allCards"
+
+# The data scraper is the only writer of the game mode list (see game_modes_loop)
+# and rewrites it as soon as a new mode is stored. The API only reads it.
+GAME_MODES_CACHE_KEY = "crApi:allGameModes"
+
 
 class RedisConn:
-    """Wrapper for a versionless async Redis connection.
+    """Wrapper for an async Redis connection.
 
-    This base connection deliberately has no cache-version methods. It is used
-    for state whose key must remain stable for its entire TTL, such as an
-    in-progress authentication challenge.
+    Used directly for state whose key must remain stable for its entire TTL,
+    such as an in-progress authentication challenge.
 
     Args:
         host (str): Redis service hostname or IP address.
@@ -53,32 +60,12 @@ class RedisConn:
 
 
 class CacheRedisConn(RedisConn):
-    """Redis connection for reconstructible data that supports invalidation."""
+    """Redis connection for reconstructible data (redis-cache).
 
-    async def connect(self):
-        """Connect and initialize the version namespace owned by the cache."""
-
-        await super().connect()
-        # This key exists only in redis-cache. Incrementing it makes prior
-        # cache entries unreachable without touching auth challenge state.
-        await self.client.setnx("global:version", 1)
-
-    async def get_version(self) -> int:
-        """
-        Fetches the current global key version from Redis.
-        """
-
-        val = await self.client.get("global:version")
-        return int(val) if val is not None else 1
-
-    async def increment_version(self) -> int:
-        """
-        Globally invalidates all cache by incrementing the version in Redis.
-        Returns the new version number.
-        """
-
-        new_val = await self.client.incr("global:version")
-        return new_val
+    Entries may be evicted at any time. Player statistics are invalidated
+    through the player's syncVersion in their key (see ``build_redis_key``);
+    everything else expires through its TTL.
+    """
 
 
 async def get_redis_json(conn: RedisConn, key: str):
@@ -124,7 +111,7 @@ async def set_redis_json(conn: CacheRedisConn, key: str, value, ttl: int):
     Serialize a Python object to JSON and store it in Redis with TTL.
 
     Args:
-        conn (CacheRedisConn): Versioned Redis connection for rebuildable cache data.
+        conn (CacheRedisConn): Redis connection for rebuildable cache data.
         key (str): Redis key to set.
         value: Python object to serialize and store.
         ttl (int): Time-to-live in seconds (key expires automatically).
@@ -221,37 +208,35 @@ def _to_param_str(val) -> str:
     return str(val)
 
 
-async def build_redis_key(
-    conn: CacheRedisConn,
+def build_redis_key(
     service: str,
     resource: str,
     params: dict | None = None,
-    version_ahead: bool = False,
+    player_version: int | None = None,
 ) -> str:
     """
     Build a consistent Redis key string.
 
     Args:
-        conn (CacheRedisConn): Cache connection used to access the version key.
         service (str): The service or namespace prefix, e.g. "cr_api" or "mongo"
         resource (str): The type of data or entity, e.g. "decks", "player", "leaked-elixir".
         params (dict): Additional key-value pairs describing this cache entry.
                 These will be sorted and appended as 'key=value' segments.
                 e.g. {"player_tag": "YYRJQY28", "start_date": "2025-08-01", "end_date": 2025-08-01})
-        version_ahead (bool): Use the next cache version during a staged refresh.
+        player_version (int | None): syncVersion of the player this entry belongs to.
+                A new sync with new battles raises it, so new requests build new
+                keys and only that player's old entries stop being used (they
+                expire through their TTL). params has to contain the player tag.
+                Data without a player version relies on its TTL alone.
     Returns:
-        str: A Redis key in the format 'version:service:resource:param1=val1:param2=val2'.
+        str: A Redis key in the format 'pv<version>:service:resource:param1=val1:...'
+            for player data, otherwise 'service:resource:param1=val1:...'.
     """
 
-    # Build a key for one version ahead of the current one
-    version = await conn.get_version()
-    if version_ahead:
-        version += 1  # One version ahead
-
-    version_str = f"v{version}"
+    prefix = [f"pv{player_version}"] if player_version is not None else []
 
     # Sort params to keep key deterministic even if order changes
-    parts = [version_str, service, resource]
+    parts = prefix + [service, resource]
 
     if params:  # Only append params to key if they exist
         for key, val in sorted(params.items()):
@@ -268,21 +253,20 @@ async def build_redis_key(
     if len(key.encode("utf-8")) < 512:
         return key
 
-    # Uniquely hash key if it is too long
-    return (
-        version_str + ":" + service + ":" + hashlib.md5(key.encode("utf-8")).hexdigest()
-    )
+    # Uniquely hash key if it is too long. The version prefix stays readable,
+    # so a player's entries still change keys with every new sync version.
+    return ":".join(prefix + [service, hashlib.md5(key.encode("utf-8")).hexdigest()])
 
 
 def build_auth_state_key(resource: str, challenge_id: str) -> str:
     """Build a stable, namespaced key for a short-lived auth challenge.
 
-    Auth keys intentionally omit the global cache version: cache invalidation
-    must never invalidate a CAPTCHA or Wordle challenge that is still within
-    its promised lifetime.
+    Auth keys carry no version and live in the separate, non-evicting auth
+    state Redis: cache invalidation must never invalidate a CAPTCHA or Word Guess
+    challenge that is still within its promised lifetime.
 
     Args:
-        resource (str): Fixed challenge category, such as ``captcha`` or ``wordle``.
+        resource (str): Fixed challenge category, such as ``captcha`` or ``word_guess``.
         challenge_id (str): Client-visible UUID that identifies one challenge.
 
     Returns:

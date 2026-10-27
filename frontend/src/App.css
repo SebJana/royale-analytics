@@ -5,6 +5,28 @@
   text-align: center;
   width: 100%;
   box-sizing: border-box;
+  /* Fills the screen, so the footer stays at the bottom while a page is still
+     loading or shorter than the screen. The body would otherwise center the
+     whole root, footer included. */
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Takes the free height and keeps short content (spinners, errors) centered,
+   as the body did before. */
+.main-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Page-level spinners are inline and relied on text-align, which a flex item
+   ignores. */
+.main-container > .MuiCircularProgress-root {
+  align-self: center;
 }
 
 /* Mobile responsive padding */

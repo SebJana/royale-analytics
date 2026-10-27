@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 import uuid
 from enum import StrEnum
@@ -8,13 +8,18 @@ from core.settings import settings
 # Types of tokens the api gives out and validates
 class AvailableTokenTypes(StrEnum):
     CAPTCHA = "captcha"
-    HALLI_GALLI = "halli_galli"
+    FRUIT_BUZZ = "fruit_buzz"
     SECURITY = "security"
-    WORDLE = "wordle"
+    WORD_GUESS = "word_guess"
     REMOVE_PLAYER_TOKEN = "remove_player_token"
+    # Proves a profile page fetched it a few seconds earlier
+    # (helpers/profile_views.py)
+    PROFILE_VIEW = "profile_view"
 
 
-def create_access_token(type: str, expires_minutes: int = 30):
+def create_access_token(
+    type: str, expires_minutes: int = 30, claims: dict | None = None
+):
     """
     Create a JWT token with admin scope and expiration time.
 
@@ -24,14 +29,18 @@ def create_access_token(type: str, expires_minutes: int = 30):
     Args:
         type (str): The type/role the token should be and enable.
         expires_minutes (int, optional): Token expiration time in minutes.
-            Defaults to 5 minutes for security purposes.
+            Defaults to 30 minutes; callers pass their type's lifetime.
+        claims (dict | None, optional): Further claims to sign along. They
+            cannot replace the standard ones (sub, type, jti, exp).
 
     Returns:
         str: Encoded JWT token string that can be used for admin authentication.
     """
-    expire = datetime.now() + timedelta(minutes=expires_minutes)
+    # Aware, so the expiry is right on hosts whose clock is not UTC too.
+    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
 
     payload = {
+        **(claims or {}),
         "sub": "admin",
         "type": type,
         "jti": str(uuid.uuid4()),
@@ -59,10 +68,9 @@ def get_access_token_claims(token: str, token_type: str) -> dict | None:
         requested type, and has a JTI; otherwise ``None``.
     """
 
-    # NOTE: Halli Galli binds a latency calibration to the Wordle token's JTI
+    # NOTE: Fruit Buzz binds a latency calibration to the Word Guess token's JTI
     # for connection-specific fairness, not as a primary anti-cheat boundary.
-    # A security-question attempt counter can likewise use the JTI as its
-    # Redis key to limit attempts per issued Halli Galli token instead of per IP.
+    # The redemption budget (helpers/token_budget.py) is keyed by the JTI too.
 
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
@@ -72,22 +80,3 @@ def get_access_token_claims(token: str, token_type: str) -> dict | None:
     if payload.get("type") != token_type or not isinstance(payload.get("jti"), str):
         return None
     return payload
-
-
-def validate_access_token(token: str, type: str) -> bool:
-    """Return whether ``token`` is a valid, unexpired token of ``type``.
-
-    This boolean compatibility helper intentionally discards verified claims.
-    Call ``get_access_token_claims`` when a caller needs the verified JTI or
-    another claim for server-side token binding.
-
-    Args:
-        token: Encoded JWT bearer token to verify.
-        type: Required value of the token's ``type`` claim.
-
-    Returns:
-        ``True`` when the token is valid, unexpired, and has the requested
-        type; otherwise ``False``.
-    """
-
-    return get_access_token_claims(token, type) is not None

@@ -3,3 +3,6 @@ db/data/
 db/backups/
 __pycache__/
 .vscode
+# Scraper dashboard, built by npm run build
+backend/data_scraper/dashboard/node_modules/
+backend/data_scraper/dashboard/dist/

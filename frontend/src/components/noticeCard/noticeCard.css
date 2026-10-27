@@ -1,0 +1,109 @@
+/* The same card as the battles filter, so the notice reads as part of the
+   page rather than a system alert on top of it. */
+.notice-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    "icon title action"
+    "icon message action"
+    ". status status";
+  column-gap: var(--spacing-lg);
+  margin-top: var(--spacing-xl);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  background-color: var(--bg-dark);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 2px 8px var(--shadow-light);
+  text-align: left;
+}
+
+/* The icon and the button centre on the title and its text together. A
+   status opens in a row of its own below, so neither moves with it. */
+.notice-card-icon {
+  grid-area: icon;
+  align-self: center;
+}
+
+.notice-card-warning .notice-card-icon {
+  color: var(--color-warning);
+}
+
+/* A lighter shade of the legend sticker (sticker.css), which would be too
+   dark as a bare icon on the card */
+.notice-card-legend .notice-card-icon {
+  color: #b48cff;
+}
+
+.notice-card-title {
+  grid-area: title;
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.notice-card-message {
+  grid-area: message;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-base);
+  line-height: var(--line-height-normal);
+}
+
+/* About as wide as the home page's forms */
+.notice-card-status {
+  grid-area: status;
+  max-width: 480px;
+}
+
+.notice-card-status.is-open {
+  margin-top: var(--spacing-md);
+}
+
+.notice-card-action {
+  grid-area: action;
+  align-self: center;
+}
+
+.notice-card-action button {
+  min-width: 100px;
+  padding: var(--spacing-sm) var(--spacing-2xl);
+  font-size: var(--font-base);
+}
+
+/* Only the icon and title share a row; the text, a status and the button
+   run the full width below them instead of keeping the icon's indent. */
+@media (max-width: 600px) {
+  .notice-card {
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "icon title"
+      "message message"
+      "status status"
+      "action action";
+    column-gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+  }
+
+  /* The icon centres on the title's capitals, which Lilita One sets above
+     the middle of the line, with descender room below them. Measured 3px.
+     NOTE Follows the title's font and size; measure again if either changes. */
+  .notice-card-icon {
+    transform: translateY(-3px);
+  }
+
+  /* The spacing sits on the text, not under the title: the icon centres on
+     the first row, which a title margin would make taller. */
+  .notice-card-title {
+    margin-bottom: 0;
+  }
+
+  .notice-card-message {
+    margin-top: var(--spacing-sm);
+  }
+
+  .notice-card-action button {
+    width: 100%;
+    margin-top: var(--spacing-md);
+  }
+}

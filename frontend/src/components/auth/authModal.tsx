@@ -6,11 +6,10 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Button,
   CircularProgress,
 } from "@mui/material";
-import { WordleGame } from "./wordle";
-import { HalliGalli } from "./halliGalli";
+import { WordGuessGame } from "./wordGuess";
+import { FruitBuzz } from "./fruitBuzz";
 import { AuthActionButton } from "./authActionButton";
 import { useAuth } from "../../hooks/useAuthHook";
 import { useAuthCooldown } from "../../hooks/useAuthCooldown";
@@ -22,8 +21,8 @@ import {
   getCaptchaId,
   getCaptchaImage,
   verifyCaptcha,
-  getWordleId,
-  submitWordleGuess,
+  getWordGuessId,
+  submitWordGuess,
   verifySecurityQuestions,
   getRemovePlayerToken,
 } from "../../services/api/auth";
@@ -36,11 +35,11 @@ interface AuthModalProps {
 }
 
 // Count challenges, not requests. Finishing verification is still part of the last step.
-const AUTH_STEPS = ["captcha", "wordle", "halli_galli", "security"] as const;
+const AUTH_STEPS = ["captcha", "word_guess", "fruit_buzz", "security"] as const;
 type AuthStep = (typeof AUTH_STEPS)[number];
-// TODO let the backend communicate that upon wordle session start and the frontend
+// TODO let the backend communicate that upon Word Guess session start and the frontend
 // dynamically reacts to it
-const MAX_WORDLE_GUESSES_ALLOWED = 6; // Standard Wordle guess limit
+const MAX_WORD_GUESS_ATTEMPTS = 6; // Guesses allowed per Word Guess
 
 export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
   const [currentStep, setCurrentStep] = useState<AuthStep>("captcha");
@@ -56,12 +55,15 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
   const [captchaImageLoaded, setCaptchaImageLoaded] = useState(false);
   const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [captchaIncorrect, setCaptchaIncorrect] = useState(false);
+  // The server dropped the challenge (too many wrong answers or expired), so
+  // only loading a new one can help.
+  const [captchaGone, setCaptchaGone] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
 
-  // Wordle state
-  const [wordleId, setWordleId] = useState("");
-  const [wordleToken, setWordleToken] = useState("");
-  const [halliGalliToken, setHalliGalliToken] = useState("");
+  // Word Guess state
+  const [wordGuessId, setWordGuessId] = useState("");
+  const [wordGuessToken, setWordGuessToken] = useState("");
+  const [fruitBuzzToken, setFruitBuzzToken] = useState("");
   const [securityToken, setSecurityToken] = useState("");
 
   // Security questions state
@@ -82,6 +84,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
     setLoading(true);
     setError(null);
     setCaptchaIncorrect(false);
+    setCaptchaGone(false);
     setCaptchaId("");
     setCaptchaImageUrl("");
     setCaptchaImageLoaded(false);
@@ -103,7 +106,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
   };
 
   const handleCaptchaSubmit = async () => {
-    if (loading || retryBlocked || !captchaAnswer.trim()) return;
+    if (loading || retryBlocked || captchaGone || !captchaAnswer.trim()) return;
 
     setLoading(true);
     setError(null);
@@ -114,7 +117,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
         answer: captchaAnswer,
       });
       setCaptchaToken(captcha_token);
-      await initializeWordle(captcha_token);
+      await initializeWordGuess(captcha_token);
     } catch (err) {
       setError(getAuthErrorFeedback(err, "captcha"));
       // Only a wrong answer should shake the input, not an expired challenge or connection error.
@@ -122,8 +125,12 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
         const code = err.response?.data?.detail?.code;
         setCaptchaIncorrect(
           code === "CAPTCHA_INCORRECT" ||
+            code === "CAPTCHA_ATTEMPTS_EXHAUSTED" ||
             (!code &&
               (err.response?.status === 401 || err.response?.status === 403)),
+        );
+        setCaptchaGone(
+          code === "CAPTCHA_ATTEMPTS_EXHAUSTED" || code === "CAPTCHA_EXPIRED",
         );
       }
       console.error("Captcha verification error:", err);
@@ -132,37 +139,37 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
     }
   };
 
-  const initializeWordle = async (token = captchaToken) => {
+  const initializeWordGuess = async (token = captchaToken) => {
     if (retryBlocked) return;
     setLoading(true);
     setError(null);
     // Mount the whole next stage immediately so waiting for its ID doesn't collapse the modal.
-    setWordleId("");
-    setCurrentStep("wordle");
+    setWordGuessId("");
+    setCurrentStep("word_guess");
     try {
-      const { wordle_id } = await getWordleId(token);
-      setWordleId(wordle_id);
+      const { word_guess_id } = await getWordGuessId(token);
+      setWordGuessId(word_guess_id);
     } catch (err) {
-      setError(getAuthErrorFeedback(err, "wordle_load"));
-      console.error("Wordle initialization error:", err);
+      setError(getAuthErrorFeedback(err, "word_guess_load"));
+      console.error("Word Guess initialization error:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleWordleGuess = async (guess: string) => {
+  const handleWordGuess = async (guess: string) => {
     setError(null);
     try {
-      const result = await submitWordleGuess(captchaToken, {
-        wordle_id: wordleId,
-        wordle_guess: guess,
+      const result = await submitWordGuess(captchaToken, {
+        word_guess_id: wordGuessId,
+        guess,
       });
 
-      // A correct guess returns a wordle_token
-      if (result.is_solution && result.wordle_token) {
-        setWordleToken(result.wordle_token);
-        // Don't transition immediately - let the Wordle component show success popup
-        // The next step starts after the Wordle success popup is closed.
+      // A correct guess returns a word_guess_token
+      if (result.is_solution && result.word_guess_token) {
+        setWordGuessToken(result.word_guess_token);
+        // Don't transition immediately - let the Word Guess component show success popup
+        // The next step starts after the Word Guess success popup is closed.
         return {
           correct: true,
           feedback: {
@@ -182,28 +189,28 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
         },
       };
     } catch (err) {
-      console.error("Wordle guess error:", err);
-      const feedback = getAuthErrorFeedback(err, "wordle_guess");
+      console.error("Word Guess submit error:", err);
+      const feedback = getAuthErrorFeedback(err, "word_guess_submit");
       if (feedback.recovery) setError(feedback);
       throw err;
     }
   };
 
-  const handleWordleFailure = async () => {
-    await initializeWordle();
+  const handleWordGuessFailure = async () => {
+    await initializeWordGuess();
   };
 
-  const handleWordleSuccess = () => {
-    // Halli Galli must be won before security questions accept a token.
-    setCurrentStep("halli_galli");
+  const handleWordGuessSuccess = () => {
+    // Fruit Buzz must be won before security questions accept a token.
+    setCurrentStep("fruit_buzz");
   };
 
-  const handleHalliGalliWin = useCallback((token: string) => {
-    setHalliGalliToken(token);
+  const handleFruitBuzzWin = useCallback((token: string) => {
+    setFruitBuzzToken(token);
     setCurrentStep("security");
   }, []);
 
-  const handleWordleExpired = useCallback(() => {
+  const handleWordGuessExpired = useCallback(() => {
     // Restart only after the player has seen the expiry message and chosen to continue.
     setCurrentStep("captcha");
     setCaptchaId("");
@@ -211,9 +218,9 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
     setCaptchaImageLoaded(false);
     setCaptchaAnswer("");
     setCaptchaToken("");
-    setWordleId("");
-    setWordleToken("");
-    setHalliGalliToken("");
+    setWordGuessId("");
+    setWordGuessToken("");
+    setFruitBuzzToken("");
     setSecurityToken("");
     setSecurityAnswers({
       most_annoying_card: "",
@@ -227,9 +234,9 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
     if (loading || retryBlocked) return;
     const { most_annoying_card, most_skillful_card, most_mousey_card } =
       securityAnswers;
-    if (!halliGalliToken) {
+    if (!fruitBuzzToken) {
       setError({
-        message: "Complete Halli Galli before continuing.",
+        message: "Complete Fruit Buzz before continuing.",
         recovery: "restart",
       });
       return;
@@ -251,7 +258,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
       // Retrying that request shouldn't spend another answer attempt.
       if (!verifiedSecurityToken) {
         const { security_token } = await verifySecurityQuestions(
-          halliGalliToken,
+          fruitBuzzToken,
           { most_annoying_card, most_skillful_card, most_mousey_card },
         );
         verifiedSecurityToken = security_token;
@@ -286,9 +293,9 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
     setCaptchaImageLoaded(false);
     setCaptchaAnswer("");
     setCaptchaToken("");
-    setWordleId("");
-    setWordleToken("");
-    setHalliGalliToken("");
+    setWordGuessId("");
+    setWordGuessToken("");
+    setFruitBuzzToken("");
     setSecurityToken("");
     setSecurityAnswers({
       most_annoying_card: "",
@@ -358,62 +365,66 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
           value={captchaAnswer}
           onChange={(e) => setCaptchaAnswer(e.target.value)}
           placeholder="Enter the text you see"
-          disabled={loading || !captchaImageLoaded}
+          disabled={loading || captchaGone || !captchaImageLoaded}
           onKeyDown={(e) => e.key === "Enter" && handleCaptchaSubmit()}
         />
         <div className="captcha-buttons">
-          <Button
+          <button
+            type="button"
+            className="auth-button"
             onClick={handleCaptchaSubmit}
             disabled={
               loading ||
               retryBlocked ||
+              captchaGone ||
               !captchaImageLoaded ||
               !captchaAnswer.trim()
             }
-            variant="contained"
-            color="primary"
           >
             Verify
-          </Button>
-          <Button
+          </button>
+          <button
+            type="button"
+            className="auth-button is-secondary"
             onClick={initializeCaptcha}
             disabled={loading || retryBlocked}
-            variant="outlined"
-            startIcon={<RotateCcw size={18} aria-hidden="true" />}
           >
+            <RotateCcw size={18} aria-hidden="true" />
             Refresh
-          </Button>
+          </button>
         </div>
       </div>
     </div>
   );
 
-  const renderWordleStep = () => (
+  const renderWordGuessStep = () => (
     <div className="auth-step">
-      <WordleGame
-        key={wordleId || "loading"}
+      <WordGuessGame
+        key={wordGuessId || "loading"}
         loading={loading}
-        disabled={!wordleId || loading || Boolean(error?.recovery)}
-        guessesAllowed={MAX_WORDLE_GUESSES_ALLOWED}
-        onGuess={handleWordleGuess}
-        onFailure={handleWordleFailure}
-        onSuccess={handleWordleSuccess}
+        disabled={!wordGuessId || loading || Boolean(error?.recovery)}
+        guessesAllowed={MAX_WORD_GUESS_ATTEMPTS}
+        onGuess={handleWordGuess}
+        onFailure={handleWordGuessFailure}
+        onSuccess={handleWordGuessSuccess}
       />
     </div>
   );
 
-  const renderHalliGalliStep = () =>
-    wordleToken ? (
-      <HalliGalli
-        wordleToken={wordleToken}
-        onWin={handleHalliGalliWin}
-        onWordleExpired={handleWordleExpired}
+  const renderFruitBuzzStep = () =>
+    wordGuessToken ? (
+      <FruitBuzz
+        wordGuessToken={wordGuessToken}
+        onWin={handleFruitBuzzWin}
+        onWordGuessExpired={handleWordGuessExpired}
       />
     ) : null;
 
   const renderSecurityStep = () => (
     <div className="auth-step">
-      <h3 className="auth-stage-heading">Prove your elite Clash Royale knowledge</h3>
+      <h3 className="auth-stage-heading">
+        Prove your elite Clash Royale knowledge
+      </h3>
       <div className="security-questions">
         <div className="question-group">
           <label htmlFor="annoying-card">
@@ -479,8 +490,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
           />
         </div>
         <AuthActionButton
-          action="continue"
-          showIcon={false}
+          action="submit"
           onClick={handleSecuritySubmit}
           busy={loading}
           disabled={retryBlocked}
@@ -496,10 +506,10 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
     switch (currentStep) {
       case "captcha":
         return renderCaptchaStep();
-      case "wordle":
-        return renderWordleStep();
-      case "halli_galli":
-        return renderHalliGalliStep();
+      case "word_guess":
+        return renderWordGuessStep();
+      case "fruit_buzz":
+        return renderFruitBuzzStep();
       case "security":
         return renderSecurityStep();
       default:
@@ -510,7 +520,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
   // A restart menu belongs over the board; putting it in the footer would take
   // height away from the challenge and introduce scroll on smaller screens.
   const needsRecovery = Boolean(
-    error && (error.recovery || (currentStep === "wordle" && !wordleId)),
+    error && (error.recovery || (currentStep === "word_guess" && !wordGuessId)),
   );
   const errorFeedback = error && (
     <div
@@ -523,23 +533,25 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
         <AuthActionButton
           action="retry"
           onClick={
-            error.recovery === "wordle" ? handleWordleFailure : handleRestart
+            error.recovery === "word_guess"
+              ? handleWordGuessFailure
+              : handleRestart
           }
           disabled={loading || retryBlocked}
         >
-          {error.recovery === "wordle"
-            ? "Restart Wordle"
+          {error.recovery === "word_guess"
+            ? "Restart Word Guess"
             : "Restart Verification"}
         </AuthActionButton>
       )}
-      {currentStep === "wordle" && !wordleId && !error.recovery && (
+      {currentStep === "word_guess" && !wordGuessId && !error.recovery && (
         <AuthActionButton
           action="retry"
-          onClick={() => initializeWordle()}
+          onClick={() => initializeWordGuess()}
           busy={loading}
           disabled={retryBlocked}
         >
-          Retry Wordle
+          Retry Word Guess
         </AuthActionButton>
       )}
     </div>
@@ -550,9 +562,9 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
       open={open}
       scroll="paper"
       disableEscapeKeyDown
-      maxWidth={currentStep === "halli_galli" ? "lg" : "md"}
+      maxWidth={currentStep === "fruit_buzz" ? "lg" : "md"}
       fullWidth
-      className={`auth-modal ${currentStep === "halli_galli" ? "halli-galli-modal" : currentStep === "wordle" ? "wordle-modal" : ""}`}
+      className={`auth-modal ${currentStep === "fruit_buzz" ? "fruit-buzz-modal" : currentStep === "word_guess" ? "word-guess-modal" : ""}`}
     >
       <DialogTitle>
         <span>Authentication</span>
@@ -566,7 +578,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
       </DialogTitle>
       <DialogContent>
         {loading &&
-          currentStep !== "wordle" &&
+          currentStep !== "word_guess" &&
           !(currentStep === "captcha" && !captchaImageLoaded) && (
             <div className="loading-overlay">
               <CircularProgress
@@ -585,9 +597,13 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
         <div className="auth-feedback-anchor">
           {!needsRecovery && errorFeedback}
         </div>
-        <Button onClick={handleClose} color="error" variant="outlined">
+        <button
+          type="button"
+          className="auth-button is-subtle"
+          onClick={handleClose}
+        >
           Cancel
-        </Button>
+        </button>
       </DialogActions>
     </Dialog>
   );
